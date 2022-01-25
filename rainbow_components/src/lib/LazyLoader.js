@@ -1,0 +1,1 @@
+export const RainbowComponents = React.lazy(() => import(/* webpackChunkName: "RainbowComponents" */ './fragments/RainbowComponents.react'));

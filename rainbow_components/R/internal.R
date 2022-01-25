@@ -1,0 +1,27 @@
+.rainbowComponents_js_metadata <- function() {
+deps_metadata <- list(`rainbow_components` = structure(list(name = "rainbow_components",
+version = "0.0.1", src = list(href = NULL,
+file = "deps"), meta = NULL,
+script = 'async-RainbowComponents.js',
+stylesheet = NULL, head = NULL, attachment = NULL, package = "rainbowComponents",
+all_files = FALSE, async = TRUE), class = "html_dependency"),
+`rainbow_components` = structure(list(name = "rainbow_components",
+version = "0.0.1", src = list(href = NULL,
+file = "deps"), meta = NULL,
+script = 'async-RainbowComponents.js.map',
+stylesheet = NULL, head = NULL, attachment = NULL, package = "rainbowComponents",
+all_files = FALSE, dynamic = TRUE), class = "html_dependency"),
+`rainbow_components` = structure(list(name = "rainbow_components",
+version = "0.0.1", src = list(href = NULL,
+file = "deps"), meta = NULL,
+script = 'rainbow_components.min.js',
+stylesheet = NULL, head = NULL, attachment = NULL, package = "rainbowComponents",
+all_files = FALSE), class = "html_dependency"),
+`rainbow_components` = structure(list(name = "rainbow_components",
+version = "0.0.1", src = list(href = NULL,
+file = "deps"), meta = NULL,
+script = 'rainbow_components.min.js.map',
+stylesheet = NULL, head = NULL, attachment = NULL, package = "rainbowComponents",
+all_files = FALSE, dynamic = TRUE), class = "html_dependency"))
+return(deps_metadata)
+}

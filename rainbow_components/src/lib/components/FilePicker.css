@@ -1,0 +1,30 @@
+.MuiFormControl-root.MuiTextField-root.chonky-searchFieldContainer {
+    display: none;
+}
+
+.chonky-infoText {
+    display: none;
+}
+
+.SearchBox {
+    height: 25;
+    width: 200;
+}
+
+.FilePicker {
+    position: relative;
+    height: 100%;
+    width: 100%;
+}
+
+.SearchBox {
+    position: absolute;
+    margin: 50px 10px;
+    font-size: 14px;
+    font-family: sans-serif;
+}
+
+div[class^="listFileEntryProperty"] {
+    flex: 0 1 200px;
+}
+
