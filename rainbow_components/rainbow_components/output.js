@@ -14,7 +14,7 @@ window["rainbow_components"] =
 /******/ 	function hotDownloadUpdateChunk(chunkId) {
 /******/ 		var script = document.createElement("script");
 /******/ 		script.charset = "utf-8";
-/******/ 		script.src = __webpack_require__.p + "1fac212-" + chunkId + "-wps-hmr.js";
+/******/ 		script.src = __webpack_require__.p + "115de54-" + chunkId + "-wps-hmr.js";
 /******/ 		if (null) script.crossOrigin = null;
 /******/ 		document.head.appendChild(script);
 /******/ 	}
@@ -28,7 +28,7 @@ window["rainbow_components"] =
 /******/ 			}
 /******/ 			try {
 /******/ 				var request = new XMLHttpRequest();
-/******/ 				var requestPath = __webpack_require__.p + "1fac212-wps-hmr.json";
+/******/ 				var requestPath = __webpack_require__.p + "115de54-wps-hmr.json";
 /******/ 				request.open("GET", requestPath, true);
 /******/ 				request.timeout = requestTimeout;
 /******/ 				request.send(null);
@@ -64,7 +64,7 @@ window["rainbow_components"] =
 /******/
 /******/ 	var hotApplyOnUpdate = true;
 /******/ 	// eslint-disable-next-line no-unused-vars
-/******/ 	var hotCurrentHash = "4ae5dc28524ff935ba1f";
+/******/ 	var hotCurrentHash = "811bfc2e9eed9795e061";
 /******/ 	var hotRequestTimeout = 10000;
 /******/ 	var hotCurrentModuleData = {};
 /******/ 	var hotCurrentChildModule;
@@ -836,7 +836,7 @@ window["rainbow_components"] =
 /******/ 	        var srcFragments = src.split('/');
 /******/ 	        var fileFragments = srcFragments.slice(-1)[0].split('.');
 /******/
-/******/ 	        fileFragments.splice(1, 0, "v0_0_1m1642604307");
+/******/ 	        fileFragments.splice(1, 0, "v0_0_1m1643203939");
 /******/ 	        srcFragments.splice(-1, 1, fileFragments.join('.'))
 /******/
 /******/ 	        return srcFragments.join('/');
@@ -3442,7 +3442,7 @@ function isMissingLocaleDataError(e) {
 /*!**************************************************************!*\
   !*** ./node_modules/@formatjs/ecma402-abstract/lib/index.js ***!
   \**************************************************************/
-/*! exports provided: CanonicalizeLocaleList, CanonicalizeTimeZoneName, CoerceOptionsToObject, GetNumberOption, GetOption, GetOptionsObject, SANCTIONED_UNITS, removeUnitNamespace, SIMPLE_UNITS, IsSanctionedSimpleUnitIdentifier, IsValidTimeZoneName, IsWellFormedCurrencyCode, IsWellFormedUnitIdentifier, ComputeExponent, ComputeExponentForMagnitude, CurrencyDigits, FormatNumericToParts, FormatNumericToString, InitializeNumberFormat, PartitionNumberPattern, SetNumberFormatDigitOptions, SetNumberFormatUnitOptions, ToRawFixed, ToRawPrecision, _formatToParts, PartitionPattern, SupportedLocales, getInternalSlot, getMultiInternalSlots, isLiteralPart, setInternalSlot, setMultiInternalSlots, getMagnitude, defineProperty, isMissingLocaleDataError, RangePatternType, invariant, ToString, ToNumber, TimeClip, ToObject, SameValue, ArrayCreate, HasOwnProperty, Type, Day, WeekDay, DayFromYear, TimeFromYear, YearFromTime, DaysInYear, DayWithinYear, InLeapYear, MonthFromTime, DateFromTime, HourFromTime, MinFromTime, SecFromTime, OrdinaryHasInstance, msFromTime */
+/*! exports provided: _formatToParts, getInternalSlot, getMultiInternalSlots, isLiteralPart, setInternalSlot, setMultiInternalSlots, getMagnitude, defineProperty, isMissingLocaleDataError, invariant, CanonicalizeLocaleList, CanonicalizeTimeZoneName, CoerceOptionsToObject, GetNumberOption, GetOption, GetOptionsObject, SANCTIONED_UNITS, removeUnitNamespace, SIMPLE_UNITS, IsSanctionedSimpleUnitIdentifier, IsValidTimeZoneName, IsWellFormedCurrencyCode, IsWellFormedUnitIdentifier, ComputeExponent, ComputeExponentForMagnitude, CurrencyDigits, FormatNumericToParts, FormatNumericToString, InitializeNumberFormat, PartitionNumberPattern, SetNumberFormatDigitOptions, SetNumberFormatUnitOptions, ToRawFixed, ToRawPrecision, PartitionPattern, SupportedLocales, RangePatternType, ToString, ToNumber, TimeClip, ToObject, SameValue, ArrayCreate, HasOwnProperty, Type, Day, WeekDay, DayFromYear, TimeFromYear, YearFromTime, DaysInYear, DayWithinYear, InLeapYear, MonthFromTime, DateFromTime, HourFromTime, MinFromTime, SecFromTime, OrdinaryHasInstance, msFromTime */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -7234,7 +7234,7 @@ Object.defineProperty(exports, "ResolveLocale", { enumerable: true, get: functio
 /*!**************************************************!*\
   !*** ./node_modules/@formatjs/intl/lib/index.js ***!
   \**************************************************/
-/*! exports provided: defineMessages, defineMessage, createIntlCache, filterProps, DEFAULT_INTL_CONFIG, createFormatters, getNamedFormat, IntlErrorCode, IntlError, UnsupportedFormatterError, InvalidConfigError, MissingDataError, IntlFormatError, MessageFormatError, MissingTranslationError, formatMessage, formatDate, formatDateToParts, formatTime, formatTimeToParts, formatDisplayName, formatList, formatPlural, formatRelativeTime, formatNumber, formatNumberToParts, createIntl */
+/*! exports provided: defineMessages, defineMessage, createIntlCache, filterProps, DEFAULT_INTL_CONFIG, createFormatters, getNamedFormat, formatMessage, formatDate, formatDateToParts, formatTime, formatTimeToParts, formatDisplayName, formatList, formatPlural, formatRelativeTime, formatNumber, formatNumberToParts, createIntl, IntlErrorCode, IntlError, UnsupportedFormatterError, InvalidConfigError, MissingDataError, IntlFormatError, MessageFormatError, MissingTranslationError */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -14255,7 +14255,7 @@ function shallowEqual(objA, objB, compare, compareContext) {
 /*!*****************************************************************!*\
   !*** ./node_modules/@reduxjs/toolkit/dist/redux-toolkit.esm.js ***!
   \*****************************************************************/
-/*! exports provided: __DO_NOT_USE__ActionTypes, applyMiddleware, bindActionCreators, combineReducers, compose, createStore, MiddlewareArray, configureStore, createAction, createAsyncThunk, createDraftSafeSelector, createEntityAdapter, createImmutableStateInvariantMiddleware, createNextState, createReducer, createSelector, createSerializableStateInvariantMiddleware, createSlice, current, findNonSerializableValue, freeze, getDefaultMiddleware, getType, isAllOf, isAnyOf, isAsyncThunkAction, isDraft, isFulfilled, isImmutableDefault, isPending, isPlain, isPlainObject, isRejected, isRejectedWithValue, miniSerializeError, nanoid, original, unwrapResult */
+/*! exports provided: MiddlewareArray, configureStore, createAction, createAsyncThunk, createDraftSafeSelector, createEntityAdapter, createImmutableStateInvariantMiddleware, createNextState, createReducer, createSelector, createSerializableStateInvariantMiddleware, createSlice, current, findNonSerializableValue, freeze, getDefaultMiddleware, getType, isAllOf, isAnyOf, isAsyncThunkAction, isDraft, isFulfilled, isImmutableDefault, isPending, isPlain, isPlainObject, isRejected, isRejectedWithValue, miniSerializeError, nanoid, original, unwrapResult, __DO_NOT_USE__ActionTypes, applyMiddleware, bindActionCreators, combineReducers, compose, createStore */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -34415,7 +34415,7 @@ var defaultTheme = Object(_createMuiTheme__WEBPACK_IMPORTED_MODULE_0__["default"
 /*!********************************************************************************!*\
   !*** ./node_modules/chonky/node_modules/@material-ui/core/esm/styles/index.js ***!
   \********************************************************************************/
-/*! exports provided: hexToRgb, rgbToHex, hslToRgb, decomposeColor, recomposeColor, getContrastRatio, getLuminance, emphasize, fade, darken, lighten, createMuiTheme, unstable_createMuiStrictModeTheme, createStyles, makeStyles, responsiveFontSizes, styled, easing, duration, useTheme, withStyles, withTheme, createGenerateClassName, jssPreset, ServerStyleSheets, StylesProvider, MuiThemeProvider, ThemeProvider */
+/*! exports provided: createMuiTheme, unstable_createMuiStrictModeTheme, createStyles, makeStyles, responsiveFontSizes, styled, useTheme, withStyles, withTheme, createGenerateClassName, jssPreset, ServerStyleSheets, StylesProvider, MuiThemeProvider, ThemeProvider, hexToRgb, rgbToHex, hslToRgb, decomposeColor, recomposeColor, getContrastRatio, getLuminance, emphasize, fade, darken, lighten, easing, duration */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -37832,7 +37832,7 @@ var grid = Object(_compose__WEBPACK_IMPORTED_MODULE_1__["default"])(gridGap, gri
 /*!**********************************************************************************************************!*\
   !*** ./node_modules/chonky/node_modules/@material-ui/core/node_modules/@material-ui/system/esm/index.js ***!
   \**********************************************************************************************************/
-/*! exports provided: borders, border, borderTop, borderRight, borderBottom, borderLeft, borderColor, borderRadius, breakpoints, compose, styleFunctionSx, css, display, flexbox, flexBasis, flexDirection, flexWrap, justifyContent, alignItems, alignContent, order, flex, flexGrow, flexShrink, alignSelf, justifyItems, justifySelf, grid, gridGap, gridColumnGap, gridRowGap, gridColumn, gridRow, gridAutoFlow, gridAutoColumns, gridAutoRows, gridTemplateColumns, gridTemplateRows, gridTemplateAreas, gridArea, palette, color, bgcolor, positions, position, zIndex, top, right, bottom, left, shadows, sizing, width, maxWidth, minWidth, height, maxHeight, minHeight, sizeWidth, sizeHeight, boxSizing, spacing, createUnarySpacing, style, typography, fontFamily, fontSize, fontStyle, fontWeight, letterSpacing, lineHeight, textAlign */
+/*! exports provided: borders, breakpoints, compose, styleFunctionSx, display, flexbox, grid, palette, positions, shadows, sizing, spacing, style, typography, border, borderTop, borderRight, borderBottom, borderLeft, borderColor, borderRadius, css, flexBasis, flexDirection, flexWrap, justifyContent, alignItems, alignContent, order, flex, flexGrow, flexShrink, alignSelf, justifyItems, justifySelf, gridGap, gridColumnGap, gridRowGap, gridColumn, gridRow, gridAutoFlow, gridAutoColumns, gridAutoRows, gridTemplateColumns, gridTemplateRows, gridTemplateAreas, gridArea, color, bgcolor, position, zIndex, top, right, bottom, left, width, maxWidth, minWidth, height, maxHeight, minHeight, sizeWidth, sizeHeight, boxSizing, createUnarySpacing, fontFamily, fontSize, fontStyle, fontWeight, letterSpacing, lineHeight, textAlign */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -48612,7 +48612,7 @@ function hoverAllTargets(targetIds, monitor, registry) {
 /*!******************************************************************!*\
   !*** ./node_modules/dnd-core/dist/esm/actions/dragDrop/index.js ***!
   \******************************************************************/
-/*! exports provided: INIT_COORDS, BEGIN_DRAG, PUBLISH_DRAG_SOURCE, HOVER, DROP, END_DRAG, createDragDropActions */
+/*! exports provided: createDragDropActions, INIT_COORDS, BEGIN_DRAG, PUBLISH_DRAG_SOURCE, HOVER, DROP, END_DRAG */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -50983,7 +50983,7 @@ function n(n){for(var r=arguments.length,t=Array(r>1?r-1:0),e=1;e<r;e++)t[e-1]=a
 /*!******************************************************!*\
   !*** ./node_modules/intl-messageformat/lib/index.js ***!
   \******************************************************/
-/*! exports provided: PART_TYPE, isFormatXMLElementFn, formatToParts, IntlMessageFormat, ErrorCode, FormatError, InvalidValueError, InvalidValueTypeError, MissingValueError, default */
+/*! exports provided: default, PART_TYPE, isFormatXMLElementFn, formatToParts, IntlMessageFormat, ErrorCode, FormatError, InvalidValueError, InvalidValueTypeError, MissingValueError */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -87082,7 +87082,7 @@ var useStore = /*#__PURE__*/createStoreHook();
 /*!**********************************************!*\
   !*** ./node_modules/react-redux/es/index.js ***!
   \**********************************************/
-/*! exports provided: Provider, connectAdvanced, ReactReduxContext, connect, useDispatch, createDispatchHook, useSelector, createSelectorHook, useStore, createStoreHook, shallowEqual, batch */
+/*! exports provided: batch, Provider, connectAdvanced, ReactReduxContext, connect, useDispatch, createDispatchHook, useSelector, createSelectorHook, useStore, createStoreHook, shallowEqual */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -93640,7 +93640,7 @@ function warning(condition, message) {
   let hash = '<unknown>';
   let options;
   try {
-    options = {"compress":null,"historyFallback":false,"hmr":true,"host":null,"liveReload":false,"log":{"level":"info","prefix":{"template":"{{level}}"},"name":"webpack-plugin-serve"},"open":true,"port":8001,"progress":true,"secure":false,"static":["/Users/ekwan/research/rainbow/rainbow_components"],"status":true,"address":"[::]:8001","compilerName":null,"wpsId":"1fac212"};
+    options = {"compress":null,"historyFallback":false,"hmr":true,"host":null,"liveReload":false,"log":{"level":"info","prefix":{"template":"{{level}}"},"name":"webpack-plugin-serve"},"open":true,"port":8001,"progress":true,"secure":false,"static":["/Users/kwaneu/research/rainbow/rainbow_components"],"status":true,"address":"[::]:8001","compilerName":null,"wpsId":"115de54"};
   } catch (e) {
     const { log } = __webpack_require__(/*! ./lib/client/log */ "./node_modules/webpack-plugin-serve/lib/client/log.js");
     log.error(
@@ -95075,8 +95075,7 @@ function FilePicker(props) {
     onFileAction: handleFileAction,
     defaultFileViewActionId: chonky__WEBPACK_IMPORTED_MODULE_0__["ChonkyActions"].EnableListView.id,
     disableDefaultFileActions: actionsToDisable,
-    disableSelection: !multipleSelectionAllowed,
-    height: 200
+    disableSelection: !multipleSelectionAllowed
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(chonky__WEBPACK_IMPORTED_MODULE_0__["FileNavbar"], null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(chonky__WEBPACK_IMPORTED_MODULE_0__["FileToolbar"], null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(chonky__WEBPACK_IMPORTED_MODULE_0__["FileList"], null)));
 }
 ;

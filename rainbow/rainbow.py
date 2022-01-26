@@ -6,7 +6,7 @@ import json, copy
 from rainbow_components import FilePicker
 import filemap as fm
 
-file_map = fm.initialize("/Users/ekwan/research/rainbow/data")
+file_map = fm.initialize("../data")
 
 app = dash.Dash(__name__)
 

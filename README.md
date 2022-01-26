@@ -5,11 +5,15 @@ Eugene Kwan and Evan Shi
 
 # Installation
 
-- ensure node is installed
+- create Python virtual environment called `dash` with python, pandas, dash, dash-bootstrap-components, and virtualenv
+- ensure node is installed (download from website)
+- go into `rainbow_components` and run `npm install`
 - `npm start` inside `rainbow_components` to try the React file picker on its own
 - code is in `src/lib/components`
-- to compile the react component for Dash, `conda deactivate` if a Python environment is active
+- to install the react component into dash, start by creating a special virtual environment: `virtualenv venv`
+- `conda deactivate` if a Python environment is active
 - `source venv/bin/activate` in the `rainbow_components` folder
+- `pip install -r requirements.txt`
 - `npm run build:backends`
 - `npm run build:js`
 - `deactivate`

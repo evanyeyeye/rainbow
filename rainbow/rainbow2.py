@@ -42,7 +42,7 @@ class Peak():
 		return peak
 
 # load some dummy data
-df = pd.read_csv("/Users/ekwan/research/rainbow/data/round2/A2Rd2_01/Export_58838.arw", skiprows=4, header=None)
+df = pd.read_csv("../data/round2/A2Rd2_01/Export_58838.arw", skiprows=4, header=None)
 df.columns=["time","intensity"]
 
 # redraws the chromatogram
