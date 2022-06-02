@@ -23,7 +23,6 @@ def read(filepath):
     # data folders
     if os.path.isdir(filepath): 
         if ext == ".d":
-            print(os.path.join(filepath, find_ext(filepath, ".uv")))
             return agilent.AgilentUV(os.path.join(filepath, find_ext(filepath, ".uv")))
         elif ext == ".raw":
             raise NotImplementedError 
