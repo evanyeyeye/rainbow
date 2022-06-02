@@ -1,4 +1,4 @@
-from chromatogram import Chromatogram 
+from parser.chromatogram import Chromatogram 
 import numpy as np
 import struct
 
@@ -47,7 +47,6 @@ class AgilentUV(Chromatogram):
         # Sets the total number of x-axis values (or rows) for the array.
         f.seek(offsets["number of data points"])
         num_data_points = struct.unpack(">i", f.read(4))[0]
-        print(num_data_points)
 
         times = np.zeros(num_data_points, np.uint64)
 

@@ -1,7 +1,7 @@
 import struct
 import os
 import pathlib
-import agilent 
+import parser.agilent 
 
 
 def find_ext(dir, ext):
