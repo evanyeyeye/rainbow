@@ -18,7 +18,7 @@ def read(filepath):
     # csv file
     # todo: check if the file is a csv by actually parsing it
     if os.path.isfile(filepath) and ext == ".csv":
-        return 1
+        raise NotImplementedError
 
     # data folders
     if os.path.isdir(filepath): 
