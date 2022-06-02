@@ -22,3 +22,7 @@ class Chromatogram(ABC):
     def get_metadata():
         pass
 
+    @abstractmethod
+    def extract_traces(detector, labels):
+        pass
+
