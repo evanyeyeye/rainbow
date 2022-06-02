@@ -29,3 +29,7 @@ class Chromatogram(ABC):
     @abstractmethod
     def export_csv(filename, detector, labels, delimiter):
         pass 
+
+    @abstractmethod
+    def plot(detector, label):
+        pass

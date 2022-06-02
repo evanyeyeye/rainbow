@@ -1,5 +1,6 @@
 from parser.chromatogram import Chromatogram 
 import numpy as np
+import matplotlib.pyplot as plt
 import struct
 
 
@@ -119,6 +120,11 @@ class AgilentUV(Chromatogram):
     # TODO: add headers
     # TODO: all detector/label option
     def export_csv(self, filename, detector, labels, delimiter=","):
-        
         traces = self.extract_traces(detector, labels)
         np.savetxt(filename, np.transpose(traces), delimiter=delimiter, fmt="%i")
+
+    # TODO: add more args 
+    # TODO: add multiple labels
+    def plot(self, detector, label):
+        plt.plot(self.X, np.transpose(self.extract_traces(detector, label)))
+        plt.show()
