@@ -96,3 +96,23 @@ class AgilentUV(Chromatogram):
 
     def get_metadata(self):
         return self.metadata
+
+    # TODO: error handling
+    def extract_traces(self, detector, labels):
+        
+        if isinstance(labels, int): 
+            labels = [labels]
+       
+        detector_i = self.detectors.index(detector)
+        tp = np.transpose(self.Y[detector_i])
+        
+        traces = np.zeros((len(labels), self.X.size), np.int64)
+        for i in range(len(labels)): 
+            label_i = np.where(self.Ylabels[detector_i] == labels[i])[0][0]
+            cur_trace = tp[label_i]
+            for j in range(cur_trace.size):
+                traces[i, j] = cur_trace[j]
+
+        return traces
+ 
+
