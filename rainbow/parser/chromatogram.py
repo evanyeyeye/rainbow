@@ -26,3 +26,6 @@ class Chromatogram(ABC):
     def extract_traces(detector, labels):
         pass
 
+    @abstractmethod
+    def export_csv(filename, detector, labels, delimiter):
+        pass 

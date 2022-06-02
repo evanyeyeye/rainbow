@@ -1,5 +1,6 @@
 from parser.chromatogram import Chromatogram 
 import numpy as np
+import pandas as pd
 import struct
 
 
@@ -115,4 +116,9 @@ class AgilentUV(Chromatogram):
 
         return traces
  
-
+    # TODO: encoding arg
+    # TODO: add headers
+    def export_csv(self, filename, detector, labels, delimiter=","):
+        
+        traces = self.extract_traces(detector, labels)
+        np.savetxt(filename, np.transpose(traces), delimiter=delimiter, fmt="%i")
