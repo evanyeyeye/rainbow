@@ -25,4 +25,4 @@ def read(filepath):
         if ext == ".d":
             return agilent.AgilentUV(os.path.join(filepath, find_ext(filepath, ".uv")))
         elif ext == ".raw":
-            raise NotImplementedError 
+            raise NotImplementedError       
