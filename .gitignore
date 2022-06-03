@@ -1,4 +1,7 @@
-   
+__pycache__/
+docs/_build/*
+docs/_autosummary/*
+
 .DS_STORE
 node_modules
 scripts/flow/*/.flowconfig
@@ -24,7 +27,7 @@ chrome-user-data
 .vscode
 *.swp
 *.swo
-__pycache__/
+
 
 packages/react-devtools-core/dist
 packages/react-devtools-extensions/chrome/build
