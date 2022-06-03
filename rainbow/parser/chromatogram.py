@@ -12,7 +12,6 @@ class Chromatogram(ABC):
     This class should not be instantiated on its own.
 
     """
-
     def __init__(self, filepath):
         self.X = None 
         self.Y = None 

@@ -5,17 +5,52 @@ import struct
 
 
 class AgilentUV(Chromatogram):
+    """
+    Class representing the data from a Agilent .UV file. 
 
+    Details about this file format are available :ref:`here <agilentuv>`. 
+
+    The available metadata includes: 
+
+    - vendor: Agilent.
+    - instrument: HPLC. 
+    - notebook: Lab notebook and sample number.
+    - date: Date and time measurement was taken.
+    - method: Method of data acquisition.
+    - unit: Y-axis units.
+    - datatype: Type of data. 
+    - position: Drawer and vial position. 
+
+    """
     def __init__(self, filepath):
         self.parse(filepath)
 
     def read_string(self, f, offset):
+        """
+        Returns the string at the specified offset in the file header.
+
+        This function is primarily useful for retrieving metadata. 
+
+        Args:
+            f (_io.BufferedReader): File opened in 'rb' mode. 
+            offset (int): Offset to begin reading from. 
+
+        """
         f.seek(offset)
         length = struct.unpack("<B", f.read(1))[0] * 2
         return f.read(length)[::2].decode()
 
     def extract_metadata(self, f):
+        """
+        Helper function that extracts metadata from the file header. 
 
+        Args:
+            f (_io.BufferedReader): File opened in 'rb' mode.
+
+        Returns:
+            dict: Dictionary containing metadata as string key-value pairs. 
+
+        """
         offsets = {
             "notebook": 0x35A,
             "date": 0x957,
@@ -37,7 +72,18 @@ class AgilentUV(Chromatogram):
     # Completely parse file at the start
     # so future operations do not require the file
     def parse(self, filepath):
+        """
+        Parses all relevant data from the data file. 
 
+        This function is called by the constructor and performs all necessary processing 
+        on the data file. As such, the data file is only ever opened once. 
+
+        Sets ``self.X``, ``self.Y``, ``self.Ylabels``, ``self.detectors``, and ``self.metadata``. 
+
+        Args:
+            filepath (str): Path to .UV data file. 
+
+        """
         offsets = {
             "number of data points": 0x116,
             "start of data body": 0x1000
@@ -82,6 +128,11 @@ class AgilentUV(Chromatogram):
         self.metadata = self.extract_metadata(f)
 
         f.close()
+
+    """ 
+    Documentation for the following functions can be found in chromatogram.py (parent). 
+    
+    """
 
     # TODO: error handling
     def extract_traces(self, detector, labels):
