@@ -5,6 +5,10 @@ import parser.agilent
 
 
 def find_ext(dir, ext):
+    """
+    Helper function to find the file in directory with the specified extension
+    """
+
     found = [fn for fn in os.listdir(dir) if fn.lower().endswith(ext)]
     assert (len(found) == 1)
     return found[0]
@@ -12,6 +16,13 @@ def find_ext(dir, ext):
 # Tries to automatically identifies filetype
 # Currently relies on file extension to do so
 def read(filepath):
+    """
+    Function to read chromatogram data folders. 
+
+    This function is the main way to use the package. 
+    
+    Returns a Chromatogram object based on filetype. 
+    """
 
     ext = os.path.splitext(filepath)[1].lower() 
     

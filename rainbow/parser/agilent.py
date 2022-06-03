@@ -83,21 +83,6 @@ class AgilentUV(Chromatogram):
 
         f.close()
 
-    def get_X(self):
-        return self.X
-    
-    def get_Y(self):
-        return self.Y
-
-    def get_Ylabels(self):
-        return self.Ylabels 
-
-    def get_detectors(self):
-        return self.detectors
-
-    def get_metadata(self):
-        return self.metadata
-
     # TODO: error handling
     def extract_traces(self, detector, labels):
         

@@ -2,25 +2,20 @@ from abc import ABC, abstractmethod
 
 class Chromatogram(ABC):
 
-    @abstractmethod 
-    def get_X():
-        pass
+    def get_X(self):
+        return self.X
     
-    @abstractmethod 
-    def get_Y():
-        pass
+    def get_Y(self):
+        return self.Y
 
-    @abstractmethod 
-    def get_Ylabels():
-        pass
+    def get_Ylabels(self):
+        return self.Ylabels 
 
-    @abstractmethod 
-    def get_detectors():
-        pass
+    def get_detectors(self):
+        return self.detectors
 
-    @abstractmethod
-    def get_metadata():
-        pass
+    def get_metadata(self):
+        return self.metadata
 
     @abstractmethod
     def extract_traces(detector, labels):
