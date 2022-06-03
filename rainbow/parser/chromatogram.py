@@ -2,6 +2,13 @@ from abc import ABC, abstractmethod
 
 class Chromatogram(ABC):
 
+    def __init__(self, filepath):
+        self.X = None 
+        self.Y = None 
+        self.Ylabels = None 
+        self.detectors = None 
+        self.metadata = None
+
     def get_X(self):
         return self.X
     
