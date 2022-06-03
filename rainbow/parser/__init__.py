@@ -1,6 +1,5 @@
 import struct
 import os
-import pathlib
 import parser.agilent 
 
 
