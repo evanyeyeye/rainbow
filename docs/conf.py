@@ -41,10 +41,18 @@ release = '1.0'
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
-    'sphinx.ext.napoleon'
+    'sphinx.ext.napoleon',
+    'sphinx.ext.viewcode'
 ]
 
 autosummary_generate = True
+
+autodoc_default_options = {
+    'members': True, 
+    'undoc-members': True, 
+    'show-inheritance': True, 
+    'inherited-members': True
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
