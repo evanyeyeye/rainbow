@@ -1,3 +1,5 @@
+.. _agilentuv:
+
 Agilent Chemstation .UV
 =======================
 
