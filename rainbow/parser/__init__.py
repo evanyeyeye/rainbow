@@ -1,16 +1,7 @@
 import struct
 import os
-import parser.agilent 
+from parser.agilent import Agilent
 
-
-def find_ext(dir, ext):
-    """
-    Helper function to find the file in the directory with the specified extension.
-
-    """
-    found = [fn for fn in os.listdir(dir) if fn.lower().endswith(ext)]
-    assert (len(found) == 1)
-    return found[0]
 
 # Tries to automatically identifies filetype
 # Currently relies on file extension to do so
@@ -33,6 +24,6 @@ def read(filepath):
     # data folders
     if os.path.isdir(filepath): 
         if ext == ".d":
-            return agilent.AgilentUV(os.path.join(filepath, find_ext(filepath, ".uv")))
+            return Agilent(filepath)
         elif ext == ".raw":
             raise NotImplementedError       
