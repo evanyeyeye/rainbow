@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 
-
+# TODO: require exact arguments
 class Chromatogram(ABC):
     """
-    Abstract class representing a chromatogram.
+    Abstract class representing a chromatogram data folder.
 
     This class contains all public methods that may be useful to a user. 
     The abstract methods are implemented differently by each vendor-specific class
@@ -13,61 +13,53 @@ class Chromatogram(ABC):
 
     """
     def __init__(self, filepath):
-        self.X = None 
-        self.Y = None 
-        self.Ylabels = None 
         self.detectors = None 
+        self.xlabels = None 
+        self.ylabels = None 
+        self.data = None
         self.metadata = None
-
-    def get_X(self):
-        """
-        Returns a 1D integer numpy array containing the X-axis retention times (in milliseconds).
-
-        """
-        return self.X
-    
-    def get_Y(self):
-        """
-        Returns a 3D integer numpy array containing the data values. 
-
-        Each inner 2D array corresponds to the detector at the same index in ``get_detectors()``. 
-        Inside, each row contains the data taken at the time with the same index in ``get_X()``. 
-
-        NOTE: This may need to be changed to a dictionary mapping detector names to 2D arrays.
-
-        """
-        return self.Y
-
-    def get_Ylabels(self):
-        """
-        Returns a 2D integer numpy array containing the Y-axis labels. 
-
-        Each row corresponds to the detector at the same index in ``get_detectors()``. 
-
-        NOTE: This may need to be changed to a dictionary mapping detector names to 1d arrays. 
-
-        """
-        return self.Ylabels 
 
     def get_detectors(self):
         """
         Returns a string list containing all detectors present in the file. 
 
-        Possible values are: 'UV', 'MS', 'CAD', 'ELSD', 'FID'
+        Possible values are: 'UV', 'MS', 'FID', 'CAD', 'ELSD'
 
         """
         return self.detectors
 
-    def get_metadata(self):
+    def get_xlabels(self, detector):
         """
-        Returns a dictionary containing file metadata as key-value pairs.
+        Returns a 1D numpy integer array containing the X-axis retention times (in milliseconds) for the specified detector.
+
+        """
+        return self.xlabels[detector]
+    
+    def get_ylabels(self, detector):
+        """
+        Returns a 1D numpy integer array containing the Y-axis labels for the specified detector.
+
+        """
+        return self.ylabels[detector]
+
+    def get_data(self, detector):
+        """
+        Returns a 2D numpy integer array containing the data values for the specified detector.
+    
+        The rows correspond to the X-axis times and the columns correspond to the Y-axis labels.
+
+        """
+        return self.data[detector]
+
+    def get_metadata(self, detector):
+        """
+        Returns a dictionary containing file metadata as key-value pairs for the specified detector.
  
-        The metadata available is based on the implementing class (vendor). 
+        The metadata available is based on the vendor and filetype.  
 
         """
-        return self.metadata
+        return self.metadata[detector]
 
-    # TODO: require arguments in abstract methods
     @abstractmethod
     def extract_traces(self, detector, labels):
         """
