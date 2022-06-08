@@ -4,7 +4,45 @@ import matplotlib.pyplot as plt
 import struct
 
 
-class AgilentUV(Chromatogram):
+class Agilent(Chromatogram):
+
+    def read_string(self, f, offset):
+        """
+        Returns the string at the specified offset in the file header.
+
+        This function is primarily useful for retrieving metadata. 
+
+        Args:
+            f (_io.BufferedReader): File opened in 'rb' mode. 
+            offset (int): Offset to begin reading from. 
+
+        """
+        f.seek(offset)
+        length = struct.unpack("<B", f.read(1))[0] * 2
+        return f.read(length)[::2].decode()
+    
+    def extract_metadata(self, f, offsets):
+        """
+        Helper function that extracts metadata from the file header. 
+
+        Args:
+            f (_io.BufferedReader): File opened in 'rb' mode.
+
+        Returns:
+            dict: Dictionary containing metadata as string key-value pairs. 
+
+        """
+
+        metadata = {}
+        metadata["vendor"] = "agilent"
+
+        for key, value in offsets.items():
+            metadata[key] = self.read_string(f, value)
+        
+        return metadata
+
+
+class AgilentUV(Agilent):
     """
     Class representing the data from a Agilent .UV file. 
 
@@ -24,50 +62,6 @@ class AgilentUV(Chromatogram):
     """
     def __init__(self, filepath):
         self.parse(filepath)
-
-    def read_string(self, f, offset):
-        """
-        Returns the string at the specified offset in the file header.
-
-        This function is primarily useful for retrieving metadata. 
-
-        Args:
-            f (_io.BufferedReader): File opened in 'rb' mode. 
-            offset (int): Offset to begin reading from. 
-
-        """
-        f.seek(offset)
-        length = struct.unpack("<B", f.read(1))[0] * 2
-        return f.read(length)[::2].decode()
-
-    def extract_metadata(self, f):
-        """
-        Helper function that extracts metadata from the file header. 
-
-        Args:
-            f (_io.BufferedReader): File opened in 'rb' mode.
-
-        Returns:
-            dict: Dictionary containing metadata as string key-value pairs. 
-
-        """
-        offsets = {
-            "notebook": 0x35A,
-            "date": 0x957,
-            "method": 0xA0E,
-            "unit": 0xC15,
-            "datatype": 0xC40,
-            "position": 0xFD7
-        }
-
-        metadata = {}
-        metadata["vendor"] = "agilent"
-        metadata["instrument"] = "HPLC"
-
-        for key, value in offsets.items():
-            metadata[key] = self.read_string(f, value)
-        
-        return metadata
 
     # Completely parse file at the start
     # so future operations do not require the file
@@ -100,6 +94,7 @@ class AgilentUV(Chromatogram):
         # Get the number of wavelengths using the header for the first data segment.
         f.seek(offsets["start of data body"] + 8)
         wavelength_range = tuple(num // 20 for num in struct.unpack("<HHH", f.read(6)))
+        print(wavelength_range)
         wavelengths = np.arange(wavelength_range[0], wavelength_range[1] + 1, wavelength_range[2])
         num_wavelengths = wavelengths.size
 
@@ -121,11 +116,24 @@ class AgilentUV(Chromatogram):
                 else: accum += check_val
                 absorbances[i, j] = accum
 
+        print(f.tell())
         self.X = times 
         self.Y = np.array([absorbances])
         self.Ylabels = np.array([wavelengths])
         self.detectors = ["UV"]
-        self.metadata = self.extract_metadata(f)
+
+        # Extract metadata
+        metadata_offsets = {
+            "notebook": 0x35A,
+            "date": 0x957,
+            "method": 0xA0E,
+            "unit": 0xC15,
+            "datatype": 0xC40,
+            "position": 0xFD7
+        }
+
+        self.metadata = self.extract_metadata(f, metadata_offsets)
+        self.metadata["instrument"] = "HPLC"
 
         f.close()
 
