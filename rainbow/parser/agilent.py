@@ -31,14 +31,14 @@ class Agilent(Chromatogram):
     def parse_uv(self, filepath):
         
         data_offsets = {
-            'time range': 0x11A,
-            'data body': 0x1800
+            'time': 0x11A,
+            'body': 0x1800
         }
 
         f = open(filepath, 'rb')
         
         # Extract data values.
-        f.seek(data_offsets['data body'])
+        f.seek(data_offsets['body'])
         
         data_array = deque()
         num_data_points = 0
@@ -60,18 +60,18 @@ class Agilent(Chromatogram):
                 data_array.append(accum)
 
         # Calculate the x-axis labels (retention time). 
-        f.seek(data_offsets['time range'])
+        f.seek(data_offsets['time'])
         start_time, end_time = struct.unpack('>II', f.read(8))
-        delta_time = int((end_time - start_time) / (num_data_points - 1))
+        delta_time = (end_time - start_time) // (num_data_points - 1)
         times = np.arange(start_time, end_time + 1, delta_time)
 
         # Extract the y-axis label (signal).
         signal_str = self.read_string(f, 0x1075)
         signal = int(signal_str.split("Sig=")[1].split('.')[0])
 
-        self.xlabels['uv'] = times
-        self.ylabels['uv'] = np.array([signal])
-        self.data['uv'] = np.array(data_array)
+        self.xlabels['UV'] = times
+        self.ylabels['UV'] = np.array([signal])
+        self.data['UV'] = np.array(data_array)
         
         # Extract metadata
         metadata_offsets = {
@@ -83,10 +83,47 @@ class Agilent(Chromatogram):
             'signal': 0x1075 
         }
 
-        self.metadata['uv'] = self.extract_metadata(f, metadata_offsets)
+        self.metadata['UV'] = self.extract_metadata(f, metadata_offsets)
     
     def parse_fid(self, filepath):
-        pass
+        
+        data_offsets = {
+            'info': 0x116,
+            'body': 0x1800
+        }
+        
+        f = open(filepath, 'rb')
+
+        f.seek(data_offsets['info'])
+        num_data_points = struct.unpack(">I", f.read(4))[0]
+        
+        start_time = int(struct.unpack(">f", f.read(4))[0])
+        end_time = int(struct.unpack(">f", f.read(4))[0])
+        delta_time = (end_time - start_time) // (num_data_points - 1)
+        times = np.arange(start_time, end_time + 1, delta_time)
+
+        # Extract data values.
+        f.seek(data_offsets['body'])
+
+        data_array = np.empty(num_data_points, dtype=int)
+        for i in range(num_data_points):
+            data_array[i] = struct.unpack("<d", f.read(8))[0]
+
+        self.xlabels['FID'] = times
+        self.ylabels['FID'] = np.array(['TIC'])
+        self.data['FID'] = data_array
+
+        # Extract metadata
+        metadata_offsets = {
+            'notebook': 0x35A, 
+            'date': 0x957, 
+            'method': 0xA0E, 
+            'instrument': 0xC11, 
+            'unit':  0x104C, 
+            'signal': 0x1075 
+        }
+
+        self.metadata['FID'] = self.extract_metadata(f, metadata_offsets)
     
     def parse_ms(self, filepath):
         pass
