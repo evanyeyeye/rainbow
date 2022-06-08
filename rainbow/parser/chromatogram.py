@@ -37,7 +37,7 @@ class Chromatogram(ABC):
     
     def get_ylabels(self, detector):
         """
-        Returns a 1D numpy integer array containing the Y-axis labels for the specified detector.
+        Returns a 1D numpy array containing the Y-axis labels for the specified detector.
 
         """
         return self.ylabels[detector]
