@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone="yes"?>
+<AuditTrailDataSet xmlns="http://tempuri.org/AuditTrailDataSet.xsd">
+  <AuditTrailEntry>
+    <ID>0</ID>
+    <ComputerName>USBMMRLAB0841</ComputerName>
+    <User>system</User>
+    <TimeStamp>2019-12-17T09:51:33.4474823-05:00</TimeStamp>
+    <Reason>none defined</Reason>
+    <Comment>Created New Method: HP-5MS_HTAchiral_da_100-300_simscan.M</Comment>
+  </AuditTrailEntry>
+  <LoggableModification>
+    <AuditLogEntryID>0</AuditLogEntryID>
+    <LoggableModificationID>0</LoggableModificationID>
+    <ChangeDescription>Initial Version</ChangeDescription>
+  </LoggableModification>
+</AuditTrailDataSet>

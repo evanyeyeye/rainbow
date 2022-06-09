@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Contents>
+  <Version>3</Version>
+  <!--Acquisition Time should be in ISO 8601 format, showing the offset from UTC of-->
+  <!--the time zone where the data was acquired.  Example "2005-09-20T21:53:39-08:00"-->
+  <AcquiredTime>2019-12-17T10:04:56.8446838-05:00</AcquiredTime>
+  <!--AcqStatus (0 = Init / 1 = Start / 2 = End)-->
+  <AcqStatus>2</AcqStatus>
+  <InstrumentName>5977B GCMS</InstrumentName>
+  <!--LockedMode (0 = False / -1 = True)-->
+  <LockedMode>0</LockedMode>
+  <!--MeasurementType 0 - Unknown / 1- Infusion / 2 - Chromatographic-->
+  <MeasurementType>2</MeasurementType>
+  <!--SeparationTechnique (Unspecified = 0, None = 1, GC  = 2, LC = 3, CE = 4)-->
+  <SeparationTechnique>2</SeparationTechnique>
+  <AcqSoftwareVersion>MassHunter GC/MS Acquisition  B.07.06.2704  18-Jul-2017  Copyright © 1989-2017 Agilent Technologies, Inc.</AcqSoftwareVersion>
+</Contents>

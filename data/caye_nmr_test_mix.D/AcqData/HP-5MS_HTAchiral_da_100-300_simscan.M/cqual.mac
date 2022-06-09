@@ -1,0 +1,7 @@
+! Substitute your own reporting code here if desired in lieu
+! of a call to the system standard qualitative report routines.
+
+name QualAnalysis
+  macro _macropath$ + "qual_rpt.mac",g
+  remove QualAnalysis
+

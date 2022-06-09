@@ -1,0 +1,37 @@
+﻿Additional Information for IC_Default.m
+File created Tue Sep 20 19:17:52 2016
+
+Method : D:\MassHunter\GCMS\1\methods\default.m
+Renamed: D:\MassHunter\GCMS\1\methods\INCH\IC_Default.m
+Tue Sep 20 19:17:53 2016
+-----------------------------------------
+
+Method : D:\MassHunter\Methods\Residual_Solvent.M
+Renamed: D:\MassHunter\Methods\Residual_Solvent_FID.M
+Mon Feb 04 15:24:11 2019
+-----------------------------------------
+
+Method : D:\MassHunter\Methods\Residual_Solvent_FID.M
+Renamed: D:\MassHunter\Methods\Residual_Solvent_FID_MS_Helium.M
+Tue Feb 05 13:26:49 2019
+-----------------------------------------
+
+Method : D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen.M
+Renamed: D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD.M
+Tue Feb 05 14:56:27 2019
+-----------------------------------------
+
+Method : D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD.M
+Renamed: D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD_22Aug19.M
+Thu Aug 22 15:13:15 2019
+-----------------------------------------
+
+Method : D:\MassHunter\Methods\Sample analysis_23Oct19.M
+Renamed: D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+Fri Dec 13 09:34:19 2019
+-----------------------------------------
+
+Method : D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+Renamed: D:\MassHunter\Methods\HP-5MS_HTAchiral_da_100-300_simscan.M
+Tue Dec 17 09:51:31 2019
+-----------------------------------------

@@ -1,0 +1,6 @@
+﻿Name LastDataFile
+  LastDataPath$ = "D:\MassHunter\Data\Sample Analysis\17Dec2019\" 
+  LastDataFile$ = "NMRmix_17Dec2019.d" 
+  LastDataSize  = 3495420
+  remove LastDataFile
+  return

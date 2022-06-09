@@ -1,0 +1,12 @@
+<AutomationInfo>
+    <WorklistAutomation>1</WorklistAutomation>
+    <Version>2.0</Version>
+    <ProgramExecutions>
+        <ProgramExecution>
+            <ProgramRegistryKey>Software\Agilent\MassHunter\Workstation\Qual\AutomationHome</ProgramRegistryKey>
+            <ProgramPath>Bin\QualAutomation.exe</ProgramPath>
+            <ProgramParameters />
+            <TimeOut>0</TimeOut>
+        </ProgramExecution>
+    </ProgramExecutions>
+</AutomationInfo>

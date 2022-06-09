@@ -1,0 +1,34 @@
+
+!  Detailed Report Print options
+!  Set the options for the desired output
+Name TEMP
+p_founds = 0     ! 0=print all spectra and/or EICP, 1 = print spectra for 
+                 !   compounds considered as founds
+p_istd   = 0     ! 1=Print spectra for ISTD's
+p_surr   = 0     ! 1=Print spectra for Surrogates (compound type = S)
+p_mdl    = 0.0   ! Minimum Reporting Limit. Compounds with concentrations
+                 ! less than this value will be considered not found
+p_qual   = 1     ! report compounds whose qualifiers are out of range as 
+                 ! hits.  0 = do not report out of range as hit.
+                 !        1 = report out of range as hit
+p_scan   = 0     ! include scan# or quant ion in summary report
+                 ! 0 = quant ion 
+                 ! 1 = scan number
+p_sumsec = 0     ! Include secondary hits in the summary report
+                 ! 0 = Do not include
+                 ! 1 = Include
+p_detail = 0     ! 0 = scan detailed report
+                 ! 1 = sim  detailed report
+tic_pages = 1    ! x = number of pages for printing of Total Ion 
+                 !     chromatogram.  0 = Do Not Print TIC
+p_scaletime = 0.0  ! Use largest peak after scaletime for y scale
+p_scaletime2 = 0.0  ! Use largest peak after scaletime for y scale GC sig1
+p_scaletime3 = 0.0  ! Use largest peak after scaletime for y scale GC sig2
+istd_dil = 0     ! Apply multiplier to Internal Standards
+surr_dil = 1     ! Apply multiplier to Surrogates
+targ_dil = 1     ! Apply multiplier to Target compounds
+p_ionratio = 0   ! Include detailed spectral evaluation report
+p_format = 0     ! Print the chromatograms in Portrait(0),Landscape(1) Mode
+p_labels = 1     ! Print labels
+p_mdl_compound = 0 ! Global (0) or Compound Specific (1) mdl evaluation
+rem Temp

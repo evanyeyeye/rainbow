@@ -1,0 +1,5 @@
+!   G1701BA Version B.01.00 Copyright (c) Hewlett-Packard 1998
+!   MS
+Name ENVVERSION
+  ENVMETHVER = 3.2
+remove envversion

@@ -1,0 +1,1638 @@
+<Method>
+    <Parameter id="MethodName">
+        <Value>default.m</Value>
+    </Parameter>
+    <Parameter id="OriginalMethodLocation">
+        <Value>InMemoryMethod</Value>
+    </Parameter>
+    <Parameter id="ExactCopyOfOriginal">
+        <Value>true</Value>
+    </Parameter>
+    <Parameter id="factoryInstalledMethod">
+        <Value>false</Value>
+    </Parameter>
+    <Parameter id="VersionNumber">
+        <Value>8010</Value>
+        <Limits />
+        <XUnits>Unspecified</XUnits>
+        <DataValueType>Unspecified</DataValueType>
+        <PrecisionType>DigitsAfterDecimal</PrecisionType>
+        <PrecisionDigits>2</PrecisionDigits>
+        <ConversionSupport>None</ConversionSupport>
+    </Parameter>
+    <Method>
+        <ParameterSet usagekey="DAReportCommand" displayName="Automation report options" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetReportCommand">
+            <Parameters>
+                <Parameter id="UseDefaultFilename">
+                    <DisplayName>Auto-generate folder at data file location</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="ReportDestination">
+                    <DisplayName>Report destination</DisplayName>
+                    <Value>Print</Value>
+                </Parameter>
+                <Parameter id="DestinationPath">
+                    <DisplayName>Printer name:</DisplayName>
+                    <Value>&lt;Default&gt;</Value>
+                </Parameter>
+                <Parameter id="ResultsToInclude">
+                    <DisplayName>Results to include:</DisplayName>
+                    <Value>HighlightedResults</Value>
+                </Parameter>
+                <Parameter id="SpectralPeakLimit">
+                    <DisplayName>Maximum number of spectral peaks:</DisplayName>
+                    <Value>10</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                        <Maximum type="Inclusive">9223372036854775807</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SpectralPeakLimitFlag">
+                    <DisplayName>Limit spectral peaks:</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="OnlyVisibleColumns">
+                    <DisplayName>Only Visible Columns</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="ShowOverlayedSignals">
+                    <DisplayName>Show overlaid signals</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="ChromagtogramAnchoredMode">
+                    <DisplayName>Chromagtogram Anchored Mode</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="UseBlockingCall">
+                    <DisplayName>Use Blocking Call</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="ReportContents">
+                    <DisplayName>Report contents</DisplayName>
+                    <Value>AllDataItems</Value>
+                </Parameter>
+                <Parameter id="DataItemID">
+                    <Value>-1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">-1</Minimum>
+                        <Maximum type="Inclusive">9223372036854775807</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SelectedTemplate">
+                    <DisplayName>Selected Template</DisplayName>
+                    <Value>Single Analysis</Value>
+                </Parameter>
+                <Parameter id="OverwriteExistingData">
+                    <DisplayName>Overwrite existing data</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="TopPlotID">
+                    <Value>-1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">-1</Minimum>
+                        <Maximum type="Inclusive">9223372036854775807</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="ColumnNames">
+                    <DisplayName>Column Names</DisplayName>
+                    <Default />
+                    <Value />
+                </Parameter>
+                <Parameter id="SortingColumnNames">
+                    <DisplayName>Sorting Column Names</DisplayName>
+                    <Default />
+                    <Value />
+                </Parameter>
+                <Parameter id="SortingOrder">
+                    <DisplayName>Sorting Order</DisplayName>
+                    <Default />
+                    <Value />
+                </Parameter>
+                <Parameter id="Delimiter">
+                    <DisplayName>Delimiter</DisplayName>
+                    <Value>,</Value>
+                </Parameter>
+                <Parameter id="Counter">
+                    <Value>0</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">9223372036854775807</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="MaximumEntropyChromPeakFilters" displayName="Maximum entropy peak filter settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetChromPeakFilter">
+            <Parameters>
+                <Parameter id="PeakFilter">
+                    <Value>MaximumCount, SignalToNoiseThreshold</Value>
+                </Parameter>
+                <Parameter id="PeakAreaAbsThreshold">
+                    <DisplayName>Peak area (counts) &gt;=  </DisplayName>
+                    <Value>10000</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PeakAreaPctUnits">
+                    <DisplayName>Peak area (%) &gt;= </DisplayName>
+                    <Value>1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PeakHeightAbsThreshold">
+                    <DisplayName>Peak height (counts) &gt;= </DisplayName>
+                    <Value>10000</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PeakHeightPctThreshold">
+                    <DisplayName>Peak height (%) &gt;= </DisplayName>
+                    <Value>5</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="MaximumPeakCount">
+                    <DisplayName>Limit to largest:</DisplayName>
+                    <Value>100</Value>
+                    <Limits>
+                        <Minimum type="Exclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="DisplayThreshold">
+                    <Value>0</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SNRThreshold">
+                    <Value>30</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="InterimSumObjectCount">
+                    <Value>1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="FilterOnHeight">
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="PerformFragmentAnnotation">
+                    <DisplayName>Annotate fragment spectrum peaks with formulas</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="PerformFormulaAnnotationForNonFragments">
+                    <DisplayName>Generate formulas for non-fragment (unknown) ions</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+            </Parameters>
+            <AllowHeightFilters>true</AllowHeightFilters>
+            <AllowAreaFilters>true</AllowAreaFilters>
+            <UsedForFragmentFormulaAnnotation>false</UsedForFragmentFormulaAnnotation>
+        </ParameterSet>
+        <ParameterSet usagekey="LibrarySearch" displayName="Spectral library search settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetLibrarySearch">
+            <Parameters>
+                <Parameter id="SpectralLibraryPath">
+                    <DisplayName>Spectral library path:</DisplayName>
+                    <Value />
+                </Parameter>
+                <Parameter id="MinMZ">
+                    <DisplayName>Min m/z:</DisplayName>
+                    <Value>30</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="MinMatchScore">
+                    <DisplayName>Minimum match score:</DisplayName>
+                    <Value>50</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="MaxHitCount">
+                    <DisplayName>Maximum hits per compound:</DisplayName>
+                    <Value>10</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="RTMatchPenalty">
+                    <DisplayName>RTMatchPenalty</DisplayName>
+                    <Value>Gaussian</Value>
+                </Parameter>
+                <Parameter id="StandardDeviation">
+                    <DisplayName>Standard deviation</DisplayName>
+                    <Value>0.1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="RTRangeNoPenalty">
+                    <DisplayName>Penalty-free RT Range</DisplayName>
+                    <Value>0</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="RTRange">
+                    <DisplayName>RT range</DisplayName>
+                    <Value>0.1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="UseRTMatch">
+                    <DisplayName>Use RT match (.L, .xml)</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="UseMaxHitCount">
+                    <DisplayName>Limit to the best</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="RTCalibrationFile">
+                    <DisplayName>RT Calibration file: </DisplayName>
+                    <Value />
+                </Parameter>
+                <Parameter id="RTPenalty">
+                    <DisplayName>RT mismatch penalty type</DisplayName>
+                    <Value>Additive</Value>
+                </Parameter>
+                <Parameter id="MaxRTPenalty">
+                    <DisplayName>Max RT penalty:</DisplayName>
+                    <Value>20</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SingleMzExpansionMode">
+                    <DisplayName>m/z expansion:</DisplayName>
+                    <Value>AsymmetricMz</Value>
+                </Parameter>
+                <Parameter id="SingleMzWidth">
+                    <DisplayName>Single m/z width</DisplayName>
+                    <Value>0.5</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="SinglePpmWidth">
+                    <DisplayName>Single ppm width</DisplayName>
+                    <Value>100</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0.01</Minimum>
+                        <Maximum type="Inclusive">1000</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="AsymmetricMzWidthLow">
+                    <DisplayName>Asymmetric m/z width low</DisplayName>
+                    <Value>0.3</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">10</Maximum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="AsymmetricMzWidthHigh">
+                    <DisplayName>Asymmetric m/z width high</DisplayName>
+                    <Value>0.7</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">10</Maximum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="NISTCompatibility">
+                    <DisplayName>Adjust score</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="EnablePrefiltering">
+                    <DisplayName>Enable screening</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <ParameterSet usagekey="PSetMultipleLibrarySearchParameters" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetMultipleLibrarySearchParameters">
+                    <Parameters>
+                        <OrderIndex>1</OrderIndex>
+                        <ParameterSet usagekey="1" displayName="" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetLibrarySearchParameters">
+                            <Parameters>
+                                <Parameter id="RTMatchPenalty">
+                                    <DisplayName>RTMatchPenalty</DisplayName>
+                                    <Value>Gaussian</Value>
+                                </Parameter>
+                                <Parameter id="StandardDeviation">
+                                    <DisplayName>Standard deviation</DisplayName>
+                                    <Value>0.1</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                    </Limits>
+                                    <XUnits>Unspecified</XUnits>
+                                    <DataValueType>Unspecified</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>2</PrecisionDigits>
+                                    <ConversionSupport>None</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="RTRangeNoPenalty">
+                                    <DisplayName>Penalty-free RT Range</DisplayName>
+                                    <Value>0</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                    </Limits>
+                                    <XUnits>Unspecified</XUnits>
+                                    <DataValueType>Unspecified</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>2</PrecisionDigits>
+                                    <ConversionSupport>None</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="RTRange">
+                                    <DisplayName>RT range</DisplayName>
+                                    <Value>0.1</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                    </Limits>
+                                    <XUnits>Unspecified</XUnits>
+                                    <DataValueType>Unspecified</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>2</PrecisionDigits>
+                                    <ConversionSupport>None</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="UseRTMatch">
+                                    <DisplayName>Use RT match (.L, .xml)</DisplayName>
+                                    <Value>false</Value>
+                                </Parameter>
+                                <Parameter id="RTCalibrationFile">
+                                    <DisplayName>RT Calibration file: </DisplayName>
+                                    <Value />
+                                </Parameter>
+                                <Parameter id="RTPenalty">
+                                    <DisplayName>RT mismatch penalty type</DisplayName>
+                                    <Value>Additive</Value>
+                                </Parameter>
+                                <Parameter id="MaxRTPenalty">
+                                    <DisplayName>Max RT penalty:</DisplayName>
+                                    <Value>20</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                    </Limits>
+                                    <XUnits>Unspecified</XUnits>
+                                    <DataValueType>Unspecified</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>2</PrecisionDigits>
+                                    <ConversionSupport>None</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="SingleMzExpansionMode">
+                                    <DisplayName>m/z expansion:</DisplayName>
+                                    <Value>AsymmetricMz</Value>
+                                </Parameter>
+                                <Parameter id="SingleMzWidth">
+                                    <DisplayName>Single m/z width</DisplayName>
+                                    <Value>0.5</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                    </Limits>
+                                    <XUnits>Thompsons</XUnits>
+                                    <DataValueType>MassToCharge</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>1</PrecisionDigits>
+                                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="SinglePpmWidth">
+                                    <DisplayName>Single ppm width</DisplayName>
+                                    <Value>100</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">10</Minimum>
+                                        <Maximum type="Inclusive">1000</Maximum>
+                                    </Limits>
+                                    <XUnits>Unspecified</XUnits>
+                                    <DataValueType>Unspecified</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>1</PrecisionDigits>
+                                    <ConversionSupport>None</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="AsymmetricMzWidthLow">
+                                    <DisplayName>Asymmetric m/z width low</DisplayName>
+                                    <Value>0.3</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                        <Maximum type="Inclusive">10</Maximum>
+                                    </Limits>
+                                    <XUnits>Thompsons</XUnits>
+                                    <DataValueType>MassToCharge</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>1</PrecisionDigits>
+                                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="AsymmetricMzWidthHigh">
+                                    <DisplayName>Asymmetric m/z width high</DisplayName>
+                                    <Value>0.7</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                        <Maximum type="Inclusive">10</Maximum>
+                                    </Limits>
+                                    <XUnits>Thompsons</XUnits>
+                                    <DataValueType>MassToCharge</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>1</PrecisionDigits>
+                                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="NISTCompatibility">
+                                    <DisplayName>Adjust score</DisplayName>
+                                    <Value>true</Value>
+                                </Parameter>
+                                <Parameter id="EnablePrefiltering">
+                                    <DisplayName>Enable screening</DisplayName>
+                                    <Value>false</Value>
+                                </Parameter>
+                                <Parameter id="SearchMethod">
+                                    <DisplayName>Search method</DisplayName>
+                                    <Value>Reverse</Value>
+                                </Parameter>
+                                <Parameter id="MinForwardMatchScore">
+                                    <DisplayName>Minimum forward match score:</DisplayName>
+                                    <Value>25</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                        <Maximum type="Inclusive">100</Maximum>
+                                    </Limits>
+                                    <XUnits>Unspecified</XUnits>
+                                    <DataValueType>MatchScore</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>2</PrecisionDigits>
+                                    <ConversionSupport>None</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="MinReverseMatchScore">
+                                    <DisplayName>Minimum reverse match score:</DisplayName>
+                                    <Value>80</Value>
+                                    <Limits>
+                                        <Minimum type="Inclusive">0</Minimum>
+                                        <Maximum type="Inclusive">100</Maximum>
+                                    </Limits>
+                                    <XUnits>Unspecified</XUnits>
+                                    <DataValueType>MatchScore</DataValueType>
+                                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                                    <PrecisionDigits>2</PrecisionDigits>
+                                    <ConversionSupport>None</ConversionSupport>
+                                </Parameter>
+                                <Parameter id="ExcludePrecursorInReverseScore">
+                                    <Value>true</Value>
+                                </Parameter>
+                            </Parameters>
+                        </ParameterSet>
+                    </Parameters>
+                </ParameterSet>
+                <Parameter id="RatioPercentUncertainty">
+                    <DisplayName>Ratio percent uncertainty:</DisplayName>
+                    <Value>40</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="MultipleLibSearchType">
+                    <DisplayName>Multi-Library search type:</DisplayName>
+                    <Value>All</Value>
+                </Parameter>
+                <Parameter id="MaxMZ">
+                    <DisplayName>Max m/z:</DisplayName>
+                    <Value>300</Value>
+                    <Limits />
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="IsAdvancedSelected">
+                    <Value>false</Value>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="MultipleLibrarySelection" displayName="Multiple library selection settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetMultipleLibrarySelection">
+            <Parameters>
+                <OrderIndex>1</OrderIndex>
+                <ParameterSet usagekey="1" displayName="" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetLibrarySelection">
+                    <Parameters>
+                        <Parameter id="SpectralLibraryPath">
+                            <DisplayName>Spectral library path:</DisplayName>
+                            <Value>#CUSTOMERHOME#\PCDL\default.csv</Value>
+                        </Parameter>
+                        <Parameter id="ApplyToSearchDb">
+                            <DisplayName>Apply to search database path</DisplayName>
+                            <Value>false</Value>
+                        </Parameter>
+                    </Parameters>
+                </ParameterSet>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="DeviceDelayInfo" displayName="Device delay settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetDeviceDelayInfo">
+            <Parameters>
+                <Parameter id="MS1">
+                    <Value>
+                        <DeviceType>Quadrupole</DeviceType>
+                        <OrdinalNumber>1</OrdinalNumber>
+                        <Delay>0</Delay>
+                        <RetentionTime>0</RetentionTime>
+                        <Used>False</Used>
+                    </Value>
+                    <DefaultValue>
+                        <DeviceType>Quadrupole</DeviceType>
+                        <OrdinalNumber>1</OrdinalNumber>
+                        <Delay>0</Delay>
+                        <RetentionTime>0</RetentionTime>
+                        <Used>False</Used>
+                    </DefaultValue>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="DAD1">
+                    <Value>
+                        <DeviceType>DiodeArrayDetector</DeviceType>
+                        <OrdinalNumber>1</OrdinalNumber>
+                        <Delay>0</Delay>
+                        <RetentionTime>0</RetentionTime>
+                        <Used>False</Used>
+                    </Value>
+                    <DefaultValue>
+                        <DeviceType>DiodeArrayDetector</DeviceType>
+                        <OrdinalNumber>1</OrdinalNumber>
+                        <Delay>0</Delay>
+                        <RetentionTime>0</RetentionTime>
+                        <Used>False</Used>
+                    </DefaultValue>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="StoredDataOptions" displayName="Data storage options" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetStoredDataOptions">
+            <Parameters>
+                <Parameter id="ExtractionMode">
+                    <DisplayName>Extraction Mode</DisplayName>
+                    <Value>PeakElseProfile</Value>
+                </Parameter>
+                <Parameter id="ChromExtractionMode">
+                    <DisplayName>Chrom Extraction Mode</DisplayName>
+                    <Value>PeakElseProfile</Value>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="CpdProcessing" displayName="Compound automation processing options" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetCpdProcessing">
+            <Parameters>
+                <Parameter id="CpdMiningAlgorithm">
+                    <DisplayName>Compound mining algorithm</DisplayName>
+                    <Value>FindByAMDIS</Value>
+                </Parameter>
+                <Parameter id="DoDbSearch">
+                    <DisplayName>Search a database for each compound</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="DoMfg">
+                    <DisplayName>Generate formulas for each compound</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="SkipMfgForPeaksWithFormulas">
+                    <DisplayName>Generate formulas for peaks with no database hits</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="ChromatogramPolarity">
+                    <DisplayName>Chromatogram Polarity:</DisplayName>
+                    <Value>Mixed</Value>
+                </Parameter>
+                <Parameter id="ExtractTIC">
+                    <DisplayName>TIC</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="ExtractBPC">
+                    <DisplayName>BPC</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="ExtractTWC">
+                    <DisplayName>TWC</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="ExtractSignal">
+                    <DisplayName>Signal A</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="SignalDeviceType">
+                    <DisplayName>Signal device Type</DisplayName>
+                    <Value>DiodeArrayDetector</Value>
+                </Parameter>
+                <Parameter id="BPCMzRange">
+                    <DisplayName>m/z range:</DisplayName>
+                    <DefaultValue>
+                        <DataUnit>Thompsons</DataUnit>
+                        <DataValueType>MassToCharge</DataValueType>
+                        <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                        <PrecisionDigits>1</PrecisionDigits>
+                    </DefaultValue>
+                    <Value>
+                        <DataUnit>Thompsons</DataUnit>
+                        <DataValueType>MassToCharge</DataValueType>
+                        <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                        <PrecisionDigits>1</PrecisionDigits>
+                    </Value>
+                    <Limits>
+                        <Limits id="overall">
+                            <Minimum type="Inclusive">0</Minimum>
+                        </Limits>
+                        <Limits id="width">
+                            <Minimum type="Inclusive">0</Minimum>
+                        </Limits>
+                    </Limits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="IdentificationWorkflows">
+                    <DisplayName>Workflow</DisplayName>
+                    <Value>UnknownIdentification</Value>
+                </Parameter>
+                <Parameter id="MatchSequences">
+                    <DisplayName>Match sequences for each compound</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="ShowOnlyIdentifiedCpds">
+                    <DisplayName>Show only identified compounds</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="DoLibrarySearch">
+                    <DisplayName>Search a library for each compound</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="FindCompoundsFormula" displayName="Find Compounds by Formula options" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetFindCpdsFormula">
+            <Parameters>
+                <Parameter id="DoSamplePurity">
+                    <DisplayName>Do sample purity calculations</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="ReturnCpdEIC">
+                    <DisplayName>Compound EIC</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="ReturnCpdSpectrum">
+                    <DisplayName>Compound spectrum</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="FormulaSourceToConfirm">
+                    <DisplayName>Formula source to confirm</DisplayName>
+                    <Value>Database</Value>
+                </Parameter>
+                <Parameter id="SpecifiedFormulas">
+                    <DisplayName>Specified formulas</DisplayName>
+                    <Default />
+                    <Value />
+                </Parameter>
+                <Parameter id="UseAbsoluteMassTolerance">
+                    <DisplayName>Use Absolute Mass Tolerance</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="RetentionTimeTolerance">
+                    <DisplayName>Retention Time Tolerance</DisplayName>
+                    <Value>0.35</Value>
+                    <Limits>
+                        <Minimum type="Exclusive">0</Minimum>
+                        <Maximum type="Inclusive">1000</Maximum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="SingleMzExpansionMode">
+                    <DisplayName>Single Mz expansion mode:</DisplayName>
+                    <Value>SymmetricMz</Value>
+                </Parameter>
+                <Parameter id="ExtractedRtExpansionMode">
+                    <DisplayName>Retention time expansion mode</DisplayName>
+                    <Value>SymmetricRt</Value>
+                </Parameter>
+                <Parameter id="AsymmetricRtExpansionLow">
+                    <DisplayName>Asymmetric low</DisplayName>
+                    <Value>0.1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="AsymmetricRtExpansionHigh">
+                    <DisplayName>Asymmetric high</DisplayName>
+                    <Value>0.15</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="SingleMzWidth">
+                    <DisplayName>Single m/z width:</DisplayName>
+                    <Value>0.5</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="AsymmetricMzWidthLow">
+                    <DisplayName>Asymmetric Mz width low:</DisplayName>
+                    <Value>0.3</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">10</Maximum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="AsymmetricMzWidthHigh">
+                    <DisplayName>Asymmetric Mz width high:</DisplayName>
+                    <Value>0.7</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">10</Maximum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="AbsoluteMassTolerance">
+                    <DisplayName>Absolute Mass Tolerance</DisplayName>
+                    <Value>100</Value>
+                    <Limits>
+                        <Minimum type="Exclusive">0</Minimum>
+                        <Maximum type="Inclusive">1000</Maximum>
+                    </Limits>
+                    <XUnits>MilliThompsons</XUnits>
+                    <DataValueType>MzDifference</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="RTExpansionWidth">
+                    <DisplayName>Expected retention time</DisplayName>
+                    <Value>1</Value>
+                    <Limits>
+                        <Minimum type="Exclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SearchFields">
+                    <DisplayName>Search Fields</DisplayName>
+                    <Value>Mass, OptionalRetentionTime</Value>
+                </Parameter>
+                <Parameter id="RelativeMassTolerance">
+                    <DisplayName>Relative Mass Tolerance</DisplayName>
+                    <Value>10</Value>
+                    <Limits>
+                        <Minimum type="Exclusive">0</Minimum>
+                        <Maximum type="Inclusive">1000</Maximum>
+                    </Limits>
+                    <XUnits>PartsPerMillion</XUnits>
+                    <DataValueType>RelativeDifference</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SinglePpmWidth">
+                    <DisplayName>Single ppm width:</DisplayName>
+                    <Value>35</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">10</Minimum>
+                        <Maximum type="Inclusive">1000</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="IonPolarity">
+                    <DisplayName>Polarity:</DisplayName>
+                    <Value>Mixed</Value>
+                </Parameter>
+                <Parameter id="ReturnAllCpds">
+                    <DisplayName>Only generate compounds for matched formulas</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="MaxHitsPerTgt">
+                    <DisplayName>Max hits per formula:</DisplayName>
+                    <Value>1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="MinRelativeAbundance">
+                    <DisplayName>Minimum abundance:</DisplayName>
+                    <Value>10</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Exclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="LimitEicExtractionRange">
+                    <DisplayName>Limit EIC extraction range</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="MinEicClusterCoverage">
+                    <DisplayName>Minimum cluster coverage for EIC:</DisplayName>
+                    <Value>75</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Exclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="MaxEicClusterIons">
+                    <DisplayName>Maximum cluster ions for EIC:</DisplayName>
+                    <Value>5</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                        <Maximum type="Inclusive">20</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="CefPath">
+                    <DisplayName>CefPath</DisplayName>
+                    <Value />
+                </Parameter>
+                <Parameter id="ExtractEIC">
+                    <DisplayName>Extract EIC</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="ExtractRawSpectrum">
+                    <DisplayName>Extract raw spectrum</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="ExtractCleanedSpectrum">
+                    <DisplayName>Extract cleaned spectrum</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="AutoIncrementIsomericMaxMatches">
+                    <DisplayName>Automatically increase for isomeric compounds</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="RejectOnLowScore">
+                    <DisplayName>Do not match if score is</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="RejectScoreThreshold">
+                    <DisplayName>Reject score threshold</DisplayName>
+                    <Value>50</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="RejectOnSingleIon">
+                    <DisplayName>Do not match if the (unobserved) second ion’s abundance is expected to be</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="RejectSingleIonThreshold">
+                    <DisplayName>Reject second ion threshold</DisplayName>
+                    <Value>200</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PreferProfileRawSpectra">
+                    <DisplayName>Prefer profile for raw spectra, if available</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="ClipRawSpectrum">
+                    <DisplayName>Clip extracted raw spectra</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="ExtractedSpectrumMzExpansionMode">
+                    <DisplayName>Extracted spectrum expansion mode</DisplayName>
+                    <Value>SymmetricMz</Value>
+                </Parameter>
+                <Parameter id="ClipRawSpectrumAsymWidthLow">
+                    <DisplayName>Asymmetric low width</DisplayName>
+                    <Value>5</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="ClipRawSpectrumAsymWidthHigh">
+                    <DisplayName>Asymmetric high width</DisplayName>
+                    <Value>10</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="ClipRawSpectrumSingleMzWidth">
+                    <DisplayName>Single width</DisplayName>
+                    <Value>5</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="ExtractMsMsSpectrum">
+                    <DisplayName>Extract MS/MS spectrum</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="AverageMsMsSpecForCe">
+                    <DisplayName>Average MS/MS spectrum for all CE's</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="PrecursorTolerancePpm">
+                    <DisplayName>Precursor tolerance</DisplayName>
+                    <Value>20</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PrecursorToleranceMz">
+                    <DisplayName>Precursor tolerance</DisplayName>
+                    <Value>0.05</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PrecursorToleranceUnit">
+                    <DisplayName>Tolerance unit</DisplayName>
+                    <Value>ITEM_PPM</Value>
+                </Parameter>
+                <Parameter id="DeisotopeMsMsSpectrum">
+                    <DisplayName>Deisotope MS/MS spectrum</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="IncludeStructure">
+                    <DisplayName>Include structure</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="WarnOnLowScore">
+                    <DisplayName>Warn if score is</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="WarnOnSingleIon">
+                    <DisplayName>Warn if the (unobserved) second ion’s abundance is expected to be</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="WarnScoreThreshold">
+                    <DisplayName>Warn score threshold</DisplayName>
+                    <Value>75</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="WarnSingleIonThreshold">
+                    <DisplayName>Warn single ion threshold</DisplayName>
+                    <Value>50</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SmoothEics">
+                    <DisplayName>Smooth EIC before integration</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="TargetSource">
+                    <DisplayName>TargetSource</DisplayName>
+                    <Default>
+                        <String>#CUSTOMERHOME#\PCDL\default.csv</String>
+                    </Default>
+                    <Value>
+                        <String>#CUSTOMERHOME#\PCDL\default.csv</String>
+                    </Value>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="AutomationTimeScripts" displayName="Worklist actions" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.Qualitative.PSetScriptCollection">
+            <Parameters>
+                <Parameter id="Scripts">
+                    <Default />
+                    <Value>
+                        <String>script1</String>
+                        <String>script2</String>
+                    </Value>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="MZExclusionRanges" displayName="Exclude mass(es) settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetExcludeMass">
+            <Parameters>
+                <Parameter id="ExcludeMasses">
+                    <DisplayName>Exclude masses:</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="ExcludeMassRanges">
+                    <DisplayName>Excluded m/z:</DisplayName>
+                    <DefaultValue>
+                        <DataUnit>Thompsons</DataUnit>
+                        <DataValueType>MassToCharge</DataValueType>
+                        <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                        <PrecisionDigits>1</PrecisionDigits>
+                    </DefaultValue>
+                    <Value>
+                        <DataUnit>Thompsons</DataUnit>
+                        <DataValueType>MassToCharge</DataValueType>
+                        <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                        <PrecisionDigits>1</PrecisionDigits>
+                    </Value>
+                    <Limits>
+                        <Limits id="overall">
+                            <Minimum type="Inclusive">0</Minimum>
+                        </Limits>
+                        <Limits id="width">
+                            <Minimum type="Inclusive">0</Minimum>
+                        </Limits>
+                    </Limits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="SingleMzExpansionMode">
+                    <DisplayName>PSetExcludeMassSingleMzExpansionMode</DisplayName>
+                    <Value>SymmetricMz</Value>
+                </Parameter>
+                <Parameter id="SingleMzWidth">
+                    <DisplayName>Width (m/z):</DisplayName>
+                    <Value>0.5</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="SinglePpmWidth">
+                    <DisplayName>Width (ppm):</DisplayName>
+                    <Value>100</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">10</Minimum>
+                        <Maximum type="Inclusive">1000</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="AsymmetricMzWidthLow">
+                    <DisplayName>Low width (m/z):</DisplayName>
+                    <Value>0.3</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">10</Maximum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="AsymmetricMzWidthHigh">
+                    <DisplayName>High width (m/z):</DisplayName>
+                    <Value>0.7</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">10</Maximum>
+                    </Limits>
+                    <XUnits>Thompsons</XUnits>
+                    <DataValueType>MassToCharge</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="IntegratorChoice" displayName="MS Integrator selection" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetIntegratorSelection">
+            <Parameters>
+                <Parameter id="IntegratorAlgorithm">
+                    <DisplayName>Integrator Selection</DisplayName>
+                    <Value>Agile2</Value>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="AgileIntegratorParameterSet" displayName="Agile integrator settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetCoreAgile">
+            <Parameters>
+                <Parameter id="TimeSegments">
+                    <DisplayName>Time segments</DisplayName>
+                    <DefaultValue />
+                    <Value />
+                    <Limits />
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SmoothFunctionWidth">
+                    <DisplayName>Smooth function width</DisplayName>
+                    <Value>0</Value>
+                    <Limits />
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="ChromPeakFilters" displayName="MS Chromatogram peak filter settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetChromPeakFilter">
+            <Parameters>
+                <Parameter id="PeakFilter">
+                    <Value>PeakAreaPctThreshold</Value>
+                </Parameter>
+                <Parameter id="PeakAreaAbsThreshold">
+                    <DisplayName>Peak area (counts) &gt;=  </DisplayName>
+                    <Value>10000</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PeakAreaPctUnits">
+                    <DisplayName>Peak area (%) &gt;= </DisplayName>
+                    <Value>1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PeakHeightAbsThreshold">
+                    <DisplayName>Peak height (counts) &gt;= </DisplayName>
+                    <Value>10000</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="PeakHeightPctThreshold">
+                    <DisplayName>Peak height (%) &gt;= </DisplayName>
+                    <Value>5</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                        <Maximum type="Inclusive">100</Maximum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="MaximumPeakCount">
+                    <DisplayName>Limit to largest:</DisplayName>
+                    <Value>100</Value>
+                    <Limits>
+                        <Minimum type="Exclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="DisplayThreshold">
+                    <Value>0</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Abundance</XUnits>
+                    <DataValueType>Response</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>2</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="SNRThreshold">
+                    <Value>30</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="InterimSumObjectCount">
+                    <Value>1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>0</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="FilterOnHeight">
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="PerformFragmentAnnotation">
+                    <DisplayName>Annotate fragment spectrum peaks with formulas</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="PerformFormulaAnnotationForNonFragments">
+                    <DisplayName>Generate formulas for non-fragment (unknown) ions</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+            </Parameters>
+            <AllowHeightFilters>true</AllowHeightFilters>
+            <AllowAreaFilters>true</AllowAreaFilters>
+            <UsedForFragmentFormulaAnnotation>false</UsedForFragmentFormulaAnnotation>
+        </ParameterSet>
+        <ParameterSet usagekey="MSSystemSuitability" displayName="MS System Suitability" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetSystemSuitability">
+            <Parameters>
+                <Parameter id="EnableSuitabilityCalculation">
+                    <DisplayName>Enable system suitability calculations</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="PharmacopoeiaType">
+                    <DisplayName>Pharmacopoeia:</DisplayName>
+                    <Value>USP</Value>
+                </Parameter>
+                <Parameter id="ColumnVoidTime">
+                    <DisplayName>Column void time:</DisplayName>
+                    <Value>0</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="ColumnLengthUnit">
+                    <DisplayName>Column length unit:</DisplayName>
+                    <Value>Centimeters</Value>
+                </Parameter>
+                <Parameter id="ColumnLength">
+                    <DisplayName>Column length:</DisplayName>
+                    <Value>0</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Centimeters</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>UnitsAndPrecision</ConversionSupport>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="SignalToNoise" displayName="Signal to noise settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetSignalToNoise">
+            <Parameters>
+                <Parameter id="RunOnIntegration">
+                    <DisplayName>Automatically compute when chromatograms are integrated</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+                <Parameter id="SignalType">
+                    <DisplayName>Signal definition:</DisplayName>
+                    <Value>Height</Value>
+                </Parameter>
+                <Parameter id="NoiseType">
+                    <DisplayName>Noise definition:</DisplayName>
+                    <Value>PeakToPeak</Value>
+                </Parameter>
+                <Parameter id="NoiseMultiplier">
+                    <Value>1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">1</Minimum>
+                        <Maximum type="Inclusive">9</Maximum>
+                    </Limits>
+                    <XUnits>Unspecified</XUnits>
+                    <DataValueType>Unspecified</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>1</PrecisionDigits>
+                    <ConversionSupport>None</ConversionSupport>
+                </Parameter>
+                <Parameter id="AutoNoiseRangeSelection">
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="NoiseRegions">
+                    <DisplayName>Noise regions:</DisplayName>
+                    <DefaultValue>
+                        <DataUnit>Minutes</DataUnit>
+                        <DataValueType>AcqTime</DataValueType>
+                        <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                        <PrecisionDigits>3</PrecisionDigits>
+                    </DefaultValue>
+                    <Value>
+                        <DataUnit>Minutes</DataUnit>
+                        <DataValueType>AcqTime</DataValueType>
+                        <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                        <PrecisionDigits>3</PrecisionDigits>
+                    </Value>
+                    <Limits>
+                        <Limits id="overall" />
+                        <Limits id="width" />
+                    </Limits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="DesiredNoiseLengthInMin">
+                    <DisplayName>Desired length:</DisplayName>
+                    <Value>1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="MinimumNoiseLengthInMin">
+                    <DisplayName>Minimum length:</DisplayName>
+                    <Value>0.1</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="StartTimeInMin">
+                    <DisplayName>Start time:</DisplayName>
+                    <Value>0</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="EndTimeInMin">
+                    <DisplayName>End time:</DisplayName>
+                    <Value>10</Value>
+                    <Limits>
+                        <Minimum type="Inclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+                <Parameter id="NoiseRegionWidthInMin">
+                    <DisplayName>Noise region width:</DisplayName>
+                    <Value>0.25</Value>
+                    <Limits>
+                        <Minimum type="Exclusive">0</Minimum>
+                    </Limits>
+                    <XUnits>Minutes</XUnits>
+                    <DataValueType>AcqTime</DataValueType>
+                    <PrecisionType>DigitsAfterDecimal</PrecisionType>
+                    <PrecisionDigits>3</PrecisionDigits>
+                    <ConversionSupport>PrecisionOnly</ConversionSupport>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+        <ParameterSet usagekey="ClearPeakSpectra" displayName="Integration Results settings" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetResultsOption">
+            <Parameters>
+                <Parameter id="ClearOldResults">
+                    <DisplayName>Clear previous peak spectra</DisplayName>
+                    <Value>true</Value>
+                </Parameter>
+                <Parameter id="HighlightAll">
+                    <DisplayName>Highlight all peaks</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+            </Parameters>
+            <AlgorithmType>Integration</AlgorithmType>
+            <UsedForAutomation>false</UsedForAutomation>
+            <UsedForMatchSequence>false</UsedForMatchSequence>
+        </ParameterSet>
+        <ParameterSet usagekey="FileSaveOptionsKey" displayName="File Save Options" assembly="" class="Agilent.MassSpectrometry.DataAnalysis.PSetFileSaveOptions">
+            <Parameters>
+                <Parameter id="SaveCompleteResults">
+                    <DisplayName>Save Complete Results</DisplayName>
+                    <Value>false</Value>
+                </Parameter>
+            </Parameters>
+        </ParameterSet>
+    </Method>
+</Method>

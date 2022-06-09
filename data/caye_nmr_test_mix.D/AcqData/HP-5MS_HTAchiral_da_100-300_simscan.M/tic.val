@@ -1,0 +1,17 @@
+name ticintparm
+!
+!  Enter the values for the following parameters for 
+!  use in generating TIC's
+!
+LSC_intp$="LSCINT.P" !  Integration Parameter File Name
+percentistd =  10    !cut off for reporting based on area comparison
+                     ! of closest internal standard
+LSC_MAX = 20         !maximum number of LSC's to report
+tic_lib$="demo.l"    !TIC library to USE
+LSC_estd=10000       ! Response for External Standard Comparisons per unit amount
+lsc_alkanes = 0      !for exclusion of user-named alkanes (DEL) ALKANE from lscnames.ini
+lsc_pkpur = 0        !use Peak Purity or not
+lsc_range = 0        !Entire chrom (0) or specified range (1)
+lsc_start = 0        !start range if lsc_range = 1
+lsc_end = 0	     !end range if lsc_range = 1
+remove ticintparm

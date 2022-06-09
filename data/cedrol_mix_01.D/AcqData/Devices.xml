@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Devices>
+  <Version>1</Version>
+  <Device DeviceID="1">
+    <Name>SingleQuadrupole</Name>
+    <DriverVersion>7.6.0.0</DriverVersion>
+    <FirmwareVersion>6.00.34</FirmwareVersion>
+    <ModelNumber>5977</ModelNumber>
+    <OrdinalNumber>1</OrdinalNumber>
+    <SerialNumber>US1839D002</SerialNumber>
+    <Type>2</Type>
+    <StoredDataType>8</StoredDataType>
+    <Delay>0</Delay>
+    <Vendor>1</Vendor>
+  </Device>
+  <Device DeviceID="2">
+    <Name>FID</Name>
+    <ModelNumber>7890</ModelNumber>
+    <OrdinalNumber>1</OrdinalNumber>
+    <SerialNumber>1</SerialNumber>
+    <Type>14</Type>
+    <StoredDataType>1</StoredDataType>
+    <Delay>0</Delay>
+    <Vendor>1</Vendor>
+  </Device>
+</Devices>

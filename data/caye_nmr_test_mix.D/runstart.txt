@@ -1,0 +1,64 @@
+﻿ Critical RunStart CP Variables
+ 
+CP Variable  = Value
+
+  Front Injector Available(_turretfrontavail) = 1
+   Rear Injector Available(_turretrearavail) = 0
+   Dual Injector Available(_turretdualavail) = 0
+ 
+ Injection Source(_injsource) = 1  1,2,3,4,5,6=ALS,Man,Valve,Ext.,PAL,HS,MiniTD
+         _injloc (_injloc) = 1
+       MSD Sample(_msinlet) = 1  1,2=sample1=Front,sample2=Rear
+ 
+  _ptavail :  0  _dopretreat :  0  _pretreatpath$ :  D:\MassHunter\GCMS\1\Pretreat\  
+              _pretreatfile$ :    _pretreatmeth$ :  
+ 
+  _Overlapped _overlap  _ALSNEXT, _ALSNEXT2, _Lastlap  0 0 0 0 0
+
+_overlapped: Is method currently overlapping?  0
+_overlap:    Is hw capable of overlapping?     0
+_alsnext:              Next vial front inlet?  0
+_lastlap:   Indicator for last entry in SLT   0
+ 
+ _seqcheckbar:  0  On Mismatch, Inject Anyway
+ _seqcheckbarnext:  2
+  Expected BCs   :    2: 
+ 
+  Next Expected BCs   :    2: 
+ 
+ Previous _checkbar   :  0
+ Previous _barmismatch:  0
+ 
+_maxvial[]  1=50  2=0  3=0  
+
+Front Sample
+ 
+     Alsbottle (_alsbottle) = 15
+      Methfile (_methfile$) = HP-5MS_HTAchiral_da_100-300_simscan.M
+      Datafile(,_datafile$) = caye_nmr_test_mix .D
+   Sample Name (_dataname$) = 
+  Exp. Barcode(_expbarcode$)= 
+ Miscellaneous (_miscinfo$) = 
+ Vol. Override    (_injvol) = 0
+ Method Volume   (_methvol) = 0.5
+ SyringeVolume    (_syrvol) = 10
+ SyringeVolLow (_syrvollow) = 0
+    Multiplier  (_multiplr) = 1
+    Sample Amt   (_sampamt) = 0
+ 
+ 
+Rear Sample
+ 
+     Alsbottle(_alsbottle2) = 0
+      Datafile(_datafile2$) = caye_nmr_test_mix .D
+   Sample Name(_dataname2$) = 
+  Exp. Barcode(_expbarcode2$) = 
+ Miscellaneous(_miscinfo2$) = 
+ Vol. Override(_injvol2) = 0
+ Method Volume(_methvol2) = 0
+ SyringeVolume(_syrvol2) = 0
+ SyringeVolLow(_syrvollow2) = 0
+    Multiplier(_multiplr2) = 1
+    Sample Amt(_sampamt2) = 0
+
+Tue Dec 17 10:04:07 2019
