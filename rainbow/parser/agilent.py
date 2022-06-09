@@ -66,7 +66,7 @@ class Agilent(Chromatogram):
         times = np.arange(start_time, end_time + 1, delta_time)
 
         # Extract the y-axis label (signal).
-        signal_str = self.read_string(f, 0x1075)
+        signal_str = self.read_string(f, 0x1075, 2)
         signal = int(signal_str.split("Sig=")[1].split('.')[0])
 
         self.xlabels['UV'] = times
@@ -83,18 +83,20 @@ class Agilent(Chromatogram):
             'signal': 0x1075 
         }
 
-        self.metadata['UV'] = self.extract_metadata(f, metadata_offsets)
+        self.metadata['UV'] = self.extract_metadata(f, metadata_offsets, 2)
+        
+        f.close()
     
     def parse_fid(self, filepath):
         
         data_offsets = {
-            'info': 0x116,
+            'count': 0x116,
             'body': 0x1800
         }
         
         f = open(filepath, 'rb')
 
-        f.seek(data_offsets['info'])
+        f.seek(data_offsets['count'])
         num_data_points = struct.unpack(">I", f.read(4))[0]
         
         start_time = int(struct.unpack(">f", f.read(4))[0])
@@ -123,10 +125,87 @@ class Agilent(Chromatogram):
             'signal': 0x1075 
         }
 
-        self.metadata['FID'] = self.extract_metadata(f, metadata_offsets)
+        self.metadata['FID'] = self.extract_metadata(f, metadata_offsets, 2)
+
+        f.close()
     
     def parse_ms(self, filepath):
-        pass
+
+        data_offsets = {
+            'type': 0x4,
+            'start': 0x10A,
+            'count1': 0x118,
+            'count2': 0x142
+        }
+
+        f = open(filepath, 'rb')
+
+        # Check the type of .ms file. 
+        type_ms = self.read_string(f, data_offsets['type'], 1)
+
+        if type_ms == "MSD Spectral File":
+            f.seek(data_offsets['count1'])
+            num_rows = struct.unpack('>H', f.read(2))[0]
+        else: 
+            f.seek(data_offsets['count2'])
+            num_rows = struct.unpack('<H', f.read(2))[0]
+        
+        # Go to start of data body. 
+        f.seek(data_offsets['start'])
+        f.seek((struct.unpack('>H', f.read(2))[0] - 1) * 2)
+
+        # Extract data values.
+        times = np.empty(num_rows, dtype=int)
+        memo = np.empty(num_rows, dtype=object)
+        masses_set = set()
+        for i in range(num_rows):
+            # Read in header information.
+            f.read(2)
+            times[i] = struct.unpack('>I', f.read(4))[0]
+            f.read(6)
+            num_masses = struct.unpack('>H', f.read(2))[0]
+            f.read(4)
+
+            # Process the data values. 
+            data = struct.unpack('>' + num_masses * 'HH', f.read(num_masses * 4))
+            masses = (np.array(data[::2]) + 10) // 20
+            masses_set.update(masses)
+
+            counts_enc = np.array(data[1::2])
+            counts_head = counts_enc >> 14
+            counts_tail = counts_enc & 0x3fff
+            counts = (8 ** counts_head) * counts_tail
+
+            memo[i] = (masses, counts)
+            f.read(10)
+            
+        masses_array = np.array(sorted(masses_set))
+        mass_indices = dict(zip(masses_array, range(masses_array.size)))
+
+        data_array = np.zeros((num_rows, masses_array.size), dtype=int)
+        for i in range(num_rows):
+            masses, counts = memo[i]
+            visited = set()
+            for j in range(masses.size):
+                if masses[j] in visited:
+                    data_array[i, mass_indices[masses[j]]] += counts[j]
+                else:
+                    data_array[i, mass_indices[masses[j]]] = counts[j]
+                    visited.add(masses[j])
+
+        self.xlabels['MS'] = times 
+        self.ylabels['MS'] = masses_array 
+        self.data['MS'] = data_array 
+
+        # Extract metadata.
+        metadata_offsets = {
+            'time': 0xB2,
+            'method': 0xE4
+        }
+
+        self.metadata['MS'] = self.extract_metadata(f, metadata_offsets, 1)
+
+        f.close()
 
     def find_file(self, dirpath, detector):
         """
@@ -156,13 +235,14 @@ class Agilent(Chromatogram):
 
         return None
 
-    def extract_metadata(self, f, offsets):
+    def extract_metadata(self, f, offsets, gap):
         """
         Helper function that extracts metadata from the file header. 
 
         Args:
             f (_io.BufferedReader): File opened in 'rb' mode.
             offsets (dict): Dictionary mapping properties to file offsets. 
+            gap (int): Distance between two adjacent characters.
 
         Returns:
             dict: Dictionary containing metadata as string key-value pairs. 
@@ -170,10 +250,10 @@ class Agilent(Chromatogram):
         """
         metadata = {}
         for key, offset in offsets.items():
-            metadata[key] = self.read_string(f, offset)
+            metadata[key] = self.read_string(f, offset, gap)
         return metadata
         
-    def read_string(self, f, offset):
+    def read_string(self, f, offset, gap):
         """
         Returns the string at the specified offset in the file header.
 
@@ -182,11 +262,12 @@ class Agilent(Chromatogram):
         Args:
             f (_io.BufferedReader): File opened in 'rb' mode. 
             offset (int): Offset to begin reading from. 
+            gap (int): Distance betwene two adjacent characters.
 
         """
         f.seek(offset)
-        str_len = struct.unpack("<B", f.read(1))[0] * 2
-        return f.read(str_len)[::2].decode()
+        str_len = struct.unpack("<B", f.read(1))[0] * gap
+        return f.read(str_len)[::gap].decode()
 
     def extract_traces(self):
         pass 
