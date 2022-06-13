@@ -10,11 +10,7 @@ class Agilent(Chromatogram):
 
     def __init__(self, dirpath):
         
-        self.xlabels = {}
-        self.ylabels = {}
-        self.data = {}
-        self.detectors = []
-        self.metadata = {}
+        super().__init__(dirpath)
 
         detector_funcs = {
             'UV':  self.parse_uv,
@@ -206,7 +202,7 @@ class Agilent(Chromatogram):
         self.metadata['MS'] = self.extract_metadata(f, metadata_offsets, 1)
 
         f.close()
-
+     
     def find_file(self, dirpath, detector):
         """
         Helper function to find the file in the directory corresponding to the desired detector. 
