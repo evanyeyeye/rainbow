@@ -5,9 +5,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from parser.chromatogram import Chromatogram 
 
-
+# TODO: Save extra data from UV and MS folders.
 class Agilent(Chromatogram):
+    """ 
+    Class representing an Agilent data folder (.D).
 
+    Upon instantiation with a directory path, this class automatically detects and parses .ch, .ms, and .uv data files. 
+
+    There are 3 detector types currently supported: 'UV', 'FID', and 'MS'.
+
+    """
     def __init__(self, dirpath):
         
         super().__init__(dirpath)
@@ -25,7 +32,13 @@ class Agilent(Chromatogram):
                 detector_funcs[detector](filepath)
 
     def parse_uv(self, filepath):
-        
+        """
+        Function that parses .ch files containing UV data.
+
+        Args:
+            filepath (str): Path to file. 
+
+        """
         data_offsets = {
             'time': 0x11A,
             'body': 0x1800
@@ -84,7 +97,13 @@ class Agilent(Chromatogram):
         f.close()
     
     def parse_fid(self, filepath):
-        
+        """
+        Function that parses .ch files containing FID data.
+
+        Args:
+            filepath (str): Path to file. 
+
+        """
         data_offsets = {
             'count': 0x116,
             'body': 0x1800
@@ -126,7 +145,13 @@ class Agilent(Chromatogram):
         f.close()
     
     def parse_ms(self, filepath):
+        """
+        Function that parses .ms files containing MS data.
 
+        Args:
+            filepath (str): Path to file. 
+
+        """
         data_offsets = {
             'type': 0x4,
             'start': 0x10A,
@@ -207,12 +232,20 @@ class Agilent(Chromatogram):
         """
         Helper function to find the file in the directory corresponding to the desired detector. 
 
+        Returns None if detector is not found in the directory.
+
+        Args:
+            dirpath (str): Path of directory.
+            detector (str): Name of the desired detector.
+
         """
         detector_fileinfo = {
             'UV': ('.ch', 0x03313330),
             'FID': ('.ch', 0x03313739),
             'MS': ('.ms', 0x01320000)
         }
+
+        detector = detector.upper()
 
         if detector not in detector_fileinfo:
             return None
@@ -258,7 +291,7 @@ class Agilent(Chromatogram):
         Args:
             f (_io.BufferedReader): File opened in 'rb' mode. 
             offset (int): Offset to begin reading from. 
-            gap (int): Distance betwene two adjacent characters.
+            gap (int): Distance between two adjacent characters.
 
         """
         f.seek(offset)
@@ -270,7 +303,9 @@ class Agilent(Chromatogram):
     
     """
     def extract_traces(self, detector, labels=None):
- 
+
+        detector = detector.upper()
+
         # Input validation for detector.
         if detector not in self.detectors:
             raise Exception("Detector not present.")
@@ -301,6 +336,8 @@ class Agilent(Chromatogram):
 
     def export_csv(self, filename, detector, labels=None, delimiter=','):
         
+        detector = detector.upper()
+
         traces_tp = self.extract_traces(detector, labels).transpose().astype(str)
         detector_xlabels = self.xlabels[detector]
 
@@ -311,6 +348,9 @@ class Agilent(Chromatogram):
         f.close()
     
     def plot(self, detector, label, **kwargs):
+
+        detector = detector.upper()
+
         plt.plot(self.xlabels[detector], self.extract_traces(detector, label).transpose(), **kwargs)
         plt.show()
 
