@@ -5,19 +5,28 @@ class Chromatogram(ABC):
     """
     Abstract class representing a chromatogram data folder.
 
-    This class contains all public methods that may be useful to a user. 
+    This class contains most of the public methods that may be useful to a user. 
     The abstract methods are implemented differently by each vendor-specific class
     that extend this one. 
     
+    This class (and its children) contain the following important attributes:
+    - detectors: String list of detector names.
+    - xlabels: Dictionary mapping detector names to corresponding 1D numpy arrays with X-axis times.
+    - ylabels: Dictionary mapping detector names to corresponding 1D numpy arrays with Y-axis labels.
+    - data: Dictionary mapping detector names to corresponding 2D numpy arrays with data values.
+    - metadata: Dictionary mapping detector names to corresponding dictionaries with metadata.
+
+    More details about these attributes are documented under their get functions.
+
     This class should not be instantiated on its own.
 
     """
-    def __init__(self, filepath):
-        self.detectors = None 
-        self.xlabels = None 
-        self.ylabels = None 
-        self.data = None
-        self.metadata = None
+    def __init__(self, dirpath):
+        self.detectors = []
+        self.xlabels = {} 
+        self.ylabels = {} 
+        self.data = {}
+        self.metadata = {}
 
     def get_detectors(self):
         """
@@ -61,26 +70,28 @@ class Chromatogram(ABC):
         return self.metadata[detector]
 
     @abstractmethod
-    def extract_traces(self, detector, labels):
+    def extract_traces(self, detector, labels=None):
         """
         Returns a multidimensional integer numpy array containing data corresponding to the specified detector and label(s).
 
+        The rows correspond to the Y-axis labels and the columns corrrespond to the X-axis times.
+
         Args:
             detector (str): Name of the desired detector. 
-            labels (int or int list): Y-axis label(s) to extract. 
+            labels (str or int or str list or int list): Y-axis label(s) to extract. 
 
         """
         pass
 
     @abstractmethod
-    def export_csv(self, filename, detector, labels, delimiter=","):
+    def export_csv(self, filename, detector, labels=None, delimiter=','):
         """
         Outputs a CSV file containing data corresponding to the specified detector and label(s). 
 
         Args:
             filename (str): Filename for the output CSV file.
             detector (str): Name of the desired detector. 
-            labels (int or int list): Y-axis label(s) to output. 
+            labels (str or int or str list or int list): Y-axis label(s) to output. 
             delimiter (str): Delimiter used in the output CSV file. 
 
         """
@@ -93,6 +104,6 @@ class Chromatogram(ABC):
 
         Args:
             detector (str): Name of the desired detector. 
-            label (int): Y-axis label to be plotted. 
+            label (str or int): Y-axis label to be plotted. 
         """
         pass
