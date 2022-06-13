@@ -10,11 +10,12 @@ class Chromatogram(ABC):
     that extend this one. 
     
     This class (and its children) contain the following important attributes:
+
     - detectors: String list of detector names.
-    - xlabels: Dictionary mapping detector names to corresponding 1D numpy arrays with X-axis times.
-    - ylabels: Dictionary mapping detector names to corresponding 1D numpy arrays with Y-axis labels.
-    - data: Dictionary mapping detector names to corresponding 2D numpy arrays with data values.
-    - metadata: Dictionary mapping detector names to corresponding dictionaries with metadata.
+    - xlabels: Dictionary mapping detector names to 1D numpy arrays with X-axis times.
+    - ylabels: Dictionary mapping detector names to 1D numpy arrays with Y-axis labels.
+    - data: Dictionary mapping detector names to 2D numpy arrays with data values.
+    - metadata: Dictionary mapping detector names to dictionaries with metadata.
 
     More details about these attributes are documented under their get functions.
 
