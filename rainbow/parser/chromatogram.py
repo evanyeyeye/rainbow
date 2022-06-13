@@ -41,14 +41,22 @@ class Chromatogram(ABC):
         """
         Returns a 1D numpy integer array containing the X-axis retention times (in milliseconds) for the specified detector.
 
+        Args:
+            detector (str): Name of the desired detector.
+
         """
+        detector = detector.upper()
         return self.xlabels[detector]
     
     def get_ylabels(self, detector):
         """
         Returns a 1D numpy array containing the Y-axis labels for the specified detector.
 
+        Args:
+            detector (str): Name of the desired detector.
+
         """
+        detector = detector.upper()
         return self.ylabels[detector]
 
     def get_data(self, detector):
@@ -57,7 +65,11 @@ class Chromatogram(ABC):
     
         The rows correspond to the X-axis times and the columns correspond to the Y-axis labels.
 
+        Args:
+            detector (str): Name of the desired detector.
+
         """
+        detector = detector.upper()
         return self.data[detector]
 
     def get_metadata(self, detector):
@@ -66,7 +78,11 @@ class Chromatogram(ABC):
  
         The metadata available is based on the vendor and filetype.  
 
+        Args:
+            detector (str): Name of the desired detector.
+
         """
+        detector = detector.upper()
         return self.metadata[detector]
 
     @abstractmethod
