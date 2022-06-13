@@ -71,7 +71,7 @@ class Agilent(Chromatogram):
 
         self.xlabels['UV'] = times
         self.ylabels['UV'] = np.array([signal])
-        self.data['UV'] = np.array(data_array)
+        self.data['UV'] = np.array([data_array]).transpose()
         
         # Extract metadata
         metadata_offsets = {
@@ -107,9 +107,9 @@ class Agilent(Chromatogram):
         # Extract data values.
         f.seek(data_offsets['body'])
 
-        data_array = np.empty(num_data_points, dtype=int)
+        data_array = np.empty((num_data_points, 1), dtype=int)
         for i in range(num_data_points):
-            data_array[i] = struct.unpack("<d", f.read(8))[0]
+            data_array[i, 0] = struct.unpack("<d", f.read(8))[0]
 
         self.xlabels['FID'] = times
         self.ylabels['FID'] = np.array(['TIC'])
@@ -269,14 +269,54 @@ class Agilent(Chromatogram):
         str_len = struct.unpack("<B", f.read(1))[0] * gap
         return f.read(str_len)[::gap].decode()
 
-    def extract_traces(self):
-        pass 
+    """ 
+    The following functions are documented in the parent class chromatogram.py.
     
-    def export_csv(self):
-        pass 
+    """
+    def extract_traces(self, detector, labels=None):
+ 
+        # Input validation for detector.
+        if detector not in self.detectors:
+            raise Exception("Detector not present.")
+        
+        detector_ylabels = self.ylabels[detector].astype(str)
+        detector_data_tp = self.data[detector].transpose()
+
+        if not labels:
+            return detector_data_tp
+
+        # Input validation for labels.
+        if isinstance(labels, str) or isinstance(labels, int):
+            labels = [labels]
+
+        if not isinstance(labels, list):
+            raise Exception("Incorrect type for labels.")
+        
+        # Extracting traces. 
+        output_array = np.empty((len(labels), self.xlabels[detector].size), dtype=int)
+
+        for i in range(len(labels)):
+            indices = np.where(detector_ylabels == str(labels[i]))[0]
+            if len(indices) == 0:
+                raise Exception(f"Label {labels[i]} not present.")
+            output_array[i] = detector_data_tp[indices[0]]
+        
+        return output_array
+
+    def export_csv(self, filename, detector, labels=None, delimiter=','):
+        
+        traces_tp = self.extract_traces(detector, labels).transpose().astype(str)
+        detector_xlabels = self.xlabels[detector]
+
+        f = open(filename, 'w+')
+        f.write(f"RT (ms),{','.join(self.ylabels[detector].astype(str))}\n")
+        for i in range(detector_xlabels.size):
+            f.write(f"{detector_xlabels[i]},{','.join(traces_tp[i])}\n")
+        f.close()
     
-    def plot(self):
-        pass
+    def plot(self, detector, label, **kwargs):
+        plt.plot(self.xlabels[detector], self.extract_traces(detector, label).transpose(), **kwargs)
+        plt.show()
 
 
 # class AgilentUV(Agilent):
@@ -372,39 +412,3 @@ class Agilent(Chromatogram):
 #         self.metadata["instrument"] = "HPLC"
 
 #         f.close()
-
-#     """ 
-#     Documentation for the following functions can be found in chromatogram.py (parent). 
-    
-#     """
-
-#     # TODO: error handling
-#     def extract_traces(self, detector, labels):
-        
-#         if isinstance(labels, int): 
-#             labels = [labels]
-       
-#         detector_i = self.detectors.index(detector)
-#         tp = np.transpose(self.Y[detector_i])
-        
-#         traces = np.zeros((len(labels), self.X.size), np.int64)
-#         for i in range(len(labels)): 
-#             label_i = np.where(self.Ylabels[detector_i] == labels[i])[0][0]
-#             cur_trace = tp[label_i]
-#             for j in range(cur_trace.size):
-#                 traces[i, j] = cur_trace[j]
-
-#         return traces
- 
-#     # TODO: encoding arg
-#     # TODO: add headers
-#     # TODO: all detector/label option
-#     def export_csv(self, filename, detector, labels, delimiter=","):
-#         traces = self.extract_traces(detector, labels)
-#         np.savetxt(filename, np.transpose(traces), delimiter=delimiter, fmt="%i")
-
-#     # TODO: add more args 
-#     # TODO: add multiple labels
-#     def plot(self, detector, label):
-#         plt.plot(self.X, np.transpose(self.extract_traces(detector, label)))
-#         plt.show()
