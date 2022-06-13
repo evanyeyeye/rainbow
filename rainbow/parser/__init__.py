@@ -3,8 +3,6 @@ import os
 from parser.agilent import Agilent
 
 
-# Tries to automatically identifies filetype
-# Currently relies on file extension to do so
 def read(filepath):
     """
     Function to read chromatogram data folders. 
@@ -14,7 +12,7 @@ def read(filepath):
     Returns a Chromatogram object based on filetype. 
 
     """
-    ext = os.path.splitext(filepath)[1].lower() 
+    ext = os.path.splitext(filepath)[1].lower()
     
     # csv file
     # todo: check if the file is a csv by actually parsing it
@@ -23,7 +21,7 @@ def read(filepath):
 
     # data folders
     if os.path.isdir(filepath): 
-        if ext == ".d":
+        if ext.upper() == ".D":
             return Agilent(filepath)
         elif ext == ".raw":
             raise NotImplementedError       
