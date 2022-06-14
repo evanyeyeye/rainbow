@@ -1,6 +1,6 @@
 import struct
 import os
-from parser.agilent import Agilent
+from rainbow.parser import agilent
 
 
 def read(filepath):
@@ -22,6 +22,6 @@ def read(filepath):
     # data folders
     if os.path.isdir(filepath): 
         if ext.upper() == ".D":
-            return Agilent(filepath)
+            return agilent.Agilent(filepath)
         elif ext == ".raw":
             raise NotImplementedError       

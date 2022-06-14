@@ -3,10 +3,10 @@ import struct
 from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
-from parser.chromatogram import Chromatogram 
+from rainbow.parser import chromatogram
 
 # TODO: Save extra data from UV and MS folders.
-class Agilent(Chromatogram):
+class Agilent(chromatogram.Chromatogram):
     """ 
     Class representing an Agilent data folder (.D).
 
