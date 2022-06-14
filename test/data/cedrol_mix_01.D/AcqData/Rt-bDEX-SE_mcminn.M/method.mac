@@ -1,0 +1,8 @@
+NAME METHINFO
+  EditMethPanel 0,1,1
+  MethInfoPanel 1,0,1,1,0,,,,,,
+  METHCOMMENT0$ = "Residual Solvent H2"
+  IF CHECK("Command", "LOADTOPMETHOD") = 1
+    LOADTOPMETHOD
+  ENDIF
+  REMOVE METHINFO

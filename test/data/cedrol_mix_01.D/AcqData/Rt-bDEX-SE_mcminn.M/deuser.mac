@@ -1,0 +1,6 @@
+! File   : deuser.mac
+! Macros : CustomAnalysis
+
+NAME CustomAnalysis
+  REMOVE CustomAnalysis
+  RETURN

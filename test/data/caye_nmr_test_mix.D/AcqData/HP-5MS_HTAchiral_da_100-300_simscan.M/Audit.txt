@@ -1,0 +1,429 @@
+﻿D:\MassHunter\GCMS\1\methods\default.m\Audit.txt 
+Created Tue Sep 20 19:17:52 2016
+
+
+ Modified : Tue Sep 20 19:17:52 2016
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\GCMS\1\methods\INCH\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Sep 20 19:26:56 2016
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\GCMS\1\methods\INCH\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Sep 20 19:30:07 2016
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\GCMS\1\methods\INCH\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Sep 20 19:37:02 2016
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\GCMS\1\methods\INCH\IC_SNR_RT.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Oct 28 12:28:02 2016
+ Event    : Save Method
+ Message  : Save Method to E:\Methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Oct 28 12:29:31 2016
+ Event    : Save Method
+ Message  : Save Method to E:\Methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Jan 06 14:48:26 2017
+ Event    : Save Method
+ Message  : Save Method to F:\F02\inch\methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Wed Jan 23 14:39:54 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Wed Jan 23 14:44:53 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Wed Jan 23 21:35:21 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 11:36:37 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 11:37:08 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 11:48:24 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 11:48:55 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 11:50:07 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 12:52:42 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 13:30:41 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 14:12:30 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 14:56:22 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 14:58:24 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 14:58:55 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 15:00:08 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 16:02:17 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 16:10:51 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 16:17:56 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 16:19:32 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 16:20:04 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Jan 24 22:41:11 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.m
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Jan 25 00:31:17 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Jan 25 14:19:23 2019
+ Event    : Save Method
+ Message  : Save Method to C:\GCMS\inch\methods\IC_Default.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Jan 25 14:49:20 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Jan 25 16:45:51 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Feb 04 11:20:31 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Feb 04 15:24:10 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Feb 04 15:59:26 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Feb 04 16:01:28 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Feb 05 13:26:47 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Helium.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Feb 05 13:53:23 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Feb 05 14:02:58 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Feb 05 14:18:52 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Feb 05 14:20:46 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Feb 05 14:35:23 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Feb 05 14:56:26 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Feb 05 15:34:23 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Feb 28 16:26:01 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Thu Aug 22 14:39:18 2019
+ Event    :  GC Scale Factor changed; no cal table modification
+ Message  : New scale factor: 1
+ Severity : 2
+
+
+ Modified : Thu Aug 22 15:13:12 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD_22Aug19.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Oct 08 10:26:57 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\caye_08Oct2019.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Dec 13 09:34:15 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Dec 13 09:39:55 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Fri Dec 13 10:18:41 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Dec 16 09:19:48 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Dec 16 09:20:44 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Dec 16 10:29:50 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Dec 16 14:17:58 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Dec 16 15:03:49 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Mon Dec 16 15:26:04 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Dec 17 09:22:53 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Dec 17 09:51:17 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral_da_100-300_simscan.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Dec 17 09:52:51 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral_da_100-300_simscan.M
+ Why      : Instrument Control method save
+ Severity : 1
+
+
+ Modified : Tue Dec 17 10:02:14 2019
+ Event    : Save Method
+ Message  : Save Method to D:\MassHunter\Methods\HP-5MS_HTAchiral_da_100-300_simscan.M
+ Why      : Instrument Control method save
+ Severity : 1
+

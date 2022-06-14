@@ -1,0 +1,46 @@
+﻿             Retention Time Locking Data Report
+
+  Retention Locked Method: D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD.M
+Retention Locked Cal Date:  
+               Instrument:  
+                 Operator:  
+
+Method Lock is currently On
+
+Compound: Toluene
+
+Retention Time Calibration:
+
+               ml/min      Time     Spec   Deviation
+    File        Flow       min.     Xcor    Seconds
+
+  RTLOCK1.D     0.80      4.492     -NA-     12.666
+  RTLOCK2.D     0.90      4.381     -NA-      5.970
+  RTLOCK3.D     1.00      4.281     -NA-      0.000
+  RTLOCK4.D     1.10      4.194     -NA-     -5.208
+  RTLOCK5.D     1.20      4.120     -NA-     -9.666
+
+   Maximum Deviation: 12.666 seconds
+           RTL Curve: R = 0.790e0 A*A - 7.862e0 A + 2.018e1
+
+   Terms of Curve Fit:
+       Constant = 2.018e1
+         Linear = -7.862e0
+      Quadratic = 0.790e0
+    Coefficient = 0.999917 ** Good Fit **
+
+Locked Retention Time information:
+
+    Retention Locked File: D:\MassHunter\Methods\Residual_Solvent_FID_MS_Hydrogen_ISTD.M\RTLOCK\RTLOCK3.D
+                 Acq Date: Sometime in the past
+               Instrument: 5977B GCMS
+                 Operator:  
+
+  Measured Retention Time:  4.281  Flow: 0.999 (ml/min)
+    Locked Retention Time:  4.281  Flow: 0.999 (ml/min)
+   ** Locked RT and Flow Within Calibrated Limits **
+
+   Lock run spectrum XCor: 1.0000
+
+
+ Report created: Tue Feb 05 18:14:39 2019

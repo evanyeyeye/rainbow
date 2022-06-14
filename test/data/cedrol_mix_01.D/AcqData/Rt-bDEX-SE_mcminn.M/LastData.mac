@@ -1,0 +1,6 @@
+﻿Name LastDataFile
+  LastDataPath$ = "D:\MassHunter\Data\Emma_19Nov2020\" 
+  LastDataFile$ = "Emma-5001483-0550-1.D" 
+  LastDataSize  = 6851191
+  remove LastDataFile
+  return

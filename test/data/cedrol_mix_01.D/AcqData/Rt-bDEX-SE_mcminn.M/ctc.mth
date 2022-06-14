@@ -1,0 +1,59 @@
+[Files]
+Method=CTC.PMX
+
+[Parameters]
+Volume=1.00
+
+[Details]
+Cycle=GC-Inj
+MP1=Air Volume (µl)
+MV1=0
+MP2=Pre Clean with Solvent 1 ()
+MV2=0
+MP3=Pre Clean with Solvent 2 ()
+MV3=0
+MP4=Pre Clean with Sample ()
+MV4=0
+MP5=Filling Speed (µl/s)
+MV5=5
+MP6=Filling Strokes ()
+MV6=1
+MP7=Inject to
+MV7=GC Inj1
+MP8=Injection Speed (µl/s)
+MV8=50
+MP9=Pre Inject Delay (ms)
+MV9=500
+MP10=Post Inject Delay (ms)
+MV10=500
+MP11=Post Clean with Solvent 1 ()
+MV11=1
+MP12=Post Clean with Solvent 2 ()
+MV12=1
+MP13=Valve Clean with Solvent 1 ()
+MV13=1
+MP14=Valve Clean with Solvent 2 ()
+MV14=1
+Macros=12
+ATOM1=LOCK_TERMINAL(On,)
+ATOM2=WAIT_FOR_DS()
+ATOM3=WAIT_SYNC_SIG(Start,)
+ATOM4=CLEANUP(Wash1,Off,Off,On,Off,On,Off,Off,)
+ATOM5=CLEAN_SYR(Wash1,0,,,,,,,)
+ATOM6=CLEAN_SYR(Wash2,0,,,,,,,)
+ATOM7=REPEAT(0,)
+ATOM8=GET_SAMPLE(SL.Tray,SL.Index,SL.Volume,,,,5,,,0,Off,,,)
+ATOM9=PUT_SAMPLE(Waste,1,,,,,)
+ATOM10=END()
+ATOM11=GET_SAMPLE(SL.Tray,SL.Index,SL.Volume,0,,,5,,,1,Off,,,)
+ATOM12=INJ_SAMPLE(GC Inj1,Inject,Injected,,,500,50,500,1,)
+ATOM13=SET_INJECTED()
+ATOM14=CLEAN_SYR(Wash1,1,,,,,,,)
+ATOM15=CLEAN_SYR(Wash2,1,,,,,,,)
+ATOM16=CLEANUP(Wash1,Off,Off,Off,Off,Off,Off,On,)
+ATOM17=LOCK_TERMINAL(Off,)
+ATOM18=CLEAN_INJ(Wash2,LC Vlv1,1,,,,,,,,8,)
+ATOM19=CLEANUP(Wash1,Off,Off,Off,On,Off,Off,On,)
+ATOM20=LOCK_TERMINAL(Off,)
+Atoms=17
+Syringe=10ul

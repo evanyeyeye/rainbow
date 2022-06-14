@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<GCInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Version>1</Version>
+  <SignalInfoList>
+    <GCSignalInfo>
+      <Source>GC</Source>
+      <Type>Chromatogram</Type>
+      <ID>0</ID>
+      <DisplayName>Signal 1</DisplayName>
+      <bShow>true</bShow>
+    </GCSignalInfo>
+    <GCSignalInfo>
+      <Source>GC</Source>
+      <Type>Chromatogram</Type>
+      <ID>1</ID>
+      <DisplayName>Signal 2</DisplayName>
+      <bShow>false</bShow>
+    </GCSignalInfo>
+    <GCSignalInfo>
+      <Source>GC</Source>
+      <Type>Chromatogram</Type>
+      <ID>2</ID>
+      <DisplayName>Signal 3</DisplayName>
+      <bShow>false</bShow>
+    </GCSignalInfo>
+    <GCSignalInfo>
+      <Source>GC</Source>
+      <Type>Chromatogram</Type>
+      <ID>3</ID>
+      <DisplayName>Signal 4</DisplayName>
+      <bShow>false</bShow>
+    </GCSignalInfo>
+  </SignalInfoList>
+  <ContinuousGCRTP>false</ContinuousGCRTP>
+</GCInfo>

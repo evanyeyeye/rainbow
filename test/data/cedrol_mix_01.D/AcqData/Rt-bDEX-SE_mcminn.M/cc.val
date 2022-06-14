@@ -1,0 +1,23 @@
+!  This file contains a list of items
+!  to be included in the continuing calibration report
+!  This file can be edited using notepad to 
+!  uncomment items to be included in the report
+
+name cc_options
+   cc_per_low= 50   !Specifies the lower and upper area limits 
+   cc_per_hi = 150  !Specifies the lower and upper area limits 
+   cc_per_max = 25  !Specifies the maximum deviation in RF's
+   cc_relresp_min = 0.000 ! Specifies the minimum relative response factor
+   cc_level$ = "50" !Level identifier of initial level with same
+                    !concentration as continuing level
+   cc_time = 0.5    !Retention time deviation limit (min).
+   cc_rettime = 1   !Update Quant Database Retention Times when updating 
+                    ! continuing calibration level 0=no, 1=yes
+   cc_refspec = 0   !Update Quant Database Qualifier Ion Ratios when updating
+                    ! continuing calibration level 0=no, 1=yes
+   cc_report = 0    !report by rrf (0) or calc conc drift (1)
+   cc_qatime = 12   !allowed time period for QACHK
+   cc_qamin = 50    !minimum area %
+   cc_qamax = 200   !maximum area %
+remove cc_options
+
