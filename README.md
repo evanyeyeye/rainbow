@@ -23,6 +23,11 @@ Install the required dependencies.
 pip install -r requirements.txt
 ```
 
+Update your PYTHONPATH by adding this line to your .bash_profile or .bashrc file. 
+```
+export PYTHONPATH="$PYTHONPATH:(YOUR CURRENT WORKING DIRECTORY)"
+```
+
 ## Testing
 
 ```
