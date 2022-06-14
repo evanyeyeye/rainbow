@@ -1,9 +1,45 @@
 # Rainbow
 
-*a web app for analyzing chromatography data*
-Eugene Kwan and Evan Shi
+*a web application for analyzing chromatography data*
 
-# Installation
+by Eugene Kwan and Evan Shi
+
+## Installation 
+
+Clone the repository and enter the main directory.
+```
+git clone git@github.com:evanyeyeye/rainbow.git
+cd rainbow
+```
+
+Create and activate a virtual environment. 
+```
+virtualenv venv
+source venv/bin/activate
+```
+
+Install the required dependencies.
+```
+pip install -r requirements.txt
+```
+
+## Testing
+
+```
+cd test
+python test_agilent.py
+```
+
+## Docs
+
+```
+cd docs
+make html
+```
+
+The docpages are generated under the docs/_build directory. 
+
+## TODO: Installation for Webapp
 
 - create Python virtual environment called `dash` with python, pandas, dash, dash-bootstrap-components, and virtualenv
 - ensure node is installed (download from website)
