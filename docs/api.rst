@@ -4,6 +4,6 @@ API
 .. autosummary::
    :toctree: _autosummary
 
-   parser 
-   parser.agilent
-   parser.chromatogram
+   rainbow.parser 
+   rainbow.parser.agilent
+   rainbow.parser.chromatogram
