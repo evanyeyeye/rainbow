@@ -1,7 +1,6 @@
-# Unit tests not implemented yet, this temporary file just 
-# serves to verify that the parser works as desired.
+# This temporary file is used for exploratory testing.
 
-import parser
+import rainbow.parser
 
 
 data_folders = [
