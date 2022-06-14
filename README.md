@@ -4,7 +4,7 @@
 
 by Eugene Kwan and Evan Shi
 
-## Installation 
+## Setup
 
 Clone the repository and enter the main directory.
 ```
