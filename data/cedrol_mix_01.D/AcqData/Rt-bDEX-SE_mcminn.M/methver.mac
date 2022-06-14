@@ -1,5 +1,0 @@
-NAME _MethodVersion
-  VARLOCK OFF
-  _METHVER = 2.10
-  VARLOCK ON
-  RETURN
