@@ -1,10 +1,9 @@
 File Formats
 ============
 
-This section describes the file structures of the following binary file types:
+This section describes the binary files from the following vendors.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
-   agilent_uv
-   agilent_ch
+   agilent
