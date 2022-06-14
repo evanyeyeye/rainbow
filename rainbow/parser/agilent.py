@@ -279,7 +279,9 @@ class Agilent(chromatogram.Chromatogram):
         """
         metadata = {}
         for key, offset in offsets.items():
-            metadata[key] = self.read_string(f, offset, gap)
+            string = self.read_string(f, offset, gap)
+            if string:
+                metadata[key] = string
         return metadata
         
     def read_string(self, f, offset, gap):
@@ -334,17 +336,23 @@ class Agilent(chromatogram.Chromatogram):
         
         return output_array
 
-    def export_csv(self, filename, detector, labels=None, delimiter=','):
-        
+    def to_str(self, detector, labels=None, delimiter=','):
+
         detector = detector.upper()
 
         traces_tp = self.extract_traces(detector, labels).transpose().astype(str)
         detector_xlabels = self.xlabels[detector]
 
-        f = open(filename, 'w+')
-        f.write(f"RT (ms),{','.join(self.ylabels[detector].astype(str))}\n")
+        output = ""
+        output += f"RT (ms),{','.join(self.ylabels[detector].astype(str))}\n"
         for i in range(detector_xlabels.size):
-            f.write(f"{detector_xlabels[i]},{','.join(traces_tp[i])}\n")
+            output += f"{detector_xlabels[i]},{','.join(traces_tp[i])}\n"
+        return output
+
+    def export_csv(self, filename, detector, labels=None, delimiter=','):
+        
+        f = open(filename, 'w+')
+        f.write(self.to_str(detector, labels, delimiter))
         f.close()
     
     def plot(self, detector, label, **kwargs):
