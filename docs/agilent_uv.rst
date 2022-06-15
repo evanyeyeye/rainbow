@@ -1,5 +1,3 @@
-.. _agilentuv:
-
 ==========================
 Agilent UV Data (.ch, .uv)
 ==========================
@@ -12,10 +10,12 @@ The .uv files contain raw data collected across a larger spectrum.
 
 The .ch files are usually more interesting for the user, so we describe their file structure first. More information about .uv files can be found in the following section. 
 
+.. _agilentuv:
+
 Agilent .ch File Structure (UV)
 ===============================
 
-Note that this section pertains only to the .ch files that contain UV data, which are not the same as the .ch files that contain FID data. 
+Note that this section pertains only to .ch files that contain UV data, which are not the same as .ch files that contain :doc:`FID data <agilent_fid>`. 
 
 These .ch files are comprised of a file header and data body. 
 

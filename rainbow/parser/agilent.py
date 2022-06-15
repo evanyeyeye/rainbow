@@ -100,6 +100,12 @@ class Agilent(chromatogram.Chromatogram):
         """
         Function that parses .ch files containing FID data.
 
+        The intervals between x-axis times are known to be constant, so the number of data points, first x-axis time, and last x-axis time (taken from the file header) are used to find every x-axis label. 
+
+        Since the data values are stored in ascending order with respect to time, their order is used to assign them to their corresponding x-axis times.  
+
+        More information about this file structure can be found :ref:`here <agilent_fid>`.
+
         Args:
             filepath (str): Path to file. 
 
