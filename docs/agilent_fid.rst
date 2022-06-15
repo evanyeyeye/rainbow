@@ -71,7 +71,7 @@ The strings are separated by large blocks of null bytes, which are likely used t
      - Signal
      - Front Signal
 
-There are also several groups of unreadable bytes at fixed offsets in the header. The purpose of most of these bytes are currently unknown. But there are a few known values that provide useful information about x-axis labels. 
+There are also several groups of unreadable bytes at fixed offsets in the header. The purpose of most of these bytes are currently unknown. But there are a few known values that provide useful information.
 
 .. list-table::
    :header-rows: 1
@@ -83,7 +83,7 @@ There are also several groups of unreadable bytes at fixed offsets in the header
      - Example Value
    * - 0x116
      - Number of data values 
-     - Int 
+     - Unsigned int 
      - Big
      - 54285
    * - 0x11A
