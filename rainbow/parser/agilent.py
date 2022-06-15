@@ -35,6 +35,14 @@ class Agilent(chromatogram.Chromatogram):
         """
         Function that parses .ch files containing UV data.
 
+        The entire file must be read to determine the total number of x-axis labels. It is faster to append elements to a python list than to read the file twice with a fixed numpy array. It is even faster to use a deque instead of a list. 
+
+        Since the intervals between x-axis times are known to be constant, the first x-axis time and last x-axis time (taken from the file header) are used to find every x-axis label.
+
+        The wavelength (y-axis label) is extracted from the file metadata. 
+
+        More information about this file structure can be found :ref:`here <agilent_uv>`.
+
         Args:
             filepath (str): Path to file. 
 
