@@ -102,7 +102,7 @@ Data body
 
 The rest of the file contains the data values. The structure of the data body is relatively straightforward: little-endian doubles that each represent a single data value. These doubles are in ascending order with respect to time, so the first double corresponds to the first x-axis time. 
 
-The data body can be visualized by the following diagram, where each double represents a data value. The segments are not drawn to scale. 
+The entire file can be visualized by the following diagram, where each double represents a data value. The segments are not drawn to scale. 
 
 .. code-block:: text 
 
