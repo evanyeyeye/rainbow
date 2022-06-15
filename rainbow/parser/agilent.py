@@ -154,6 +154,14 @@ class Agilent(chromatogram.Chromatogram):
         """
         Function that parses .ms files containing MS data.
 
+        The type of .ms file is determined using the descriptive string at the start of the file. 
+
+        Because the data segments for each x-axis time contain data values for an arbitrary set of masses, the entire file must be read to determine the total list of unique masses. To prevent from rereading the file, the data is parsed and saved in the memo matrix as (mass, count) tuples.
+
+        Surprisingly, it turns out that checking membership in a set is noticeably faster than reading a value from a 2D numpy matrix. Accordingly, we use a set to fill the data array at the end to increase speed by more than 3x.  
+
+        More information about this file structure can be found :ref:`here <agilent_ms>`.
+
         Args:
             filepath (str): Path to file. 
 
