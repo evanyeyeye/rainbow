@@ -179,7 +179,7 @@ class Agilent(chromatogram.Chromatogram):
         
         # Go to start of data body. 
         f.seek(data_offsets['start'])
-        f.seek((struct.unpack('>H', f.read(2))[0] - 1) * 2)
+        f.seek(struct.unpack('>H', f.read(2))[0] * 2)
 
         # Extract data values.
         times = np.empty(num_rows, dtype=int)
@@ -187,7 +187,6 @@ class Agilent(chromatogram.Chromatogram):
         masses_set = set()
         for i in range(num_rows):
             # Read in header information.
-            f.read(2)
             times[i] = struct.unpack('>I', f.read(4))[0]
             f.read(6)
             num_masses = struct.unpack('>H', f.read(2))[0]
@@ -204,7 +203,7 @@ class Agilent(chromatogram.Chromatogram):
             counts = (8 ** counts_head) * counts_tail
 
             memo[i] = (masses, counts)
-            f.read(10)
+            f.read(12)
             
         masses_array = np.array(sorted(masses_set))
         mass_indices = dict(zip(masses_array, range(masses_array.size)))
