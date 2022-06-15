@@ -11,7 +11,7 @@ The binary file is often named FID1A.ch.
 Agilent .ch File Structure (FID)
 ================================
 
-Note that this section pertains only to .ch files that contain FID data, which are not the same as .ch files that contain :doc:`UV data <agilent_uv>`. 
+Note that this section pertains only to .ch files that contain FID data, which are not the same as .ch files that contain :doc:`UV data <agilent_uv>`. The file headers are very similar, however. 
 
 The .ch files are comprised of a file header and data body. 
 
@@ -71,7 +71,7 @@ The strings are separated by large blocks of null bytes, which are likely used t
      - Signal
      - Front Signal
 
-There are also several groups of unreadable bytes at fixed offsets in the header. The purpose of most of these bytes are currently unknown. But there are a few known values that provide useful information.
+There are also several groups of unreadable bytes at fixed offsets in the header. The purpose of most of these bytes are currently unknown. But there are a few known values that provide useful information about the x-axis labels.
 
 .. list-table::
    :header-rows: 1

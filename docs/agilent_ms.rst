@@ -135,7 +135,7 @@ Data body
 
 The next part of the file contains the data values. Unlike the file header, the structure of the data body is the same for both types of file. 
 
-The file body contains a data segment for each retention time (x-axis label). Each segment begins with a 16-byte header. All known values in the headers are unsigned and big-endian. In order from start to end:
+The data body contains a data segment for each retention time (x-axis label). Each segment begins with a 16-byte header. All known values in the headers are unsigned and big-endian. In order from start to end:
 
 .. list-table::
    :header-rows: 1
@@ -172,6 +172,8 @@ For example, the count 574016 = 8969 * 8^2 would be represented by the short 417
 Note that this encoding scheme sacrifices precision to minimize storage space. 
 
 As a side note, it appears that the data values may be stored in descending order by mass, but we are currently unsure of whether this is always the case. 
+
+Finally, each data segment ends with a 12-byte footer. The purpose of these bytes is currently unknown. 
 
 A data segment for a single retention time can be visualized by the following diagram. The inner segments are not drawn to scale.
 
