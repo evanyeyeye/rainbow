@@ -3,25 +3,27 @@ import os
 from rainbow.parser import agilent
 
 
-def read(filepath):
+def read(dirpath):
     """
-    Function to read chromatogram data folders. 
-
-    This function is the main way to use the package. 
+    Function that reads chromatogram data directory. 
     
-    Returns a Chromatogram object based on filetype. 
+    Args:
+        dirpath (str): Path of the directory.
+
+    Returns:
+        DataDirectory representing the data directory. 
 
     """
-    ext = os.path.splitext(filepath)[1].lower()
+    ext = os.path.splitext(dirpath)[1].lower()
     
     # csv file
     # todo: check if the file is a csv by actually parsing it
-    if os.path.isfile(filepath) and ext == ".csv":
+    if os.path.isfile(dirpath) and ext == ".csv":
         raise NotImplementedError
 
     # data folders
-    if os.path.isdir(filepath): 
+    if os.path.isdir(dirpath): 
         if ext.upper() == ".D":
-            return agilent.Agilent(filepath)
+            return agilent.parse_directory(dirpath)
         elif ext == ".raw":
             raise NotImplementedError       
