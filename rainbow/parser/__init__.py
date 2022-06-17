@@ -5,7 +5,7 @@ from rainbow.parser import agilent
 
 def read(dirpath):
     """
-    Function that reads chromatogram data directory. 
+    Function that reads a chromatogram data directory. 
     
     Args:
         dirpath (str): Path of the directory.

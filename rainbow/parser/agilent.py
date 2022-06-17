@@ -2,8 +2,7 @@ import os
 import struct
 from collections import deque
 import numpy as np
-from datadirectory import DataDirectory 
-from datafile import DataFile 
+from rainbow.parser import datadirectory, datafile
 
 
 def parse_directory(dirpath):
@@ -37,7 +36,7 @@ def parse_directory(dirpath):
         else: 
             detector_to_files[detector] = [datafile]
 
-    return DataDirectory(dirpath, detector_to_files)
+    return datadirectory.DataDirectory(dirpath, detector_to_files)
 
 def parse_file(filepath):
     """
@@ -82,12 +81,12 @@ def parse_ch(filepath):
     f.close()
 
     if head == 0x03313330:
-        return _parse_ch_uv(filepath)
+        return parse_ch_uv(filepath)
     elif head == 0x03313739:
-        return _parse_ch_fid(filepath)
+        return parse_ch_fid(filepath)
     return None
 
-def _parse_ch_uv(filepath):
+def parse_ch_uv(filepath):
     """
     Parses Agilent .ch files containing UV data. It should not be called directly. Use parse_ch instead.  
 
@@ -142,7 +141,7 @@ def _parse_ch_uv(filepath):
     times = np.arange(start_time, end_time + 1, delta_time)
 
     # Extract the y-axis label (signal).
-    signal_str = _read_string(f, 0x1075, 2)
+    signal_str = read_string(f, 0x1075, 2)
     signal = int(signal_str.split("Sig=")[1].split('.')[0])
 
     # Extract metadata
@@ -157,13 +156,13 @@ def _parse_ch_uv(filepath):
     xlabels = times
     ylabels = np.array([signal])
     data = np.array([data_array]).transpose()
-    metadata = _extract_metadata(f, metadata_offsets, 2)
+    metadata = extract_metadata(f, metadata_offsets, 2)
     
     f.close()
 
-    return DataFile(filepath, 'UV', xlabels, ylabels, data, metadata)
+    return datafile.DataFile(filepath, 'UV', xlabels, ylabels, data, metadata)
 
-def _parse_ch_fid(filepath):
+def parse_ch_fid(filepath):
     """
     Parses Agilent .ch files containing FID data. It should not be called directly. Use parse_ch instead.  
 
@@ -215,11 +214,11 @@ def _parse_ch_fid(filepath):
     xlabels = times
     ylabels = np.array(['TIC'])
     data = data_array
-    metadata = _extract_metadata(f, metadata_offsets, 2)
+    metadata = extract_metadata(f, metadata_offsets, 2)
 
     f.close()
 
-    return DataFile(filepath, 'FID', xlabels, ylabels, data, metadata)
+    return datafile.DataFile(filepath, 'FID', xlabels, ylabels, data, metadata)
 
 def parse_uv(filepath):
     """
@@ -289,11 +288,11 @@ def parse_uv(filepath):
     xlabels = times 
     ylabels = [wavelengths]
     data = absorbances
-    metadata = _extract_metadata(f, metadata_offsets, 2)
+    metadata = extract_metadata(f, metadata_offsets, 2)
 
     f.close()
 
-    return DataFile(filepath, 'UV', xlabels, ylabels, data, metadata)
+    return datafile.DataFile(filepath, 'UV', xlabels, ylabels, data, metadata)
 
 def parse_ms(filepath):   
     """
@@ -329,7 +328,7 @@ def parse_ms(filepath):
     }
 
     # Check the type of .ms file. 
-    type_ms = _read_string(f, data_offsets['type'], 1)
+    type_ms = read_string(f, data_offsets['type'], 1)
 
     if type_ms == "MSD Spectral File":
         f.seek(data_offsets['count1'])
@@ -389,13 +388,13 @@ def parse_ms(filepath):
     xlabels = times 
     ylabels = masses_array 
     data = data_array 
-    metadata = _extract_metadata(f, metadata_offsets, 1)
+    metadata = extract_metadata(f, metadata_offsets, 1)
 
     f.close()
 
-    return DataFile(filepath, 'MS', xlabels, ylabels, data, metadata)
+    return datafile.DataFile(filepath, 'MS', xlabels, ylabels, data, metadata)
 
-def _extract_metadata(f, offsets, gap):
+def extract_metadata(f, offsets, gap):
     """
     Extracts metadata from the header of an Agilent data file. 
 
@@ -410,12 +409,12 @@ def _extract_metadata(f, offsets, gap):
     """
     metadata = {}
     for key, offset in offsets.items():
-        string = _read_string(f, offset, gap)
+        string = read_string(f, offset, gap)
         if string:
             metadata[key] = string
     return metadata
     
-def _read_string(f, offset, gap):
+def read_string(f, offset, gap):
     """
     Extracts a string from the specified offset.
 

@@ -82,10 +82,10 @@ class DataFile:
 
         """
         f = open(filename, 'w+')
-        f.write(self._to_csv_str(labels, delimiter))
+        f.write(self.to_csv_str(labels, delimiter))
         f.close()
     
-    def _to_csv_str(self, labels=None, delimiter=','):
+    def to_csv_str(self, labels=None, delimiter=','):
         """
         Returns a string representation of a CSV with data corresponding to the specified y-axis label(s).
         
