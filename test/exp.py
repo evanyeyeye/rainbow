@@ -10,29 +10,6 @@ data_folders = [
     "sim_fid/caye_nmr_test_mix.D"
 ]
 
-chromatogram = parser.read("data/" + data_folders[3])
+datadir = parser.read("data/" + data_folders[2])
 
-detector = 'MS'
-
-print("X labels:")
-print(chromatogram.xlabels[detector].shape)
-print()
-
-print("Y labels:")
-print(chromatogram.ylabels[detector].shape)
-print()
-
-print("Data array:")
-print(chromatogram.data[detector].shape)
-print()
-
-print("Metadata:")
-print(chromatogram.metadata[detector])
-print()
-
-print("Sample traces:")
-traces = chromatogram.extract_traces(detector)
-print(traces)
-
-chromatogram.export_csv("test.csv", detector)
-# chromatogram.plot(detector, 210)
+print(datadir)
