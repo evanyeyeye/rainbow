@@ -286,7 +286,7 @@ def parse_uv(filepath):
     }
 
     xlabels = times 
-    ylabels = [wavelengths]
+    ylabels = wavelengths
     data = absorbances
     metadata = extract_metadata(f, metadata_offsets, 2)
 

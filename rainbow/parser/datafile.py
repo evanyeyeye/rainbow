@@ -17,7 +17,7 @@ class DataFile:
 
     """
     def __init__(self, filepath, detector, xlabels, ylabels, data, metadata):
-        self.name = os.path.basename(filepath)
+        self.name = os.path.basename(filepath).upper()
         self.detector = detector 
         self.xlabels = xlabels 
         self.ylabels = ylabels

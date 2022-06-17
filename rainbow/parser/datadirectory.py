@@ -14,7 +14,7 @@ class DataDirectory:
 
     """
     def __init__(self, dirname, detector_to_files):
-        self.name = os.path.basename(dirname)
+        self.name = os.path.basename(dirname).upper()
         self.detectors = []
         self.datafiles = {}
         self.detector_to_files = detector_to_files
@@ -44,7 +44,7 @@ class DataDirectory:
             2D numpy array containing data for the specified labels. The rows correspond to the y-axis labels and the columns corrrespond to the x-axis times.
 
         """
-        # Input validation for filename.
+        filename = filename.upper()
         if filename not in self.datafiles.keys():
             raise Exception(f"Data file {filename} not found in {self.name}.")
         
@@ -62,6 +62,7 @@ class DataDirectory:
             delimiter (str): Delimiter used in the output CSV file. 
 
         """
+        in_filename = in_filename.upper()
         if in_filename not in self.datafiles.keys():
             raise Exception(f"Data file {in_filename} not found in {self.name}.")
 
@@ -76,6 +77,7 @@ class DataDirectory:
             filename (str): Name of the data file.
             label (str or int): Y-axis label to be plotted. 
         """
+        filename = filename.upper()
         if filename not in self.datafiles.keys():
             raise Exception(f"Data file {filename} not found in {self.name}.")
 
