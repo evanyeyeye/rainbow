@@ -10,7 +10,7 @@ The .ch files contain data for a single wavelength after a user-specified bandwi
 
 The .uv files contain raw data collected across a larger spectrum. 
 
-.. _agilent_uv:
+.. _agilent_uv_ch:
 
 Agilent .ch File Structure (UV)
 ===============================
@@ -135,6 +135,8 @@ For example, the 4 values 251658240, 16777216, 16777218, and 16777221 might be s
 This obscure storage pattern was most likely used to reduce storage space. 
 
 Finally, the file ends with 2 null bytes.
+
+.. _agilent_uv_uv:
 
 Agilent .uv File Structure
 ==========================
@@ -273,8 +275,5 @@ A data segment for a single retention time can be visualized by the following di
    +----+----+-------------+----+----+-------------+---------------+----+----+
    |                      repeats for the # of wavelengths                   |
    +-------------------------------------------------------------------------+
-
-Footer 
-------
 
 Finally, the file ends with 4 null bytes.
