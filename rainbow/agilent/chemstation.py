@@ -282,8 +282,9 @@ def parse_uv(path):
         "position": 0xFD7
     }
 
-    # Validate file header. 
     f = open(path, 'rb')
+
+    # Validate file header. 
     head = struct.unpack('>I', f.read(4))[0]
     if head != 0x03313331:
         f.close()
@@ -428,7 +429,7 @@ def parse_uv_partial(path):
 
 """
 
-def parse_ms(filepath):   
+def parse_ms(path):   
     """
     Parses Agilent .ms files.
 
@@ -441,51 +442,52 @@ def parse_ms(filepath):
     More information about this file structure can be found :ref:`here <agilent_ms>`.
 
     Args:
-        filepath (str): Path to file. 
+        path (str): Path to Agilent .ms file. 
     
     Returns:
         DataFile representing the file, if it can be parsed. Otherwise, None.
 
     """
-
-    f = open(filepath, 'rb')
-    head = struct.unpack('>I', f.read(4))[0]
-
-    if head != 0x01320000:
-        f.close()
-        return parse_ms_partial(filepath)
-
     data_offsets = {
         'type': 0x4,
-        'start': 0x10A,
-        'count1': 0x116,
-        'count2': 0x142
+        'data_start_pos': 0x10A,
+        'lc_num_times': 0x116,
+        'gc_num_times': 0x142
+    }
+    metadata_offsets = {
+        'time': 0xB2,
+        'method': 0xE4
     }
 
-    # Check the type of .ms file. 
+    f = open(path, 'rb')
+
+    # Validate file header.
+    # If invalid, the file may be a partial.
+    head = struct.unpack('>I', f.read(4))[0]
+    if head != 0x01320000:
+        f.close()
+        return parse_ms_partial(path)
+
+    # Determine the type of .ms file based on header.
+    # Read the number of retention times differently based on type.
     type_ms = read_string(f, data_offsets['type'], 1)
-
     if type_ms == "MSD Spectral File":
-        f.seek(data_offsets['count1'])
-        num_rows = struct.unpack('>I', f.read(4))[0]
+        f.seek(data_offsets['lc_num_times'])
+        num_times = struct.unpack('>I', f.read(4))[0]
     else: 
-        f.seek(data_offsets['count2'])
-        num_rows = struct.unpack('<I', f.read(2))[0]
+        f.seek(data_offsets['gc_num_times'])
+        num_times = struct.unpack('<I', f.read(4))[0]
     
-    # Go to start of data body. 
-    f.seek(data_offsets['start'])
+    # Find the starting offset for the data.  
+    f.seek(data_offsets['data_start_pos'])
     f.seek(struct.unpack('>H', f.read(2))[0] * 2 - 2)
-
-    # print(filepath, type_ms, f.tell())
-    if type_ms == "MSD Spectral File":
-        assert(f.tell() == 754)
+    assert(type_ms != "MSD Spectral File" or f.tell() == 754)
 
     # Extract data values.
-    times = np.empty(num_rows, dtype=int)
-    memo = np.empty(num_rows, dtype=object)
-    # tic = np.empty(num_rows, dtype=int)
+    times = np.empty(num_times, dtype=np.uint32)
+    memo = np.empty(num_times, dtype=object)
     masses_set = set()
-    for i in range(num_rows):
+    for i in range(num_times):
         # Read in header information.
         cur = f.tell()
         length = struct.unpack('>H', f.read(2))[0] * 2
@@ -513,15 +515,12 @@ def parse_ms(filepath):
         
         f.read(10)
         assert(cur + length == f.tell())
-        # f.read(6)
-        # tic[i] = struct.unpack('>I', f.read(4))[0]
 
-    # print(tic)
     masses_array = np.array(sorted(masses_set))
     mass_indices = dict(zip(masses_array, range(masses_array.size)))
 
-    data_array = np.zeros((num_rows, masses_array.size), dtype=int)
-    for i in range(num_rows):
+    data_array = np.zeros((num_times, masses_array.size), dtype=int)
+    for i in range(num_times):
         if not memo[i]:
             continue
         masses, counts = memo[i]
@@ -533,17 +532,7 @@ def parse_ms(filepath):
                 data_array[i, mass_indices[masses[j]]] = counts[j]
                 visited.add(masses[j])
 
-    # t_array = np.zeros((num_rows, 1), dtype=int)
-    # for i in range(num_rows):
-    #     t_array[i][0] = sum(list(data_array[i]))
-
-    # print(filepath, hex(f.tell()))
-
-    # Extract metadata.
-    metadata_offsets = {
-        'time': 0xB2,
-        'method': 0xE4
-    }
+    # print(path, hex(f.tell()))
 
     xlabels = times / 60000
     ylabels = masses_array 
@@ -552,16 +541,16 @@ def parse_ms(filepath):
 
     f.close()
 
-    return DataFile(filepath, 'MS', xlabels, ylabels, data, metadata)
+    return DataFile(path, 'MS', xlabels, ylabels, data, metadata)
 
-def parse_ms_partial(filepath):
+def parse_ms_partial(path):
     """
     A
     """
-    f = open(filepath, 'rb')
+    f = open(path, 'rb')
     f.seek(0x10A)
     if struct.unpack('>H', f.read(2))[0] != 0:
-        print(filepath)
+        print(path)
         return None
 
     f.seek(754)
@@ -597,14 +586,14 @@ def parse_ms_partial(filepath):
         except struct.error:
             break
 
-    num_rows = len(memo)
-    times = np.empty(num_rows)
+    num_times = len(memo)
+    times = np.empty(num_times)
 
     masses_array = np.array(sorted(masses_set))
     mass_indices = dict(zip(masses_array, range(masses_array.size)))
 
-    data_array = np.zeros((num_rows, masses_array.size), dtype=int)
-    for i in range(num_rows):
+    data_array = np.zeros((num_times, masses_array.size), dtype=int)
+    for i in range(num_times):
         if not memo[i][1]:
             continue
         time, masses, counts = memo[i]
@@ -629,7 +618,7 @@ def parse_ms_partial(filepath):
 
     f.close()
 
-    return DataFile(filepath, 'MS', xlabels, ylabels, data, metadata)
+    return DataFile(path, 'MS', xlabels, ylabels, data, metadata)
 
 
 """
