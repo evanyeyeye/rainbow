@@ -1,0 +1,1 @@
+from rainbow.read import read

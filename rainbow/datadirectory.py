@@ -33,7 +33,7 @@ class DataDirectory:
     def extract_traces(self, filename, labels=None):
         """
         Extracts data corresponding to the specified label(s) from the specified file.
-
+    
         It raises an exception if the file is not found in the directory.
 
         Args:
