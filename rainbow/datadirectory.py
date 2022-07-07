@@ -34,7 +34,7 @@ class DataDirectory:
         return f"\n{'=' * len(self.name)}\n" \
                f"{self.name}\n" \
                f"{'=' * len(self.name)}\n" \
-               f"{self.detector_to_files}\n"
+               f"{self.by_detector}\n"
 
     def extract_traces(self, filename, labels=None):
         """
@@ -51,10 +51,10 @@ class DataDirectory:
 
         """
         filename = filename.upper()
-        if filename not in self.datafiles.keys():
+        if filename not in self.by_name.keys():
             raise Exception(f"Data file {filename} not found in {self.name}.")
         
-        file = datafiles[filename]
+        file = self.by_name[filename]
         return file.extract_traces(labels)
 
     def export_csv(self, in_filename, out_filename, labels=None, delimiter=','):
@@ -69,10 +69,10 @@ class DataDirectory:
 
         """
         in_filename = in_filename.upper()
-        if in_filename not in self.datafiles.keys():
+        if in_filename not in self.by_name.keys():
             raise Exception(f"Data file {in_filename} not found in {self.name}.")
 
-        file = self.datafiles[in_filename]
+        file = self.by_name[in_filename]
         file.export_csv(out_filename, labels, delimiter)
     
     def plot(self, filename, label, **kwargs):
@@ -84,8 +84,8 @@ class DataDirectory:
             label (str or int): Y-axis label to be plotted. 
         """
         filename = filename.upper()
-        if filename not in self.datafiles.keys():
+        if filename not in self.by_name.keys():
             raise Exception(f"Data file {filename} not found in {self.name}.")
 
-        file = self.datafiles[filename]
+        file = self.by_name[filename]
         file.plot(label, **kwargs)
