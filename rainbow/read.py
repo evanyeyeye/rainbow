@@ -1,6 +1,6 @@
 import struct
 import os
-from rainbow.agilent import chemstation, masshunter
+from rainbow import agilent
 
 
 def read(path):
@@ -21,9 +21,7 @@ def read(path):
 
     ext = os.path.splitext(path)[1].lower()
     if ext.upper() == '.D':
-        datadir = chemstation.read_directory(path)
-        if not datadir:
-            datadir = masshunter.read_directory(path)
+        datadir = agilent.parse_directory(path)
     elif ext.lower() == '.raw':
         raise NotImplementedError
 
@@ -31,7 +29,6 @@ def read(path):
         raise Exception(f"Rainbow cannot read {path}.")
 
     return datadir
-
 
 def read_csv():
     pass   

@@ -1,6 +1,7 @@
 import os 
 import matplotlib.pyplot as plt
 
+
 class DataDirectory:
     """
     Class representing a chromatogram data directory.
@@ -8,21 +9,26 @@ class DataDirectory:
     It contains the following attributes:
 
     - name: String name of the directory. 
-    - detectors: String list of all detectors in the directory. Supported detectors are: UV, MS, FID, CAD, and ELSD.
+    - detectors: String set of all detectors in the directory. Supported detectors are: UV, MS, FID, CAD, and ELSD.
     - datafiles: Dictionary mapping filenames to DataFile objects. 
     - detector_to_files: Dictionary mapping detector names to lists of DataFile objects. 
 
     """
-    def __init__(self, dirname, detector_to_files):
-        self.name = os.path.basename(dirname).upper()
-        self.detectors = []
-        self.datafiles = {}
-        self.detector_to_files = detector_to_files
+    def __init__(self, path, datafiles):
+        self.name = os.path.basename(path).upper()
+        self.datafiles = datafiles
+        self.by_name = {}
+        self.by_detector = {}
+        self.detectors = set()
 
-        for detector, files in detector_to_files.items():
-            self.detectors.append(detector)
-            for file in files:
-                self.datafiles[file.name] = file
+        for datafile in datafiles:
+            self.by_name[datafile.name] = datafile
+            detector = datafile.detector
+            self.detectors.add(detector)
+            if detector in self.by_detector:
+                self.by_detector[detector].append(datafile)
+            else: 
+                self.by_detector[detector] = [datafile]
 
     def __repr__(self):
         return f"\n{'=' * len(self.name)}\n" \

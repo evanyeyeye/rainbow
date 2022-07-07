@@ -11,60 +11,46 @@ MAIN PARSING METHODS
 
 """
 
-def read_directory(dirpath):
+def parse_files(path):
     """
-    Reads an Agilent Chemstation .D directory. 
+    Finds and parses Agilent Chemstation data files with a .ch, .uv, or .ms extension.
 
-    Tries to parse all files in the directory with a .ch, .uv, or .ms extension.
-
-    Each successfully parsed file is stored as a DataFile, which are all added to a DataDirectory. 
+    Each successfully parsed file is stored as a DataFile.
     
     Args:
-        dirpath (str): Path to the Agilent data directory. 
+        path (str): Path to the Agilent .D data directory. 
 
     Returns:
-        DataDirectory representing the directory. It contains each valid data file as a DataFile. 
+        List containing a DataFile for each parsed data file. 
 
     """
-    detector_to_files = {} 
+    datafiles = []
+    for file in os.listdir(path):
+        datafile = parse_file(os.path.join(path, file))
+        if datafile:
+            datafiles.append(datafile)
+    return datafiles
 
-    valid_exts = {'.ch', '.uv', '.ms'}
-    for file in os.listdir(dirpath):
-        ext = os.path.splitext(file)[1].lower()
-        if ext not in valid_exts:
-            continue 
-        datafile = parse_file(os.path.join(dirpath, file))
-        if not datafile:
-            continue 
-        detector = datafile.detector
-        if detector in detector_to_files:
-            detector_to_files[detector].append(datafile)
-        else: 
-            detector_to_files[detector] = [datafile]
-
-    return DataDirectory(dirpath, detector_to_files)
-
-def parse_file(filepath):
+def parse_file(path):
     """
-    Parses an Agilent data file. Supported extensions are .ch, .uv, and .ms. 
+    Parses an Agilent Chemstation data file. Supported extensions are .ch, .uv, and .ms. 
 
-    It calls the appropriate subroutine based on the file extension. 
+    Calls the appropriate subroutine based on the file extension. 
 
     Args:
-        filepath (str): Path to the Agilent data file.
+        path (str): Path to the Agilent data file.
     
     Returns:
         DataFile representing the file, if it can be parsed. Otherwise, None. 
 
     """
-    ext = os.path.splitext(filepath)[1].lower()
+    ext = os.path.splitext(path)[1].lower()
     if ext == '.ch':
-        return parse_ch(filepath)
+        return parse_ch(path)
     elif ext == '.uv':
-        return parse_uv(filepath)
+        return parse_uv(path)
     elif ext == '.ms':
-        return parse_ms(filepath)
-
+        return parse_ms(path)
     return None
 
 
@@ -73,35 +59,104 @@ def parse_file(filepath):
 
 """
 
-def parse_ch(filepath):
+def parse_ch(path):
     """
     Parses Agilent .ch files. 
 
-    There are different file structures for .ch files containing UV versus FID data. 
+    The .ch files containing FID data have a different file structure than other .ch files.
 
-    This method determines which type of data the file contains using the file header, and calls the appropriate subroutine. 
+    This method determines the type of the .ch file using the file header, and calls the appropriate subroutine. 
 
     Args: 
-        filepath (str): Path to the Agilent .ch file.
+        path (str): Path to the Agilent .ch file.
     
     Returns:
         DataFile representing the file, if it can be parsed. Otherwise, None.
 
     """
-    f = open(filepath, 'rb')
+    f = open(path, 'rb')
     head = struct.unpack('>I', f.read(4))[0]
     f.close()
 
-    if head == 0x03313330:
-        return parse_ch_uv(filepath)
-    elif head == 0x03313739:
-        return parse_ch_fid(filepath)
+    if head == 0x03313739:
+        return parse_ch_fid(path)
+    elif head == 0x03313330:
+        return parse_ch_other(path)
     return None
 
-
-def parse_ch_uv(filepath):
+def parse_ch_fid(path):
     """
-    Parses Agilent .ch files containing UV data. It should not be called directly. Use parse_ch instead.  
+    Parses Agilent .ch files containing FID data. This method should not be called directly. Use parse_ch instead.
+
+    The intervals between retention times (x-axis labels) are known to be constant, so the number of data points, first retention time, and last retention time are extracted from the file header and used to calculate every retention time. 
+
+    Since the data values are stored in ascending order with respect to time, they are assigned to their corresponding retention times based on their order in the file.  
+
+    More information about this file structure can be found :ref:`here <agilent_fid>`.
+
+    Args:
+        path (str): Path to the Agilent .ch file with FID data. 
+
+    Returns:
+        DataFile representing the file. 
+
+    """
+    data_offsets = {
+        'num_times': 0x116,
+        'scaling_factor': 0x127C,
+        'data_start': 0x1800
+    }
+    metadata_offsets = {
+        'notebook': 0x35A, 
+        'date': 0x957, 
+        'method': 0xA0E, 
+        'instrument': 0xC11, 
+        'unit':  0x104C, 
+        'signal': 0x1075 
+    }
+    
+    f = open(path, 'rb')
+
+    # Extract the number of retention times.
+    f.seek(data_offsets['num_times'])
+    num_times = struct.unpack(">I", f.read(4))[0]
+    
+    # Calculate all retention times using the start and end times. 
+    start_time = struct.unpack(">f", f.read(4))[0]
+    end_time = struct.unpack(">f", f.read(4))[0]
+    delta_time = (end_time - start_time) // (num_times - 1)
+    times = np.arange(start_time, end_time, delta_time) 
+    assert (times.size == num_times)
+    if times.size > num_times:
+        times = times[:num_times]
+
+    # Extract the raw data values.
+    f.seek(data_offsets['data_start'])
+    raw_matrix = np.empty((num_times, 1), dtype=int)
+    for i in range(num_times):
+        raw_matrix[i, 0] = struct.unpack("<d", f.read(8))[0]
+    assert(f.tell() == os.path.getsize(filepath))
+
+    # Extract the scaling factor. 
+    f.seek(data_offsets['scaling_factor'])
+    scaleing_factor = struct.unpack('>d', f.read(8))[0]
+
+    # Report time in minutes. 
+    xlabels = times / 60000
+    # No ylabel for FID data. 
+    ylabels = np.array([''])
+    # Apply scaling factor to raw values to get the real data.  
+    data = scaling_factor * raw_matrix
+    # Extract metadata from file header.
+    metadata = read_header(f, metadata_offsets)
+
+    f.close()
+
+    return DataFile(path, 'FID', xlabels, ylabels, data, metadata)
+
+def parse_ch_other(path):
+    """
+    Parses Agilent .ch files containing UV, CAD, or ELSD data. This method should not be called directly. Use parse_ch instead.  
 
     The entire file must be read to determine the total number of retention times (x-axis labels). But using a numpy array (with a fixed size of that number) would require reading the file a second time. It is faster to append elements to a python list than to read the file twice. This method uses a deque instead of a list, which is even faster.
 
@@ -112,146 +167,87 @@ def parse_ch_uv(filepath):
     More information about this file structure can be found :ref:`here <agilent_uv_ch>`.
 
     Args:
-        filepath (str): Path to the Agilent .ch file with UV data. 
+        path (str): Path to the Agilent .ch file with UV, CAD, or ELSD data. 
 
     Returns:
         DataFile representing the file. 
 
     """
     data_offsets = {
-        'time': 0x11A,
-        'scaling factor': 0x127C,
-        'body': 0x1800
+        'time_range': 0x11A,
+        'scaling_factor': 0x127C,
+        'data_start': 0x1800
+    }
+    metadata_offsets = {
+        'notebook': 0x35A, 
+        'date': 0x957, 
+        'method': 0xA0E, 
+        'instrument': 0xC11, 
+        'unit':  0x104C, 
+        'signal': 0x1075 
     }
 
-    f = open(filepath, 'rb')
+    f = open(path, 'rb')
     
-    f.seek(data_offsets['scaling factor'])
-    scale = struct.unpack('>d', f.read(8))[0]
-
-    # Extract data values.
-    f.seek(data_offsets['body'])
-    
-    data_array = deque()
-    num_data_points = 0
-    accum = 0
+    # Extract the raw data values.
+    # Count the total number of retention times. 
+    f.seek(data_offsets['data_start'])
+    raw_array = deque()
+    num_times = 0
+    accum_absorbance = 0
     while True:
-        # Read in header information.
+        # Parse segment header for the number of retention times.
+        # If the segment header is invalid, stop reading.  
         head = struct.unpack('>B', f.read(1))[0] 
-        seg_num_data_points = struct.unpack('>B', f.read(1))[0] 
-        num_data_points += seg_num_data_points
+        seg_num_times = struct.unpack('>B', f.read(1))[0] 
+        num_times += seg_num_times
         if head != 0x10:
             break
+        # If the next value is an integer, reset the accumulator to that value.
+        # Otherwise it is a delta, so add it to the accumulator. 
+        for _ in range(seg_num_times):
+            check_int = struct.unpack('>h', f.read(2))[0]
+            if check_int == -0x8000:
+                accum_absorbance = struct.unpack('>i', f.read(4))[0]
+            else: 
+                accum_absorbance += check_int
+            raw_array.append(accum_absorbance)
+    assert(f.tell() == os.path.getsize(path))
 
-        # If next value is a delta, add it to the last integer value (accumulating).
-        for _ in range(seg_num_data_points):
-            check_val = struct.unpack('>h', f.read(2))[0]
-            if check_val == -0x8000:
-                accum = struct.unpack('>i', f.read(4))[0]
-            else: accum += check_val
-            data_array.append(accum)
-
-    assert(f.tell() == os.path.getsize(filepath))
-
-    if "LNG1E" in filepath:
-        print(num_data_points)
-
-    # Calculate the x-axis labels (retention time). 
-    f.seek(data_offsets['time'])
+    # Calculate all retention times using the start and end times.
+    f.seek(data_offsets['time_range'])
     start_time, end_time = struct.unpack('>II', f.read(8))
-    delta_time = (end_time - start_time) / (num_data_points - 1)
+    delta_time = (end_time - start_time) / (num_times - 1)
     times = np.arange(start_time, end_time + 1, delta_time)
 
-    # Extract the y-axis label (signal).
-    signal_str = read_string(f, 0x1075, 2)
-    try:
-        signal = int(float(signal_str.split("Sig=")[1].split(',')[0]))
-    except:
-        signal = ""
-        print(filepath, signal_str)
+    # Extract metadata from file header.
+    metadata = read_header(f, metadata_offsets)
+    assert(metadata['unit'] == "mAU")
 
-    # Extract metadata
-    metadata_offsets = {
-        'notebook': 0x35A, 
-        'date': 0x957, 
-        'method': 0xA0E, 
-        'instrument': 0xC11, 
-        'unit':  0x104C, 
-        'signal': 0x1075 
-    }
+    # Determine the detector and signal using the metadata. 
+    signal_str = metadata['signal']
+    if '=' in signal_str:
+        signal = int(float(signal_str.split('=')[1].split(',')[0]))
+        detector = 'UV'
+    elif 'ADC' in signal_str:
+        signal = ''
+        detector = 'CAD'
+    assert('=' in signal_str or 'ADC' in signal_str)
+
+    # Extract the scaling factor.
+    f.seek(data_offsets['scaling_factor'])
+    scaling_factor = struct.unpack('>d', f.read(8))[0]
+
+    # Report time in minutes. 
     xlabels = times / 60000
+    # No ylabel for CAD or ELSD data. 
     ylabels = np.array([signal])
-    data = scale * np.array([data_array]).transpose()
-    metadata = read_header(f, metadata_offsets, 2)
-
-
-    f.close()
-
-    return DataFile(filepath, 'UV', xlabels, ylabels, data, metadata)
-
-def parse_ch_fid(filepath):
-    """
-    Parses Agilent .ch files containing FID data. It should not be called directly. Use parse_ch instead.  
-
-    The intervals between retention times (x-axis labels) are known to be constant, so the number of data points, first retention time, and last retention time are extracted from the file header and used to calculate every retention time. 
-
-    Since the data values are stored in ascending order with respect to time, they are assigned to their corresponding retention times based on their order in the file.  
-
-    More information about this file structure can be found :ref:`here <agilent_fid>`.
-
-    Args:
-        filepath (str): Path to the Agilent .ch file with FID data. 
-
-    Returns:
-        DataFile representing the file. 
-
-    """
-    data_offsets = {
-        'count': 0x116,
-        'scaling factor': 0x127C,
-        'body': 0x1800
-    }
-    
-    f = open(filepath, 'rb')
-
-    f.seek(data_offsets['scaling factor'])
-    scale = struct.unpack('>d', f.read(8))[0]
-
-    f.seek(data_offsets['count'])
-    num_data_points = struct.unpack(">I", f.read(4))[0]
-    
-    start_time = struct.unpack(">f", f.read(4))[0]
-    end_time = struct.unpack(">f", f.read(4))[0]
-    delta_time = (end_time - start_time) // (num_data_points - 1)
-    times = np.arange(start_time, end_time, delta_time) 
-    if times.size > num_data_points:
-        times = times[:num_data_points]
-
-    # Extract data values.
-    f.seek(data_offsets['body'])
-
-    data_array = np.empty((num_data_points, 1), dtype=int)
-    for i in range(num_data_points):
-        data_array[i, 0] = struct.unpack("<d", f.read(8))[0]
-
-    # Extract metadata
-    metadata_offsets = {
-        'notebook': 0x35A, 
-        'date': 0x957, 
-        'method': 0xA0E, 
-        'instrument': 0xC11, 
-        'unit':  0x104C, 
-        'signal': 0x1075 
-    }
-
-    xlabels = times / 60000
-    ylabels = np.array(['TIC'])
-    data = scale * data_array
-    metadata = read_header(f, metadata_offsets, 2)
+    # Apply scaling factor to raw values to get the real data.  
+    data = scaling_factor * np.array([raw_array]).transpose()
 
     f.close()
 
-    return DataFile(filepath, 'FID', xlabels, ylabels, data, metadata)
+    return DataFile(path, detector, xlabels, ylabels, data, metadata)
 
 
 """
@@ -259,78 +255,102 @@ def parse_ch_fid(filepath):
 
 """
 
-def parse_uv(filepath):
+def parse_uv(path):
     """
     Parses Agilent .uv files.
 
     More information about this file structure can be found :ref:`here <agilent_uv_uv>`.
 
     Args:
-        filepath (str): Path to file. 
+        path (str): Path to the Agilent .uv file. 
     
     Returns:
         DataFile representing the file, if it can be parsed. Otherwise, None.
 
     """
+    data_offsets = {
+        'num_times': 0x116,
+        'scaling_factor': 0xC0D,
+        'data_start': 0x1000
+    }
+    metadata_offsets = {
+        "notebook": 0x35A,
+        "date": 0x957,
+        "method": 0xA0E,
+        "unit": 0xC15,
+        "datatype": 0xC40,
+        "position": 0xFD7
+    }
 
-    f = open(filepath, 'rb')
+    # Validate file header. 
+    f = open(path, 'rb')
     head = struct.unpack('>I', f.read(4))[0]
-
     if head != 0x03313331:
         f.close()
         return None
 
-    data_offsets = {
-        'number of data points': 0x116,
-        'scaling factor': 0xC0D,
-        'start of data body': 0x1000
-    }
-
-    f.seek(data_offsets['scaling factor'])
-    scale = struct.unpack('>d', f.read(8))[0]
-
-    # Sets the total number of x-axis values (or rows) for the array.
-    f.seek(data_offsets["number of data points"])
-    num_data_points = struct.unpack(">I", f.read(4))[0]
-
-    if num_data_points == 0:
+    # Extract the number of retention times.
+    f.seek(data_offsets["num_times"])
+    num_times = struct.unpack(">I", f.read(4))[0]
+    # If there are none, the file may be a partial. 
+    if not num_times:
         f.close()
-        return parse_uv_partial(filepath)
+        return parse_uv_partial(path)
 
-    f.seek(0x104)
-    end = struct.unpack('>I', f.read(4))[0]
-
-    times = np.zeros(num_data_points, np.uint64)
-
-
-    # Get the number of wavelengths using the header for the first data segment.
-    f.seek(data_offsets["start of data body"] + 8)
-    wavelength_range = tuple(num // 20 for num in struct.unpack("<HHH", f.read(6)))
-    
-    wavelengths = np.arange(wavelength_range[0], wavelength_range[1] + 1, wavelength_range[2])
+    # Calculate all the wavelengths using the range from the first data segment header.
+    f.seek(data_offsets["data_start"] + 0x8)
+    start_wv, end_wv, delta_wv = tuple(num // 20 for num in struct.unpack("<HHH", f.read(6)))
+    wavelengths = np.arange(start_wv, end_wv + 1, delta_wv)
     num_wavelengths = wavelengths.size
 
-    # Extract absorbance data from each data segment.
-    absorbances = np.zeros((num_data_points, num_wavelengths), np.int64)
-    f.seek(data_offsets["start of data body"])
-    for i in range(num_data_points):
-        # Read in header information.
+    # Extract the retention times and raw data values from each data segment.
+    f.seek(data_offsets["data_start"])
+    times = np.empty(num_times, np.uint32)
+    raw_matrix = np.empty((num_times, num_wavelengths), np.int32)
+    for i in range(num_times):
+        # Parse segment header for the retention time.
         f.read(4)
         times[i] = struct.unpack("<I", f.read(4))[0]
         f.read(14)
-    
-        # If next value is a delta, add it to the last integer value (accumulating).
-        accum = 0 
+        # If the next value is an integer, reset the accumulator to that value.
+        # Otherwise it is a delta, so add it to the accumulator.
+        accum_absorbance = 0 
         for j in range(num_wavelengths):
-            check_val = struct.unpack('<h', f.read(2))[0]
-            if check_val == -0x8000:
-                accum = struct.unpack('<i', f.read(4))[0]
-            else: accum += check_val
-            absorbances[i, j] = accum
+            check_int = struct.unpack('<h', f.read(2))[0]
+            if check_int == -0x8000:
+                accum_absorbance = struct.unpack('<i', f.read(4))[0]
+            else: accum_absorbance += check_int
+            raw_matrix[i, j] = accum_absorbance
+    end_offset = f.tell()
+    f.seek(0x104)
+    assert(end_offset == struct.unpack('>I', f.read(4))[0])
 
-    assert(f.tell() == end)
+    # Extract the scaling factor.
+    f.seek(data_offsets['scaling_factor'])
+    scaling_factor = struct.unpack('>d', f.read(8))[0]
 
-    # Extract metadata
+    # Report time in minutes. 
+    xlabels = times / 60000
+    # For UV spectrum data, the ylabels are the wavelengths. 
+    ylabels = wavelengths
+    # Apply scaling factor to raw values to get the real data.  
+    data = scaling_factor * raw_matrix
+    # Extract metadata from file header.
+    metadata = read_header(f, metadata_offsets)
+
+    f.close()
+
+    return DataFile(path, 'UV', xlabels, ylabels, data, metadata)
+
+def parse_uv_partial(path):
+    """
+    A
+    """
+    data_offsets = {
+        'num_times': 0x116,
+        'scaling_factor': 0xC0D,
+        'data_start': 0x1000
+    }
     metadata_offsets = {
         "notebook": 0x35A,
         "date": 0x957,
@@ -340,153 +360,73 @@ def parse_uv(filepath):
         "position": 0xFD7
     }
 
-    xlabels = times / 60000
-    ylabels = wavelengths
-    data = scale * absorbances
-    metadata = read_header(f, metadata_offsets, 2)
+    f = open(path, 'rb')
 
-    f.close()
+    # Calculate all the wavelengths using the range from the first data segment header.
+    # If there is no data, then it is not a valid partial file. 
+    try:
+        f.seek(data_offsets["data_start"] + 0x8)
+        start_wv, end_wv, delta_wv = tuple(num // 20 for num in struct.unpack("<HHH", f.read(6)))
+        wavelengths = np.arange(start_wv, end_wv + 1, delta_wv)
+        num_wavelengths = wavelengths.size
+    except struct.error:
+        return None
 
-    return DataFile(filepath, 'UV', xlabels, ylabels, data, metadata)
-
-def parse_uv_partial(filepath):
-    f = open(filepath, 'rb')
-    f.seek(0x1000)
-
-    # Get the number of wavelengths using the header for the first data segment.
-    f.seek(0x1008)
-    wavelength_range = tuple(num // 20 for num in struct.unpack("<HHH", f.read(6)))
-    wavelengths = np.arange(wavelength_range[0], wavelength_range[1] + 1, wavelength_range[2])
-    num_wavelengths = wavelengths.size
-
-    # Extract absorbance data from each data segment.
+    # Extract the retention times and raw data values from each data segment.
+    f.seek(data_offsets['data_start'])
     memo = []
-    f.seek(0x1000)
     while True:
         try:
+            # Parse segment header for the retention time.
             f.read(4)
             time = struct.unpack("<I", f.read(4))[0]
             f.read(14)
-    
-            vals = np.empty(num_wavelengths)
-            accum = 0 
+            # If the next value is an integer, reset the accumulator to that value.
+            # Otherwise it is a delta, so add it to the accumulator.
+            raw_vals = np.empty(num_wavelengths, dtype=np.int32)
+            accum_absorbance = 0 
             for j in range(num_wavelengths):
-                check_val = struct.unpack('<h', f.read(2))[0]
-                if check_val == -0x8000:
-                    accum = struct.unpack('<i', f.read(4))[0]
-                else: accum += check_val
-                vals[j] = accum
-            memo.append((time, vals))
+                check_int = struct.unpack('<h', f.read(2))[0]
+                if check_int == -0x8000:
+                    accum_absorbance = struct.unpack('<i', f.read(4))[0]
+                else: accum_absorbance += check_int
+                raw_vals[j] = accum_absorbance
+            memo.append((time, raw_vals))
         except struct.error:
             break
+    assert(f.tell() == os.path.getsize(path))
 
-    times = np.empty(len(memo))
-    absorbances = np.empty((len(memo), num_wavelengths))
-    for i in range(len(memo)):
-        times[i] = memo[i][0]
-        absorbances[i] = memo[i][1]
+    # Organize the data using the number of retention times.
+    num_times = len(memo)
+    times = np.empty(num_times, dtype=np.uint32)
+    raw_matrix = np.empty((num_times, num_wavelengths), dtype=np.int32)
+    for i in range(num_times):
+        time, raw_vals = memo[i]
+        times[i] = time
+        absorbances[i] = raw_vals
 
-    # Extract metadata
-    metadata_offsets = {
-        "notebook": 0x35A,
-        "date": 0x957,
-        "method": 0xA0E,
-        "unit": 0xC15,
-        "datatype": 0xC40,
-        "position": 0xFD7
-    }
+    # Extract the scaling factor.
+    f.seek(data_offsets['scaling_factor'])
+    scaling_factor = struct.unpack('>d', f.read(8))[0]
 
-    f.seek(0xC0D)
-    scale = struct.unpack('>d', f.read(8))[0]
-
+    # Report time in minutes. 
     xlabels = times / 60000
+    # For UV spectrum data, the ylabels are the wavelengths. 
     ylabels = wavelengths
-    data = scale * absorbances
-    metadata = read_header(f, metadata_offsets, 2)
+    # Apply scaling factor to raw values to get the real data.  
+    data = scaling_factor * raw_matrix
+    # Extract metadata from file header.
+    metadata = read_header(f, metadata_offsets)
 
     f.close()
 
-    return DataFile(filepath, 'UV', xlabels, ylabels, data, metadata)
+    return DataFile(path, 'UV', xlabels, ylabels, data, metadata)
 
 
 """
 .ms PARSING METHODS
 
 """
-
-def parse_ms_partial(filepath):
-    f = open(filepath, 'rb')
-    f.seek(0x10A)
-    if struct.unpack('>H', f.read(2))[0] != 0:
-        print(filepath)
-        return None
-
-    f.seek(754)
-    memo = []
-    masses_set = set()
-    while True:
-        try:
-            cur = f.tell()
-            length = struct.unpack('>H', f.read(2))[0] * 2
-            time = struct.unpack('>I', f.read(4))[0]
-            f.read(6)
-            num_masses = struct.unpack('>H', f.read(2))[0]
-            f.read(4)
-        
-            if num_masses == 0:
-                memo.append((time, None, None))
-                f.read(10)
-                continue
-
-            data = struct.unpack('>' + num_masses * 'HH', f.read(num_masses * 4))
-            masses = (np.array(data[::2]) + 10) // 20
-            masses_set.update(masses)
-
-            counts_enc = np.array(data[1::2])
-            counts_head = counts_enc >> 14
-            counts_tail = counts_enc & 0x3fff
-            counts = (8 ** counts_head) * counts_tail
-
-            memo.append((time, masses, counts))
-        
-            f.read(10)
-            assert(cur + length == f.tell())
-        except struct.error:
-            break
-
-    num_rows = len(memo)
-    times = np.empty(num_rows)
-
-    masses_array = np.array(sorted(masses_set))
-    mass_indices = dict(zip(masses_array, range(masses_array.size)))
-
-    data_array = np.zeros((num_rows, masses_array.size), dtype=int)
-    for i in range(num_rows):
-        if not memo[i][1]:
-            continue
-        time, masses, counts = memo[i]
-        times[i] = time
-        visited = set()
-        for j in range(masses.size):
-            if masses[j] in visited:
-                data_array[i, mass_indices[masses[j]]] += counts[j]
-            else:
-                data_array[i, mass_indices[masses[j]]] = counts[j]
-                visited.add(masses[j])
-    
-    metadata_offsets = {
-        'time': 0xB2,
-        'method': 0xE4
-    }
-
-    xlabels = times / 60000
-    ylabels = masses_array 
-    data = data_array
-    metadata = read_header(f, metadata_offsets, 1)
-
-    f.close()
-
-    return DataFile(filepath, 'MS', xlabels, ylabels, data, metadata)
 
 def parse_ms(filepath):   
     """
@@ -600,6 +540,83 @@ def parse_ms(filepath):
     # print(filepath, hex(f.tell()))
 
     # Extract metadata.
+    metadata_offsets = {
+        'time': 0xB2,
+        'method': 0xE4
+    }
+
+    xlabels = times / 60000
+    ylabels = masses_array 
+    data = data_array
+    metadata = read_header(f, metadata_offsets, 1)
+
+    f.close()
+
+    return DataFile(filepath, 'MS', xlabels, ylabels, data, metadata)
+
+def parse_ms_partial(filepath):
+    """
+    A
+    """
+    f = open(filepath, 'rb')
+    f.seek(0x10A)
+    if struct.unpack('>H', f.read(2))[0] != 0:
+        print(filepath)
+        return None
+
+    f.seek(754)
+    memo = []
+    masses_set = set()
+    while True:
+        try:
+            cur = f.tell()
+            length = struct.unpack('>H', f.read(2))[0] * 2
+            time = struct.unpack('>I', f.read(4))[0]
+            f.read(6)
+            num_masses = struct.unpack('>H', f.read(2))[0]
+            f.read(4)
+        
+            if num_masses == 0:
+                memo.append((time, None, None))
+                f.read(10)
+                continue
+
+            data = struct.unpack('>' + num_masses * 'HH', f.read(num_masses * 4))
+            masses = (np.array(data[::2]) + 10) // 20
+            masses_set.update(masses)
+
+            counts_enc = np.array(data[1::2])
+            counts_head = counts_enc >> 14
+            counts_tail = counts_enc & 0x3fff
+            counts = (8 ** counts_head) * counts_tail
+
+            memo.append((time, masses, counts))
+        
+            f.read(10)
+            assert(cur + length == f.tell())
+        except struct.error:
+            break
+
+    num_rows = len(memo)
+    times = np.empty(num_rows)
+
+    masses_array = np.array(sorted(masses_set))
+    mass_indices = dict(zip(masses_array, range(masses_array.size)))
+
+    data_array = np.zeros((num_rows, masses_array.size), dtype=int)
+    for i in range(num_rows):
+        if not memo[i][1]:
+            continue
+        time, masses, counts = memo[i]
+        times[i] = time
+        visited = set()
+        for j in range(masses.size):
+            if masses[j] in visited:
+                data_array[i, mass_indices[masses[j]]] += counts[j]
+            else:
+                data_array[i, mass_indices[masses[j]]] = counts[j]
+                visited.add(masses[j])
+    
     metadata_offsets = {
         'time': 0xB2,
         'method': 0xE4
