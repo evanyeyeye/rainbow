@@ -1,4 +1,5 @@
 import os 
+import numpy as np
 import matplotlib.pyplot as plt
 
 
@@ -17,7 +18,7 @@ class DataFile:
 
     """
     def __init__(self, filepath, detector, xlabels, ylabels, data, metadata):
-        self.name = os.path.basename(filepath).upper()
+        self.name = os.path.basename(filepath)
         self.detector = detector 
         self.xlabels = xlabels 
         self.ylabels = ylabels
@@ -25,6 +26,9 @@ class DataFile:
         self.metadata = metadata
 
     def __repr__(self):
+        return f"{self.name}"
+
+    def get_info(self):
         return f"\n{'-' * len(self.name)}\n" \
                f"{self.name}\n" \
                f"{'-' * len(self.name)}\n" \
@@ -61,7 +65,7 @@ class DataFile:
             raise Exception("Incorrect input type for labels.")
         
         # Extracting traces. 
-        traces = np.empty((len(labels), self.xlabels.size), dtype=int)
+        traces = np.empty((len(labels), self.xlabels.size), dtype=self.data.dtype)
 
         for i in range(len(labels)):
             indices = np.where(ylabels_str == str(labels[i]))[0]
@@ -96,8 +100,17 @@ class DataFile:
         """
         traces_tp = self.extract_traces(labels).transpose().astype(str)
 
+        if isinstance(labels, str) or isinstance(labels, int):
+            labels = [labels]
+
+        if isinstance(labels, list):
+            labels = [str(elem) for elem in labels]
+
+        if not labels:
+            labels = self.ylabels.astype(str)
+
         output = ""
-        output += f"RT (ms),{','.join(self.ylabels.astype(str))}\n"
+        output += f"RT (min),{','.join(labels)}\n"
         for i in range(self.xlabels.size):
             output += f"{self.xlabels[i]},{','.join(traces_tp[i])}\n"
         return output

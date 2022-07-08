@@ -1,6 +1,4 @@
 import os 
-import matplotlib.pyplot as plt
-
 
 class DataDirectory:
     """
@@ -15,14 +13,14 @@ class DataDirectory:
 
     """
     def __init__(self, path, datafiles):
-        self.name = os.path.basename(path).upper()
+        self.name = os.path.basename(path)
         self.datafiles = datafiles
         self.by_name = {}
         self.by_detector = {}
         self.detectors = set()
 
         for datafile in datafiles:
-            self.by_name[datafile.name] = datafile
+            self.by_name[datafile.name.upper()] = datafile
             detector = datafile.detector
             self.detectors.add(detector)
             if detector in self.by_detector:
@@ -31,10 +29,23 @@ class DataDirectory:
                 self.by_detector[detector] = [datafile]
 
     def __repr__(self):
+        return f"{self.name}: {' - '.join(map(str, self.datafiles))}"
+
+    def get_info(self):
         return f"\n{'=' * len(self.name)}\n" \
                f"{self.name}\n" \
                f"{'=' * len(self.name)}\n" \
-               f"{self.by_detector}\n"
+               f"{''.join(datafile.get_info() for datafile in self.datafiles)}\n"
+
+    def get_file(self, filename):
+        if filename.upper() not in self.by_name.keys():
+            raise Exception(f"Data file {filename} not found in {self.name}.")
+        return self.by_name[filename.upper()]
+    
+    def get_detector(self, detector):
+        if detector.upper() not in self.by_detector.keys():
+            raise Exception(f"Detector {detector} not found in {self.name}.")
+        return self.by_detector[detector.upper()]
 
     def extract_traces(self, filename, labels=None):
         """
@@ -50,12 +61,7 @@ class DataDirectory:
             2D numpy array containing data for the specified labels. The rows correspond to the y-axis labels and the columns corrrespond to the x-axis times.
 
         """
-        filename = filename.upper()
-        if filename not in self.by_name.keys():
-            raise Exception(f"Data file {filename} not found in {self.name}.")
-        
-        file = self.by_name[filename]
-        return file.extract_traces(labels)
+        return self.get_file(filename).extract_traces(labels)
 
     def export_csv(self, in_filename, out_filename, labels=None, delimiter=','):
         """
@@ -68,12 +74,7 @@ class DataDirectory:
             delimiter (str): Delimiter used in the output CSV file. 
 
         """
-        in_filename = in_filename.upper()
-        if in_filename not in self.by_name.keys():
-            raise Exception(f"Data file {in_filename} not found in {self.name}.")
-
-        file = self.by_name[in_filename]
-        file.export_csv(out_filename, labels, delimiter)
+        self.get_file(in_filename).export_csv(out_filename, labels, delimiter)
     
     def plot(self, filename, label, **kwargs):
         """
@@ -83,9 +84,4 @@ class DataDirectory:
             filename (str): Name of the data file.
             label (str or int): Y-axis label to be plotted. 
         """
-        filename = filename.upper()
-        if filename not in self.by_name.keys():
-            raise Exception(f"Data file {filename} not found in {self.name}.")
-
-        file = self.by_name[filename]
-        file.plot(label, **kwargs)
+        self.get_file(filename).plot(label, **kwargs)
