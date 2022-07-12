@@ -8,7 +8,7 @@ by Eugene Kwan and Evan Shi
 
 Clone the repository and enter the main directory.
 ```
-git clone git@github.com:evanyeyeye/rainbow.git
+git clone https://github.com/evanyeyeye/rainbow.git
 cd rainbow
 ```
 
