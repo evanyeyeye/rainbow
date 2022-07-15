@@ -1,6 +1,6 @@
 import struct
 import os
-from rainbow import agilent
+from rainbow import agilent, waters
 
 
 def read(path):
@@ -23,7 +23,7 @@ def read(path):
     if ext.upper() == '.D':
         datadir = agilent.parse_directory(path)
     elif ext.lower() == '.raw':
-        raise NotImplementedError
+        datadir = waters.parse_directory(path)
 
     if not datadir:
         raise Exception(f"Rainbow cannot read {path}.")
