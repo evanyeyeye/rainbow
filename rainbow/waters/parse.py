@@ -7,12 +7,7 @@ def parse_directory(path):
 
     """
     datafiles = []
-    
-    import os
-    dir_contents = os.listdir(path)
     datafiles.extend(masslynx.parse_analog(path))
-    # datafiles.extend(masslynx.parse_spectrum(path))
-
+    datafiles.extend(masslynx.parse_spectrum(path))
+    
     return DataDirectory(path, datafiles)
-
-
