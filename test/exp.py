@@ -12,6 +12,7 @@ use_mp = False
 time_by_line = False
 method_to_time = rb.waters.masslynx.parse_funcdat6
 
+memory_benchmark = True 
 
 # dataset_dir = "../../../Downloads/datasets/agilent/LCMS/"
 # data_folders = [dataset_dir + dir for dir in os.listdir(dataset_dir) if dir != ".DS_Store"]
@@ -23,11 +24,11 @@ method_to_time = rb.waters.masslynx.parse_funcdat6
 # data_folders = ["../../../Downloads/agilent/lcms/100518-RM_HPLC-01970.D"]
 # data_folders = ["../../../Downloads/agilent/hrms/5057649-0007_160622_3035.d"]
 
-data_folders = ["../../../Downloads/waters/cad/5042373-0175-55C_evap-1-0040.raw"]
+# data_folders = ["../../../Downloads/waters/cad/5042373-0175-55C_evap-1-0040.raw"]
 # data_folders = ["../../../Downloads/waters/sfcms/ok.raw"]
 # data_folders = ["../../../Downloads/waters/elsd/2021-07-28-PROTEIN-261.raw"]
-data_folders = ["../../../Downloads/waters/uv/grahatho-5023368-0470-IPA-2.Raw"]
-data_folders = ["../../../Downloads/waters/lcms/Bita Parvizian1-1.raw"]
+# data_folders = ["../../../Downloads/waters/uv/grahatho-5023368-0470-IPA-2.Raw"]
+# data_folders = ["../../../Downloads/waters/lcms/Bita Parvizian1-1.raw"]
 data_folders = ["../../../Downloads/waters/elsd/2021-07-28-PROTEIN-296.raw"]
 
 
@@ -42,7 +43,8 @@ def display_top(snapshot, key_type='lineno', limit=3):
     for index, stat in enumerate(top_stats[:limit], 1):
         frame = stat.traceback[0]
         filename = os.sep.join(frame.filename.split(os.sep)[-2:])
-        print(f"#{index}: {filename}:{frame.lineno}: {stat.size / 1024 : .1f} KiB")
+        print(f"#{index}: {filename}:{frame.lineno}: \
+                          {stat.size / (1024 * 1024) :.3f} MiB")
         line = linecache.getline(frame.filename, frame.lineno).strip()
         if line:
             print(f'    {line}')
@@ -50,9 +52,9 @@ def display_top(snapshot, key_type='lineno', limit=3):
     other = top_stats[limit:]
     if other:
         size = sum(stat.size for stat in other)
-        print(f"{len(other)} other: {size / 1024 : .1f} KiB")
+        print(f"{len(other)} other: {size / (1024 * 1024) :.3f} MiB")
     total = sum(stat.size for stat in top_stats)
-    print(f"Total allocated size: {total / 1024 : .1f} KiB")
+    print(f"Total allocated size: {total / (1024 * 1024) :.3f} MiB")
 
 def debug_size(d):
     print("=" * len(d.name))
@@ -73,7 +75,7 @@ def main():
         return datadirs
 
     datadirs = []
-    print(len(data_folders))
+    # print(len(data_folders))
     for folder in data_folders:
         datadirs.append(rb.read(folder))
         if not datadirs[-1]:
@@ -83,7 +85,7 @@ def main():
             raise Exception("BOOO")
         # print(datadirs[-1])
     
-    print(datadirs[-1].get_info())
+    # print(datadirs[-1].get_info())
     debug_size(datadirs[-1])
     
     return datadirs
@@ -102,13 +104,28 @@ if __name__ == '__main__':
             import pstats
             profiler = cProfile.Profile()
             profiler.enable()
+    if memory_benchmark:
+        import tracemalloc 
+        import linecache 
+        import psutil 
+        tracemalloc.start() 
 
+    # import tracemalloc 
+    # import linecache 
+    # tracemalloc.start()
     mem = main() 
-    import psutil
-    print(psutil.Process().memory_info().rss / (1024 * 1024))
+    # print(mem[0].get_file("_CHRO001.DAT").xlabels.flags)
+    # display_top(tracemalloc.take_snapshot())
+    # import psutil
+    # print()
 
     if time_benchmark:
         if time_by_line: 
             lp.print_stats(output_unit=1e-3)
         else:
-            pstats.Stats(profiler).strip_dirs().sort_stats('tottime').print_stats(10)
+            p = pstats.Stats(profiler).strip_dirs().sort_stats('tottime')
+            p.print_stats(10)
+    if memory_benchmark:
+        display_top(tracemalloc.take_snapshot())
+        ram_used = psutil.Process().memory_info().rss / (1024 * 1024)
+        print(f"RAM Usage: {ram_used :.3f} MiB")
