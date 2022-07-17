@@ -58,9 +58,8 @@ def parse_chrodat(path, name, units=None):
     times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
     vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
     times = times_immut.copy()
-    vals_copy = vals_immut.copy()
-    vals = vals_copy.reshape(-1, 1)
-    del times_immut, vals_copy, vals_immut, raw_bytes
+    vals = vals_immut.copy().reshape(-1, 1)
+    del times_immut, vals_immut, raw_bytes
 
     detector = None
     name_split = set(name.split(' '))

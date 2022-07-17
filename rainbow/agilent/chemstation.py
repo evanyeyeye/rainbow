@@ -116,6 +116,7 @@ def parse_ch_fid(path):
     }
     
     f = open(path, 'rb')
+    raw_bytes = f.read()
 
     # Extract the number of retention times.
     f.seek(data_offsets['num_times'])
@@ -126,16 +127,15 @@ def parse_ch_fid(path):
     # Calculate all retention times using the start and end times. 
     start_time = struct.unpack(">f", f.read(4))[0]
     end_time = struct.unpack(">f", f.read(4))[0]
-    delta_time = (end_time - start_time) // (num_times - 1)
-    times = np.arange(start_time, end_time, delta_time) 
+    delta_time = (end_time - start_time) / (num_times - 1)
+    times = np.arange(start_time, end_time + 1e-3, delta_time)
     assert (times.size == num_times)
 
     # Extract the raw data values.
-    f.seek(data_offsets['data_start'])
-    raw_matrix = np.empty((num_times, 1), dtype=int)
-    for i in range(num_times):
-        raw_matrix[i, 0] = struct.unpack("<d", f.read(8))[0]
-    assert(f.tell() == os.path.getsize(path))
+    raw_matrix = np.ndarray(
+        num_times, '<d', raw_bytes, data_offsets['data_start'], 8)
+    raw_matrix = raw_matrix.copy().reshape(-1, 1)
+    assert(raw_matrix.shape == (num_times, 1))
 
     # Extract the scaling factor. 
     f.seek(data_offsets['scaling_factor'])
