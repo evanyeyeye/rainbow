@@ -38,27 +38,29 @@ def parse_chroinf(path):
     while f.tell() < end:
         line = re.sub('[\0-\x04]|\$CC\$|\([0-9]*\)', '', f.read(0x55)).strip()
         line_split = line.split(',')
-        assert(len(line_split) == 6)
-        name = line_split[0]
-        units = line_split[5]
-        analog_info.append((name, units))
+        assert(len(line_split) == 6 or len(line_split) == 1)
+        info = []
+        info.append(line_split[0])
+        if len(line_split) == 6:
+            info.append(line_split[5])
+        analog_info.append(info)
     f.close()
     return analog_info
 
-def parse_chrodat(path, name, units):
+def parse_chrodat(path, name, units=None):
     """
     """
     data_start = 0x80
-
     num_times = (os.path.getsize(path) - data_start) // 8
     assert(data_start + num_times * 8 == os.path.getsize(path))
 
-    f = open(path, 'rb')
-    raw_bytes = f.read()
-   
-    times = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
-    vals = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
-    vals = vals.reshape(-1, 1)
+    raw_bytes = open(path, 'rb').read()
+    times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
+    vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
+    times = times_immut.copy()
+    vals_copy = vals_immut.copy()
+    vals = vals_copy.reshape(-1, 1)
+    del times_immut, vals_copy, vals_immut, raw_bytes
 
     detector = None
     name_split = set(name.split(' '))
@@ -67,17 +69,14 @@ def parse_chrodat(path, name, units):
     elif "ELSD" in name_split:
         detector = 'ELSD'
 
-    xlabels = times 
     ylabels = np.array([''])
-    data = vals
     metadata = {
         'description': name,
-        'units': units
     }
+    if units: 
+        metadata['units'] = units 
 
-    f.close()
-
-    return DataFile(path, detector, xlabels, ylabels, data, metadata)
+    return DataFile(path, detector, times, ylabels, vals, metadata)
 
 
 """
@@ -124,12 +123,14 @@ def parse_spectrum(path):
         assert(nums[0] == 1 and nums[-1] == len(nums))
         assert(nums == sorted(nums))
         f.close()
-
-        assert(len(calibs) == len(polarities))
         
-        while func_i < len(calibs):
-            datafiles.append(parse_func(func_paths[func_i], calibs[func_i],
-                                        polarities[func_i]))
+        while func_i < len(polarities):
+            if func_i < len(calibs):
+                calib = calibs[func_i]
+            else: 
+                calib = None
+            datafiles.append(parse_func(func_paths[func_i], 
+                                        polarities[func_i], calib))
             func_i += 1
 
     while func_i < len(func_paths):
@@ -138,16 +139,14 @@ def parse_spectrum(path):
 
     return datafiles
 
-def parse_func(path, calib, polarity):
+def parse_func(path, polarity, calib):
     idx_path = path[:-3] + 'IDX'
     times, ylabels_per_time, last_offset = parse_funcidx(idx_path)
     data_len = (os.path.getsize(path) - last_offset) // ylabels_per_time[-1]
     assert(data_len == 6 or data_len == 8)
-    if data_len == 6:
-        ylabels, data_array = parse_funcdat6(path, ylabels_per_time, calib)
-    else:
-        return None
-        # ylabels, data = parse_funcdat8(path, ylabels_per_time, calib)
+    
+    parser = parse_funcdat6 if data_len == 6 else parse_funcdat8 
+    ylabels, data = parser(path, ylabels_per_time, calib)
     
     detector = 'MS' if calib else 'UV'
 
@@ -155,7 +154,7 @@ def parse_func(path, calib, polarity):
     if polarity:
         metadata['polarity'] = polarity
 
-    return DataFile(path, detector, times, ylabels, data_array, metadata)
+    return DataFile(path, detector, times, ylabels, data, metadata)
 
 def parse_funcidx(path):
     f = open(path, 'rb')
@@ -186,8 +185,8 @@ def parse_funcdat6(path, ylabels_per_time, calib):
 
     # Optimized reading of 6-byte segments into `raw_values`. 
     raw_bytes = open(path, 'rb').read()
-    leastsig = np.ndarray((num_datapairs), '<I', raw_bytes, 0, 6)
-    mostsig = np.ndarray((num_datapairs), '<H', raw_bytes, 4, 6)
+    leastsig = np.ndarray(num_datapairs, '<I', raw_bytes, 0, 6)
+    mostsig = np.ndarray(num_datapairs, '<H', raw_bytes, 4, 6)
     raw_values = leastsig | (mostsig.astype(np.int64) << 32)
     del leastsig, mostsig, raw_bytes
 
@@ -198,7 +197,6 @@ def parse_funcdat6(path, ylabels_per_time, calib):
     key_powers = ((raw_values & 0x1F00000) >> 20) - 23
     keys = key_bases * (2.0 ** key_powers)
     del key_bases, key_powers
-
 
     # If it is MS data, calibrate the masses. 
     if calib:
@@ -233,24 +231,101 @@ def parse_funcdat6(path, ylabels_per_time, calib):
 
     return ylabels, data
 
+def calc_frac(keyfrac_bits, num_bits):
+
+    upper = np.uint64(0x3FF << 52)
+    shift = 52 - num_bits 
+    shifted = keyfrac_bits << shift 
+    doubles = (upper | shifted) 
+    doubles = doubles.view(np.float64) - 1
+
+    return doubles
+
 def parse_funcdat8(path, ylabels_per_time, calib):
-    pass
+
+    num_times = ylabels_per_time.size
+    num_datapairs = np.sum(ylabels_per_time)
+    assert(os.path.getsize(path) == num_datapairs * 8)
+
+    f = open(path, 'rb')
+    # Optimized reading of 8-byte segments into `raw_values`. 
+    raw_bytes = open(path, 'rb').read()
+    raw_values = np.ndarray(num_datapairs, '<Q', raw_bytes, 0, 8)
+    # del raw_bytes
+
+    key_bits = raw_values >> 28 # 36 bits
+
+    num_keyint_bits = key_bits >> 31  # 5 bits, range 0 to 31
+    keyint_masks = pow(2, num_keyint_bits) - 1
+
+    num_keyfrac_bits = 31 - num_keyint_bits # range 0 to 31
+    keyfrac_masks = pow(2, num_keyfrac_bits) - 1
+
+    keyints = (key_bits >> num_keyfrac_bits) & keyint_masks 
+    keyfracs = calc_frac(key_bits & keyfrac_masks, num_keyfrac_bits)
+
+    keys = keyints + keyfracs
+    if calib:
+        keys = calibrate(keys, calib)
+    # print(keys)
+
+    keys = np.round(keys)
+
+    # Vals 
+    val_bits = raw_values & 0xFFFFFFF
+
+    num_valint_bits = val_bits >> 22
+    num_extended = np.zeros(num_datapairs, np.uint8)
+
+    truth = num_valint_bits > 21 
+    num_extended[truth] = num_valint_bits[truth] - 21 
+    num_valint_bits[truth] = 21 
+    valint_masks = pow(2, num_valint_bits) - 1
+
+    num_valfrac_bits = 21 - num_valint_bits 
+    valfrac_masks = pow(2, num_valfrac_bits) - 1
+
+    # print(num_extended.dtype)
+    # print(val_bits.dtype)
+    # print(num_valfrac_bits.dtype)
+    # print((val_bits >> num_valfrac_bits).dtype)
+    # print(((val_bits >> num_valfrac_bits) & valint_masks).dtype)
+    valints = ((val_bits >> num_valfrac_bits) & valint_masks) << num_extended
+    valfracs = calc_frac(val_bits & valfrac_masks, num_valfrac_bits)
+
+    values = valints + valfracs
+   
+     # Make the array of `ylabels` containing keys. 
+    ylabels = np.unique(keys)
+    ylabels.sort()
+
+    # Fill the `data` array containing values. 
+    # Optimized using numpy vectorization.
+    key_indices = np.searchsorted(ylabels, keys)
+    data = np.zeros((num_times, ylabels.size), dtype=np.int64)
+    cur_index = 0
+    for i in range(num_times):
+        stop_index = cur_index + ylabels_per_time[i]
+        np.add.at(
+            data[i], 
+            key_indices[cur_index:stop_index], 
+            values[cur_index:stop_index])
+        cur_index = stop_index
+    # del key_indices, keys, values, ylabels_per_time
+    return ylabels, data
 
 def calibrate(masses, calib_nums):
     calib_masses = np.zeros(masses.size, dtype=np.float32)
     var = np.ones(masses.size, dtype=np.float32)
     for cof in calib_nums:
-        a = cof * var
-        calib_masses += a
+        calib_masses += cof * var
         var *= masses
-        del a
-    del masses, var
     return calib_masses
 
-# def calibrate(mass, calib_nums):
-#     calib_mass = 0.0
-#     var = 1.0
-#     for cof in calib_nums:
-#         calib_mass += cof * var
-#         var *= mass
-#     return calib_mass
+def calibrate1(mass, calib_nums):
+    calib_mass = 0.0
+    var = 1.0
+    for cof in calib_nums:
+        calib_mass += cof * var
+        var *= mass
+    return calib_mass
