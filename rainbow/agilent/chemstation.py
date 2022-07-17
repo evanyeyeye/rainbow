@@ -98,7 +98,7 @@ def parse_ch_fid(path):
         path (str): Path to the Agilent .ch file with FID data. 
 
     Returns:
-        DataFile representing the file. 
+        DataFile representing the file, if it can be parsed. Otherwise, None.
 
     """
     data_offsets = {
@@ -120,6 +120,8 @@ def parse_ch_fid(path):
     # Extract the number of retention times.
     f.seek(data_offsets['num_times'])
     num_times = struct.unpack(">I", f.read(4))[0]
+    if num_times == 0:
+        return None
     
     # Calculate all retention times using the start and end times. 
     start_time = struct.unpack(">f", f.read(4))[0]
@@ -127,19 +129,17 @@ def parse_ch_fid(path):
     delta_time = (end_time - start_time) // (num_times - 1)
     times = np.arange(start_time, end_time, delta_time) 
     assert (times.size == num_times)
-    if times.size > num_times:
-        times = times[:num_times]
 
     # Extract the raw data values.
     f.seek(data_offsets['data_start'])
     raw_matrix = np.empty((num_times, 1), dtype=int)
     for i in range(num_times):
         raw_matrix[i, 0] = struct.unpack("<d", f.read(8))[0]
-    assert(f.tell() == os.path.getsize(filepath))
+    assert(f.tell() == os.path.getsize(path))
 
     # Extract the scaling factor. 
     f.seek(data_offsets['scaling_factor'])
-    scaleing_factor = struct.unpack('>d', f.read(8))[0]
+    scaling_factor = struct.unpack('>d', f.read(8))[0]
 
     # Report time in minutes. 
     xlabels = times / 60000

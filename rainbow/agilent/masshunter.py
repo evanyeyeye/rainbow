@@ -7,7 +7,6 @@ from lxml import etree
 
 def parse_files(path):
     """
-    A
     """
     datafiles = []
 
@@ -88,7 +87,6 @@ def parse_msdata(path):
         f.read(4)
     assert(f.tell() == os.path.getsize(os.path.join(acqdata_path, "MSMassCal.bin")))
 
-
     # Decode compressed MSProfile.bin
     f = open(os.path.join(acqdata_path, "MSProfile.bin"), 'rb')
     const_1 = None
@@ -138,8 +136,6 @@ def parse_msdata(path):
     for i in range(10):
         print(i, np.sum(data_array[i]))
    
-
-
 def recur_complex_type(f, complex_types, complex_name):
     values = {}
     complex_type = complex_types[complex_name]
