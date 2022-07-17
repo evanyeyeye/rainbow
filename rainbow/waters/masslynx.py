@@ -3,7 +3,7 @@ import re
 import struct
 import numpy as np
 from rainbow.datafile import DataFile
-from decimal import Decimal, ROUND_HALF_UP
+
 
 """
 ANALOG PARSING METHODS
@@ -50,17 +50,15 @@ def parse_chrodat(path, name, units):
     """
     data_start = 0x80
 
-    f = open(path, 'rb')
-    f.seek(data_start)
-
     num_times = (os.path.getsize(path) - data_start) // 8
-    times = np.empty(num_times, dtype=float)
-    vals = np.empty((num_times, 1), dtype=float)
+    assert(data_start + num_times * 8 == os.path.getsize(path))
 
-    for i in range(num_times):
-        times[i] = struct.unpack('<f', f.read(4))[0]
-        vals[i][0] = struct.unpack('<f', f.read(4))[0]
-    assert(f.tell() == os.path.getsize(path))
+    f = open(path, 'rb')
+    raw_bytes = f.read()
+   
+    times = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
+    vals = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
+    vals = vals.reshape(-1, 1)
 
     detector = None
     name_split = set(name.split(' '))
@@ -180,187 +178,73 @@ def parse_funcidx(path):
 
     return times, ylabels_per_time, last_offset
 
-def unpack48(x):
-    x1, x2, x3 = struct.unpack('<HHI', x)
-    return x1, x2 | (x3 << 16)
-
-# def parse_funcdat6(path, ylabels_per_time, calib):
-#     f = open(path, 'rb')
-#     num_times = ylabels_per_time.size
-#     memo = np.empty(num_times, dtype=object)
-#     ylabels_set = set()
-
-#     total_ylabels = np.sum(ylabels_per_time)
-#     raw_bytes = np.array([struct.unpack("<Q", f.read(6) + b"\x00\x00")[0] for _ in range(total_ylabels)], dtype=np.int64)
-#     base_ylabels = (raw_bytes & 0xFFFFFE000000) >> 25
-#     pow_ylabels = ((raw_bytes & 0x1F00000) >> 20) - 23
-#     ylabels = base_ylabels * (np.power(2.0, pow_ylabels))
-#     if calib:
-#         ylabels = calibrate(ylabels, calib)
-#     rounded = [int(Decimal(float(ylabel)).quantize(Decimal(1), ROUND_HALF_UP)) for ylabel in ylabels]
-        
-#     ylabels_set.update(rounded)
-#     ylabels_list = np.array(sorted(ylabels_set))
-#     ylabel_indices = dict(zip(ylabels_list, range(ylabels_list.size)))
-
-#     base_datavals = (raw_bytes & 0xFFFF).astype(np.int16)
-#     pow_datavals = (raw_bytes & 0xF0000) >> 16
-#     datavals = base_datavals * (4 ** pow_datavals)
-
-#     index = 0
-#     data_array = np.zeros((num_times, ylabels_list.size), dtype=np.int64)
-#     for i in range(num_times):
-#         num_ylabels = ylabels_per_time[i]
-#         visited = set()
-#         for j in range(num_ylabels):
-#             ylabel = rounded[index]
-#             dataval = datavals[index]
-#             if ylabel in visited:
-#                 data_array[i, ylabel_indices[ylabel]] += dataval 
-#             else: 
-#                 data_array[i, ylabel_indices[ylabel]] = dataval
-#                 visited.add(ylabel)
-#             index += 1
-
-#     return ylabels_list, data_array
-
-# def parse_funcdat6(path, ylabels_per_time, calib):
-#     f = open(path, 'rb')
-#     num_times = ylabels_per_time.size
-#     memo = np.empty(num_times, dtype=object)
-#     ylabels_set = set()
-
-#     total_ylabels = np.sum(ylabels_per_time)
-#     raw_bytes = np.array([struct.unpack("<Q", f.read(6) + b"\x00\x00")[0] for _ in range(total_ylabels)], dtype=np.int64)
-#     base_ylabels = (raw_bytes & 0xFFFFFE000000) >> 25
-#     pow_ylabels = ((raw_bytes & 0x1F00000) >> 20) - 23
-#     ylabels = base_ylabels * (np.power(2.0, pow_ylabels))
-#     if calib:
-#         ylabels = calibrate(ylabels, calib)
-#     rounded = [int(Decimal(float(ylabel)).quantize(Decimal(1), ROUND_HALF_UP)) for ylabel in ylabels]
-        
-#     ylabels_set.update(rounded)
-#     ylabels_list = np.array(sorted(ylabels_set))
-#     ylabel_indices = dict(zip(ylabels_list, range(ylabels_list.size)))
-
-#     base_datavals = (raw_bytes & 0xFFFF).astype(np.int16)
-#     pow_datavals = (raw_bytes & 0xF0000) >> 16
-#     datavals = base_datavals * (4 ** pow_datavals)
-
-#     index = 0
-#     data_array = np.zeros((num_times, ylabels_list.size), dtype=np.int64)
-#     for i in range(num_times):
-#         num_ylabels = ylabels_per_time[i]
-#         visited = set()
-#         for j in range(num_ylabels):
-#             ylabel = rounded[index]
-#             dataval = datavals[index]
-#             if ylabel in visited:
-#                 data_array[i, ylabel_indices[ylabel]] += dataval 
-#             else: 
-#                 data_array[i, ylabel_indices[ylabel]] = dataval
-#                 visited.add(ylabel)
-#             index += 1
-
-#     return ylabels_list, data_array
-
 def parse_funcdat6(path, ylabels_per_time, calib):
-    f = open(path, 'rb')
+
     num_times = ylabels_per_time.size
-    memo = np.empty(num_times, dtype=object)
-    ylabels_set = set()
+    num_datapairs = np.sum(ylabels_per_time)
+    assert(os.path.getsize(path) == num_datapairs * 6)
 
+    # Optimized reading of 6-byte segments into `raw_values`. 
+    raw_bytes = open(path, 'rb').read()
+    leastsig = np.ndarray((num_datapairs), '<I', raw_bytes, 0, 6)
+    mostsig = np.ndarray((num_datapairs), '<H', raw_bytes, 4, 6)
+    raw_values = leastsig | (mostsig.astype(np.int64) << 32)
+    del leastsig, mostsig, raw_bytes
+
+    # The data is stored as key-value pairs. 
+    # For example, in MS data these are mz-intensity pairs. 
+    # Calculate the `keys` from each 6-byte segment. 
+    key_bases = (raw_values & 0xFFFFFE000000) >> 25
+    key_powers = ((raw_values & 0x1F00000) >> 20) - 23
+    keys = key_bases * (2.0 ** key_powers)
+    del key_bases, key_powers
+
+
+    # If it is MS data, calibrate the masses. 
+    if calib:
+        keys = calibrate(keys, calib)
+    
+    # Round the keys to the nearest whole number. 
+    keys = np.round(keys)
+
+    # Calculate the `values` from each 6-byte segment.
+    val_bases = (raw_values & 0xFFFF).astype(np.int16)
+    val_powers = (raw_values & 0xF0000) >> 16
+    values = val_bases * (4 ** val_powers)
+    del val_bases, val_powers, raw_values
+
+    # Make the array of `ylabels` containing keys. 
+    ylabels = np.unique(keys)
+    ylabels.sort()
+
+    # Fill the `data` array containing values. 
+    # Optimized using numpy vectorization.
+    key_indices = np.searchsorted(ylabels, keys)
+    data = np.zeros((num_times, ylabels.size), dtype=np.int64)
+    cur_index = 0
     for i in range(num_times):
-        num_ylabels = ylabels_per_time[i]
-        raw_bytes = np.empty(num_ylabels, dtype=np.int64)
-        for j in range(num_ylabels):
-            raw_bytes[j] = struct.unpack("<Q", f.read(6) + b"\x00\x00")[0]
-        base_ylabels = (raw_bytes & 0xFFFFFE000000) >> 25
-        pow_ylabels = ((raw_bytes & 0x1F00000) >> 20) - 23
-        ylabels = base_ylabels * (2 ** pow_ylabels.astype(np.double))
-        # print(base_ylabels, pow_ylabels, ylabels)
-        if calib:
-            ylabels = calibrate(ylabels, calib)
-        rounded = [int(Decimal(float(ylabel)).quantize(Decimal(1), ROUND_HALF_UP)) for ylabel in ylabels]
-        
-        ylabels = np.array(rounded)
-        ylabels_set.update(rounded)
+        stop_index = cur_index + ylabels_per_time[i]
+        np.add.at(
+            data[i], 
+            key_indices[cur_index:stop_index], 
+            values[cur_index:stop_index])
+        cur_index = stop_index
+    del key_indices, keys, values, ylabels_per_time
 
-        base_datavals = (raw_bytes & 0xFFFF).astype(np.int16)
-        pow_datavals = (raw_bytes & 0xF0000) >> 16
-        datavals = base_datavals * (4 ** pow_datavals)
-
-        memo[i] = (ylabels, datavals)
-
-    ylabels_list = np.array(sorted(ylabels_set))
-    ylabel_indices = dict(zip(ylabels_list, range(ylabels_list.size)))
-
-    data_array = np.zeros((num_times, ylabels_list.size), dtype=np.int64)
-    for i in range(num_times):
-        ylabels, datavals = memo[i]
-        visited = set()
-        for j in range(ylabels.size):
-            ylabel = ylabels[j]
-            if ylabel in visited:
-                data_array[i, ylabel_indices[ylabel]] += datavals[j]
-            else:
-                data_array[i, ylabel_indices[ylabel]] = datavals[j]
-                visited.add(ylabel)
-
-    return ylabels_list, data_array
-
-# def parse_funcdat6(path, ylabels_per_time, calib):
-#     f = open(path, 'rb')
-#     num_times = ylabels_per_time.size
-#     memo = np.empty(num_times, dtype=object)
-#     ylabels_set = set()
-#     for i in range(num_times):
-#         num_ylabels = ylabels_per_time[i]
-#         memo[i] = np.empty(num_ylabels, dtype=object)
-#         for j in range(num_ylabels):
-#             raw_bytes = struct.unpack("<Q", f.read(6) + b"\x00\x00")[0]
-            
-#             base_ylabel = (raw_bytes & 0xFFFFFE000000) >> 25
-#             pow_ylabel = ((raw_bytes & 0x1F00000) >> 20) - 23
-#             ylabel = base_ylabel * (2 ** pow_ylabel)
-#             if calib:
-#                 ylabel = calibrate(ylabel, calib)
-#             ylabel = int(Decimal(ylabel).quantize(Decimal(1), ROUND_HALF_UP))
-#             ylabels_set.add(ylabel)
-
-#             base_dataval = struct.unpack(
-#                 '<h', struct.pack('<H', raw_bytes & 0xFFFF))[0]
-#             pow_dataval = (raw_bytes & 0xF0000) >> 16
-#             dataval = base_dataval * (4 ** pow_dataval)
-
-#             memo[i][j] = (ylabel, dataval)
-
-
-    # ylabels = np.array(sorted(ylabels_set))
-    # ylabel_indices = dict(zip(ylabels, range(ylabels.size)))
-
-    # data_array = np.zeros((num_times, ylabels.size), dtype=np.int64)
-    # for i in range(num_times):
-    #     visited = set()
-    #     for j in range(memo[i].size):
-    #         ylabel, dataval = memo[i][j]
-    #         if ylabel in visited:
-    #             data_array[i, ylabel_indices[ylabel]] += dataval
-    #         else:
-    #             data_array[i, ylabel_indices[ylabel]] = dataval
-    #             visited.add(ylabel)
-
-    # return ylabels, data_array
+    return ylabels, data
 
 def parse_funcdat8(path, ylabels_per_time, calib):
     pass
 
 def calibrate(masses, calib_nums):
-    calib_masses = np.zeros(masses.size)
-    var = np.ones(masses.size, dtype=float)
+    calib_masses = np.zeros(masses.size, dtype=np.float32)
+    var = np.ones(masses.size, dtype=np.float32)
     for cof in calib_nums:
-        calib_masses += cof * var
+        a = cof * var
+        calib_masses += a
         var *= masses
+        del a
+    del masses, var
     return calib_masses
 
 # def calibrate(mass, calib_nums):

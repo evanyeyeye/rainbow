@@ -1,6 +1,5 @@
 import os 
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 class DataFile:
@@ -124,5 +123,6 @@ class DataFile:
             kwargs: Extra arguments for matplotlib.
 
         """
+        import matplotlib.pyplot as plt
         plt.plot(self.xlabels, self.extract_traces(label).transpose(), **kwargs)
         plt.show()

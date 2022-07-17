@@ -1,5 +1,6 @@
 import os 
 
+
 class DataDirectory:
     """
     Class representing a chromatogram data directory.
@@ -76,12 +77,12 @@ class DataDirectory:
         """
         self.get_file(in_filename).export_csv(out_filename, labels, delimiter)
     
-    def plot(self, filename, label, **kwargs):
-        """
-        Shows a basic matplotlib plot for the specified file and label.
+    # def plot(self, filename, label, **kwargs):
+    #     """
+    #     Shows a basic matplotlib plot for the specified file and label.
 
-        Args:
-            filename (str): Name of the data file.
-            label (str or int): Y-axis label to be plotted. 
-        """
-        self.get_file(filename).plot(label, **kwargs)
+    #     Args:
+    #         filename (str): Name of the data file.
+    #         label (str or int): Y-axis label to be plotted. 
+    #     """
+    #     self.get_file(filename).plot(label, **kwargs)
