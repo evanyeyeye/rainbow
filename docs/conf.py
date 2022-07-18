@@ -108,7 +108,21 @@ html_static_path = ['_static']
 
 # -- Extension configuration -------------------------------------------------
 
+from sphinx.ext.napoleon.docstring import GoogleDocstring
+
+def parse_attributes_section(self, section):
+    return self._format_fields('Attributes', self._consume_fields())
+
+GoogleDocstring._parse_attributes_section = parse_attributes_section
+
+def patched_parse(self):
+    self._unpatched_parse()
+    
+GoogleDocstring._unpatched_parse = GoogleDocstring._parse
+GoogleDocstring._parse = patched_parse
+
 # -- Options for todo extension ----------------------------------------------
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
+

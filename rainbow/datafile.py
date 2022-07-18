@@ -6,22 +6,29 @@ class DataFile:
     """
     Class representing a chromatogram data file. 
 
-    It contains the following attributes:
+    Args:
+        path (str): Path of the file. 
+        detector (str): Detector for the file. 
+        xlabels (numpy.ndarray): 1D array with retention times (in minutes).
+        ylabels (numpy.ndarray): 1D array with y-axis labels 
+            (e.g. mz, wavelength). 
+        data (numpy.ndarray): 2D array with data values (e.g. intensity).
+        metadata (dict): Metadata for the file. 
 
-    - name: String name of the file.
-    - detector: String name of the detector. 
-        Possible options are: UV, MS, FID, CAD, and ELSD.
-    - xlabels: 1D numpy array containing retention times (in minutes). 
-    - ylabels: 1D numpy array containing y-axis labels (e.g. mz, wavelength).
-    - data: 2D numpy array containing data values (e.g. intensity). 
-        The rows correspond to the retention times and the columns correspond 
-        to the y-axis labels.
-    - metadata: Dictionary containing metadata as key-value pairs. 
-        The metadata available is based on the vendor and file format.  
+    Attributes:
+        name (str): Name of the file. 
+        detector (str): Name of the detector. Options: UV, MS, FID, CAD, ELSD.
+        xlabels (numpy.ndarray): 1D array with retention times (in minutes).
+        ylabels (numpy.ndarray): 1D array with y-axis labels 
+            (e.g. mz, wavelength). 
+        data (numpy.ndarray): 2D array with data values (e.g. intensity).
+            The rows correspond to the retention times and the columns 
+            correspond to the y-axis labels.
+        metadata (dict): Depends on the vendor and file format. 
 
     """
-    def __init__(self, filepath, detector, xlabels, ylabels, data, metadata):
-        self.name = os.path.basename(filepath)
+    def __init__(self, path, detector, xlabels, ylabels, data, metadata):
+        self.name = os.path.basename(path)
         self.detector = detector 
         self.xlabels = xlabels 
         self.ylabels = ylabels
@@ -34,6 +41,7 @@ class DataFile:
     def get_info(self):
         """ 
         Returns a string summary of the DataFile. 
+
         """ 
         return f"\n{'-' * len(self.name)}\n" \
                f"{self.name}\n" \
@@ -51,12 +59,11 @@ class DataFile:
         Raises an exception if any ylabel(s) are invalid. 
 
         Args:
-            labels (int or float or int list or float list): 
-                Ylabel(s) to extract. 
+            labels (int/float/list, optional): Ylabel(s) to extract. 
         
         Returns:
             2D numpy array containing data for the specified ylabel(s). 
-            The rows correspond to the ylabels and the columns corrrespond 
+            The rows correspond to the ylabels and the columns corrrespond \
                 to the retention times. 
 
         """
@@ -85,9 +92,8 @@ class DataFile:
 
         Args:
             filename (str): Filename for the output CSV.
-            labels (int or float or int list or float list): 
-                Ylabel(s) to export. 
-            delim (str): Delimiter used in the output CSV. 
+            labels (int/float/list, optional): Ylabel(s) to export. 
+            delim (str, optional): Delimiter used in the output CSV. 
 
         """
         f = open(filename, 'w+')
@@ -96,13 +102,12 @@ class DataFile:
     
     def to_csvstr(self, labels=None, delim=','):
         """
-        Returns a string representation of a CSV containing data 
+        Returns a string representation of a CSV containing data \
             for the specified ylabel(s).
         
         Args:
-            labels (int or float or int list or float list): 
-                Ylabel(s) to return.
-            delim (str): Delimiter used in the CSV representation.
+            labels (int/float/list, optional): Ylabel(s) to return.
+            delim (str, optional): Delimiter used in the CSV representation.
 
         """
         str_traces_tp = self.extract_traces(labels).T.astype(str)
@@ -129,8 +134,8 @@ class DataFile:
         Shows a basic matplotlib plot for the specified ylabel.
 
         Args:
-            label (str or int): Ylabel to be plotted. 
-            kwargs: Extra arguments for matplotlib.
+            label (int/float): Ylabel to be plotted. 
+            **kwargs (optional): Keyword arguments for matplotlib.
 
         """
         import matplotlib.pyplot as plt

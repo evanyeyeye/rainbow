@@ -2,22 +2,26 @@ import os
 
 
 class DataDirectory:
-    """
+    """ 
     Class representing a chromatogram data directory.
+    
+    Args: 
+        path (str): Path of the directory.
+        datafiles (list): All DataFile objects for the directory.
+        metadata (dict): Metadata for the directory. 
 
-    It contains the following attributes:
+    Attributes:
+        name (str): Name of the DataDirectory. 
+        datafiles (list): DataFile objects with a detector. 
+            This does not include miscellaneous analog data.
+        detectors (set): String detector names in the DataDirectory.
+            Options: UV, MS, FID, CAD, ELSD.
+        by_name (dict): Maps filenames to DataFile objects.
+        by_detector (dict): Maps detector names to lists of DataFile objects.
+        analog (list): DataFile objects with miscellaneous analog data. 
+        metadata (dict): Depends on the vendor. 
 
-    - name: String name of the directory. 
-    - datafiles: List of DataFile objects that match a detector. 
-    - detectors: String set of all detectors in the directory.
-        Possible options are: UV, MS, FID, CAD, and ELSD.
-    - by_name: Dictionary of filenames -> DataFile objects.
-    - by_detector: Dictionary of detector names -> lists of DataFile objects.
-    - analog: List of DataFile objects for miscellaneous analog data.
-    - metadata: Dictionary containing metadata as key-value pairs. 
-        The metadata available is based on the vendor.
-
-    """
+    """  
     def __init__(self, path, datafiles, metadata):
 
         self.name = os.path.basename(path)
@@ -29,11 +33,11 @@ class DataDirectory:
         self.metadata = metadata
 
         for datafile in datafiles:
+            self.by_name[datafile.name.upper()] = datafile
             detector = datafile.detector
             if not detector:
                 analog.append(datafiles)
                 continue 
-            self.by_name[datafile.name.upper()] = datafile
             self.detectors.add(detector)
             if detector in self.by_detector:
                 self.by_detector[detector].append(datafile)
@@ -96,12 +100,11 @@ class DataDirectory:
 
         Args:
             filename (str): DataFile name. 
-            labels (int or float or int list or float list): 
-                Ylabel(s) to extract.
+            labels (int/float/list, optional): Ylabel(s) to extract.
         
         Returns:
             2D numpy array containing data for the specified ylabel(s). 
-            The rows correspond to the ylabels and the columns corrrespond 
+            The rows correspond to the ylabels and the columns corrrespond \
                 to the retention times.
 
         """
@@ -114,8 +117,8 @@ class DataDirectory:
         Args:
             in_filename (str): DataFile name. 
             out_filename (str): Filename for the output CSV. 
-            labels (str or int or str list or int list): Ylabel(s) to export.
-            delim (str): Delimiter used in the output CSV. 
+            labels (int/float/list, optional): Ylabel(s) to export.
+            delim (str, optional): Delimiter used in the output CSV. 
 
         """
         self.get_file(in_filename).export_csv(out_filename, labels, delim)
@@ -126,6 +129,7 @@ class DataDirectory:
 
         Args:
             filename (str): DataFile name. 
-            label (str or int): Ylabel to be plotted. 
+            label (int/float): Ylabel to be plotted. 
+            **kwargs (optional): Keyword arguments for matplotlib. 
         """
         self.get_file(filename).plot(label, **kwargs)
