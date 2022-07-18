@@ -279,7 +279,7 @@ def parse_uv(path):
         "method": 0xA0E,
         "unit": 0xC15,
         "datatype": 0xC40,
-        "position": 0xFD7
+        "vialpos": 0xFD7
     }
 
     f = open(path, 'rb')
@@ -363,7 +363,7 @@ def parse_uv_partial(path):
         "method": 0xA0E,
         "unit": 0xC15,
         "datatype": 0xC40,
-        "position": 0xFD7
+        "vialpos": 0xFD7
     }
 
     f = open(path, 'rb')

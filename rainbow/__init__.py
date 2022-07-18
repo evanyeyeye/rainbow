@@ -6,13 +6,24 @@ def read(path, prec=0, hrms=False):
     """
     Reads a chromatogram data directory. Main method of the package. 
 
+    Increasing the precision may drastically increase memory usage for \
+        larger files. Specifying a higher precision mainly affects the \
+        parsing of MS data, because intensities are summed within the given \
+        precision for each ylabel.
+        
+    Max precision available for Agilent MS data is 1. 
+    
+    Max precision recommended for Waters MS data is 3. 
+   
+    The accuracy of Agilent HRMS is not guaranteed. Set the flag to try it.
+
     Args:
         path (str): Path of the directory.
         prec (int, optional): Number of decimals to round ylabels.
         hrms (bool, optional): Flag for Agilent HRMS parsing. 
 
     Returns:
-        DataDirectory representing the data directory. 
+        DataDirectory representing the directory. 
 
     """
     if not isinstance(path, str) or not os.path.isdir(path):

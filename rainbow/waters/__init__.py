@@ -4,12 +4,20 @@ from rainbow.datadirectory import DataDirectory
 
 def parse_directory(path, prec=0):
     """
+    Parses a Waters .raw directory. 
+
+    Args:
+        path (str): Path of the directory.
+        prec (int, optional): Number of decimals to round ylabels.
+
+    Returns:
+        DataDirectory representing the Waters .raw directory. 
 
     """
     datafiles = []
-    datafiles.extend(masslynx.parse_analog(path))
     datafiles.extend(masslynx.parse_spectrum(path))
+    datafiles.extend(masslynx.parse_analog(path))
 
-    metadata = masslynx.parse_header(path)
+    metadata = masslynx.parse_metadata(path)
 
-    return DataDirectory(path, datafiles, {'vendor': "Waters"})
+    return DataDirectory(path, datafiles, metadata)

@@ -6,83 +6,9 @@ from rainbow.datafile import DataFile
 
 
 """
-ANALOG PARSING METHODS
-
-"""
-
-def parse_analog(path):
-    """
-    """
-    datafiles = []
-
-    dir_contents = os.listdir(path)
-    if not '_CHROMS.INF' in dir_contents:
-        return datafiles 
-
-    analog_info = parse_chroinf(os.path.join(path, '_CHROMS.INF'))
-    analog_paths = [fn for fn in os.listdir(path) if fn.startswith('_CHRO') and fn.endswith('.DAT')]
-    assert(len(analog_info) == len(analog_paths))  
-    for i in range(len(analog_info)):
-        fn = os.path.join(path, f"_CHRO{i+1:0>3}.DAT")
-        datafiles.append(parse_chrodat(fn, *analog_info[i]))
-    return datafiles
-
-def parse_chroinf(path):
-    """
-    """
-    f = open(path, 'r')
-    f.seek(0x84)
-
-    analog_info = []
-    end = os.path.getsize(path)
-    while f.tell() < end:
-        line = re.sub('[\0-\x04]|\$CC\$|\([0-9]*\)', '', f.read(0x55)).strip()
-        line_split = line.split(',')
-        assert(len(line_split) == 6 or len(line_split) == 1)
-        info = []
-        info.append(line_split[0])
-        if len(line_split) == 6:
-            info.append(line_split[5])
-        analog_info.append(info)
-    f.close()
-    return analog_info
-
-def parse_chrodat(path, name, units=None):
-    """
-    """
-    data_start = 0x80
-    num_times = (os.path.getsize(path) - data_start) // 8
-    assert(data_start + num_times * 8 == os.path.getsize(path))
-
-    raw_bytes = open(path, 'rb').read()
-    times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
-    vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
-    times = times_immut.copy()
-    vals = vals_immut.copy().reshape(-1, 1)
-    del times_immut, vals_immut, raw_bytes
-
-    detector = None
-    name_split = set(name.split(' '))
-    if "CAD" in name_split:
-        detector = 'CAD'
-    elif "ELSD" in name_split:
-        detector = 'ELSD'
-
-    ylabels = np.array([''])
-    metadata = {
-        'description': name,
-    }
-    if units: 
-        metadata['units'] = units 
-
-    return DataFile(path, detector, times, ylabels, vals, metadata)
-
-
-"""
 SPECTRUM PARSING METHODS
 
 """
-
 def parse_spectrum(path):
     """
     """
@@ -337,3 +263,114 @@ def calc_frac(keyfrac_bits, num_bits):
     fracs -= 1.0
     del num_shifted, base
     return fracs
+
+
+"""
+ANALOG PARSING METHODS
+
+"""
+def parse_analog(path):
+    """
+    """
+    datafiles = []
+
+    dir_contents = os.listdir(path)
+    if not '_CHROMS.INF' in dir_contents:
+        return datafiles 
+
+    analog_info = parse_chroinf(os.path.join(path, '_CHROMS.INF'))
+    analog_paths = [fn for fn in os.listdir(path) if fn.startswith('_CHRO') and fn.endswith('.DAT')]
+    assert(len(analog_info) == len(analog_paths))  
+    for i in range(len(analog_info)):
+        fn = os.path.join(path, f"_CHRO{i+1:0>3}.DAT")
+        datafiles.append(parse_chrodat(fn, *analog_info[i]))
+    return datafiles
+
+def parse_chroinf(path):
+    """
+    """
+    f = open(path, 'r')
+    f.seek(0x84)
+
+    analog_info = []
+    end = os.path.getsize(path)
+    while f.tell() < end:
+        line = re.sub('[\0-\x04]|\$CC\$|\([0-9]*\)', '', f.read(0x55)).strip()
+        line_split = line.split(',')
+        assert(len(line_split) == 6 or len(line_split) == 1)
+        info = []
+        info.append(line_split[0])
+        if len(line_split) == 6:
+            info.append(line_split[5])
+        analog_info.append(info)
+    f.close()
+    return analog_info
+
+def parse_chrodat(path, name, units=None):
+    """
+    """
+    data_start = 0x80
+    num_times = (os.path.getsize(path) - data_start) // 8
+    assert(data_start + num_times * 8 == os.path.getsize(path))
+
+    raw_bytes = open(path, 'rb').read()
+    times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
+    vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
+    times = times_immut.copy()
+    vals = vals_immut.copy().reshape(-1, 1)
+    del times_immut, vals_immut, raw_bytes
+
+    detector = None
+    name_split = set(name.split(' '))
+    if "CAD" in name_split:
+        detector = 'CAD'
+    elif "ELSD" in name_split:
+        detector = 'ELSD'
+
+    ylabels = np.array([''])
+    metadata = {
+        'description': name,
+    }
+    if units: 
+        metadata['units'] = units 
+
+    return DataFile(path, detector, times, ylabels, vals, metadata)
+
+
+""" 
+METADATA PARSING METHODS 
+
+"""
+
+def parse_metadata(path):
+    """
+    Extracts the date and vial position from _HEADER.txt. 
+
+    Args:
+        path (str): Path to the directory. 
+    
+    Returns:
+        Dictionary containing directory metadata. 
+
+    """
+    metadata = {}
+    metadata['vendor'] = "Waters"
+
+    f = open(os.path.join(path, '_HEADER.TXT'), 'r')
+    lines = f.read().splitlines()
+    for line in lines:
+        if line.startswith("$$ Acquired Date"):
+            value = line.split(': ')[1]
+            if not value.isspace():
+                metadata['date'] = value + " "
+        elif line.startswith("$$ Acquired Time"):
+            assert('date' in metadata)
+            value = line.split(': ')[1]
+            if not value.isspace():
+                metadata['date'] += value
+        if line.startswith("$$ Bottle Number"):
+            value = line.split(': ')[1]
+            if not value.isspace():
+                metadata['vialpos'] = value
+
+    return metadata 

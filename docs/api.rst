@@ -8,4 +8,7 @@ API
    rainbow.datafile
    rainbow.datadirectory
    rainbow.agilent
+   rainbow.agilent.chemstation
+   rainbow.agilent.masshunter
    rainbow.waters
+   rainbow.waters.masslynx

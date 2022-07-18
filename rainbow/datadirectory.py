@@ -25,7 +25,7 @@ class DataDirectory:
     def __init__(self, path, datafiles, metadata):
 
         self.name = os.path.basename(path)
-        self.datafiles = datafiles
+        self.datafiles = []
         self.detectors = set()
         self.by_name = {}
         self.by_detector = {}
@@ -36,8 +36,9 @@ class DataDirectory:
             self.by_name[datafile.name.upper()] = datafile
             detector = datafile.detector
             if not detector:
-                analog.append(datafiles)
+                self.analog.append(datafile)
                 continue 
+            self.datafiles.append(datafile)
             self.detectors.add(detector)
             if detector in self.by_detector:
                 self.by_detector[detector].append(datafile)
@@ -92,8 +93,8 @@ class DataDirectory:
 
         """
         print("\n".join(f"{datafile.name}: {datafile.metadata['description']}"
-            for datafile in analog))
-
+            for datafile in self.analog) + "\n")
+        
     def extract_traces(self, filename, labels=None):
         """
         Extracts data corresponding to the specified DataFile and ylabel(s).
