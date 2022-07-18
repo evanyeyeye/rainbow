@@ -10,4 +10,4 @@ def parse_directory(path):
     datafiles.extend(masslynx.parse_analog(path))
     datafiles.extend(masslynx.parse_spectrum(path))
 
-    return DataDirectory(path, datafiles)
+    return DataDirectory(path, datafiles, {'vendor': "Waters"})

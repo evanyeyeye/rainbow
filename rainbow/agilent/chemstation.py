@@ -304,6 +304,10 @@ def parse_uv(path):
     wavelengths = np.arange(start_wv, end_wv + 1, delta_wv)
     num_wavelengths = wavelengths.size
 
+    uint_unpack = struct.Struct('<I').unpack 
+    int_unpack = struct.Struct('<i').unpack 
+    short_unpack = struct.Struct('<h').unpack
+
     # Extract the retention times and raw data values from each data segment.
     f.seek(data_offsets["data_start"])
     times = np.empty(num_times, np.uint32)
@@ -311,16 +315,17 @@ def parse_uv(path):
     for i in range(num_times):
         # Parse segment header for the retention time.
         f.read(4)
-        times[i] = struct.unpack("<I", f.read(4))[0]
+        times[i] = uint_unpack(f.read(4))[0]
         f.read(14)
         # If the next value is an integer, reset the accumulator to that value.
         # Otherwise it is a delta, so add it to the accumulator.
         accum_absorbance = 0 
         for j in range(num_wavelengths):
-            check_int = struct.unpack('<h', f.read(2))[0]
+            check_int = short_unpack(f.read(2))[0]
             if check_int == -0x8000:
-                accum_absorbance = struct.unpack('<i', f.read(4))[0]
-            else: accum_absorbance += check_int
+                accum_absorbance = int_unpack(f.read(4))[0]
+            else: 
+                accum_absorbance += check_int
             raw_matrix[i, j] = accum_absorbance
     end_offset = f.tell()
     f.seek(0x104)
@@ -373,6 +378,10 @@ def parse_uv_partial(path):
     except struct.error:
         return None
 
+    uint_unpack = struct.Struct('<I').unpack 
+    int_unpack = struct.Struct('<i').unpack 
+    short_unpack = struct.Struct('<h').unpack
+
     # Extract the retention times and raw data values from each data segment.
     f.seek(data_offsets['data_start'])
     memo = []
@@ -380,17 +389,18 @@ def parse_uv_partial(path):
         try:
             # Parse segment header for the retention time.
             f.read(4)
-            time = struct.unpack("<I", f.read(4))[0]
+            time = uint_unpack(f.read(4))[0]
             f.read(14)
             # If the next value is an integer, reset the accumulator to that value.
             # Otherwise it is a delta, so add it to the accumulator.
             raw_vals = np.empty(num_wavelengths, dtype=np.int32)
             accum_absorbance = 0 
             for j in range(num_wavelengths):
-                check_int = struct.unpack('<h', f.read(2))[0]
+                check_int = short_unpack(f.read(2))[0]
                 if check_int == -0x8000:
-                    accum_absorbance = struct.unpack('<i', f.read(4))[0]
-                else: accum_absorbance += check_int
+                    accum_absorbance = int_unpack(f.read(4))[0]
+                else: 
+                    accum_absorbance += check_int
                 raw_vals[j] = accum_absorbance
             memo.append((time, raw_vals))
         except struct.error:
@@ -483,65 +493,68 @@ def parse_ms(path):
     f.seek(struct.unpack('>H', f.read(2))[0] * 2 - 2)
     assert(type_ms != "MSD Spectral File" or f.tell() == 754)
 
+    # f.seek(0)
+    # raw_bytes = f.read() 
+    # f.close() 
+
+    short_unpack = struct.Struct('>H').unpack
+    int_unpack = struct.Struct('>I').unpack
     # Extract data values.
+
+    byte_arr = bytearray()
     times = np.empty(num_times, dtype=np.uint32)
-    memo = np.empty(num_times, dtype=object)
-    masses_set = set()
+    masses_per_time = np.zeros(num_times, dtype=np.uint16)
+    # offset = data_start
     for i in range(num_times):
         # Read in header information.
         cur = f.tell()
-        length = struct.unpack('>H', f.read(2))[0] * 2
-        times[i] = struct.unpack('>I', f.read(4))[0]
+        length = short_unpack(f.read(2))[0] * 2
+        # f.read(2)
+        times[i] = int_unpack(f.read(4))[0]
         f.read(6)
-        num_masses = struct.unpack('>H', f.read(2))[0]
+        masses_per_time[i] = short_unpack(f.read(2))[0]
         f.read(4)
-        
-        if num_masses == 0:
-            memo[i] = None
-            f.read(10)
-            continue
+        byte_arr.extend(f.read(masses_per_time[i] * 4))
 
-        # Process the data values. 
-        data = struct.unpack('>' + num_masses * 'HH', f.read(num_masses * 4))
-        masses = (np.array(data[::2]) + 10) // 20
-        masses_set.update(masses)
-
-        counts_enc = np.array(data[1::2])
-        counts_head = counts_enc >> 14
-        counts_tail = counts_enc & 0x3fff
-        counts = (8 ** counts_head) * counts_tail
-
-        memo[i] = (masses, counts)
-        
         f.read(10)
         assert(cur + length == f.tell())
 
-    masses_array = np.array(sorted(masses_set))
-    mass_indices = dict(zip(masses_array, range(masses_array.size)))
+    total_masses = np.sum(masses_per_time)
+    the_bytes = bytes(byte_arr)
+    # print(type(the_bytes))
+    masses = np.ndarray(total_masses, '>H', the_bytes, 0, 4).copy()
+    masses += 10
+    masses //= 20
+    
+    counts_enc = np.ndarray(total_masses, '>H', the_bytes, 2, 4).copy()
+    counts_head = counts_enc >> 14
+    counts_tail = counts_enc & 0x3fff
+    counts = counts_tail * (8 ** counts_head)
 
-    data_array = np.zeros((num_times, masses_array.size), dtype=int)
+    masses_array = np.unique(masses)
+    masses_array.sort()
+
+    # Optimized using numpy vectorization.
+    key_indices = np.searchsorted(masses_array, masses)
+    data = np.zeros((num_times, masses_array.size), dtype=np.int64)
+    cur_index = 0
     for i in range(num_times):
-        if not memo[i]:
-            continue
-        masses, counts = memo[i]
-        visited = set()
-        for j in range(masses.size):
-            if masses[j] in visited:
-                data_array[i, mass_indices[masses[j]]] += counts[j]
-            else:
-                data_array[i, mass_indices[masses[j]]] = counts[j]
-                visited.add(masses[j])
+        stop_index = cur_index + masses_per_time[i]
+        np.add.at(
+            data[i], 
+            key_indices[cur_index:stop_index], 
+            counts[cur_index:stop_index])
+        cur_index = stop_index
+    # del key_indices, keys, values, ylabels_per_time
 
     # print(path, hex(f.tell()))
 
     xlabels = times / 60000
-    ylabels = masses_array 
-    data = data_array
     metadata = read_header(f, metadata_offsets, 1)
 
     f.close()
 
-    return DataFile(path, 'MS', xlabels, ylabels, data, metadata)
+    return DataFile(path, 'MS', xlabels, masses_array, data, metadata)
 
 def parse_ms_partial(path):
     """

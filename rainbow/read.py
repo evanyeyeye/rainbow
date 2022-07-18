@@ -1,12 +1,11 @@
-import struct
-import os
+import os 
 from rainbow import agilent, waters
 
 
 def read(path):
     """
-    Function that reads a chromatogram data directory. 
-    
+    Reads a chromatogram data directory. Main method of the package. 
+
     Args:
         path (str): Path of the directory.
 
@@ -18,17 +17,12 @@ def read(path):
         raise Exception(f"{path} is not a directory.")
 
     datadir = None
-
-    ext = os.path.splitext(path)[1].lower()
+    ext = os.path.splitext(path)[1]
     if ext.upper() == '.D':
         datadir = agilent.parse_directory(path)
     elif ext.lower() == '.raw':
         datadir = waters.parse_directory(path)
-
-    if not datadir:
+    
+    if datadir is None:
         raise Exception(f"Rainbow cannot read {path}.")
-
     return datadir
-
-def read_csv():
-    pass   
