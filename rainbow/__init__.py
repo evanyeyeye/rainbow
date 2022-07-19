@@ -1,5 +1,6 @@
 import os 
-from rainbow import agilent, waters
+from rainbow.datafile import DataFile
+from rainbow.datadirectory import DataDirectory
 
 
 def read(path, prec=0, hrms=False):
@@ -38,8 +39,10 @@ def read(path, prec=0, hrms=False):
     datadir = None
     ext = os.path.splitext(path)[1]
     if ext.upper() == '.D':
+        from rainbow import agilent
         datadir = agilent.parse_directory(path, prec, hrms)
     elif ext.lower() == '.raw':
+        from rainbow import waters
         datadir = waters.parse_directory(path, prec)
     
     if datadir is None:

@@ -1,4 +1,4 @@
-import os 
+import os
 import numpy as np
 
 
@@ -28,6 +28,15 @@ class DataFile:
 
     """
     def __init__(self, path, detector, xlabels, ylabels, data, metadata):
+        
+        if not isinstance(path, str) or \
+           not detector in {'UV', 'MS', 'FID', 'CAD', 'ELSD', None} or \
+           not isinstance(xlabels, np.ndarray) or xlabels.ndim != 1 or \
+           not isinstance(ylabels, np.ndarray) or ylabels.ndim != 1 or \
+           not isinstance(data, np.ndarray) or data.ndim != 2 or \
+           not isinstance(metadata, dict):
+            raise Exception("Wrong argument parameters for DataFile.")
+        
         self.name = os.path.basename(path)
         self.detector = detector 
         self.xlabels = xlabels 
@@ -69,20 +78,22 @@ class DataFile:
 
         """
 
-        if not labels:
+        if labels is None:
             return self.data.T
 
-        if isinstance(labels, int) or isinstance(labels, float):
+        if isinstance(labels, int) or \
+           isinstance(labels, float) or \
+           labels == '':
             labels = [labels]
 
         if not isinstance(labels, list):
-            raise Exception(f"Invalid type for labels.")
+            raise Exception("Invalid type for labels.")
 
-        indices = np.searchsorted(self.ylabels, labels)
-        invalid_check = np.where(indices == len(labels))[0]
-        if invalid_check.size > 0:
-            raise Exception(f"Label {labels[i]} not in {filename}.")
+        for label in labels:
+            if not label in self.ylabels.tolist():
+                raise Exception(f"Label {label} not in {self.name}.")
         
+        indices = np.searchsorted(self.ylabels, labels)   
         traces = self.data[:,indices].T
 
         return traces
@@ -113,14 +124,13 @@ class DataFile:
         """
         str_traces_tp = self.extract_traces(labels).T.astype(str)
 
-        if not labels:
+        if labels is None:
             labels = self.ylabels.tolist()
 
-        if isinstance(labels, int) or isinstance(labels, float):
+        if isinstance(labels, int) or \
+           isinstance(labels, float) or \
+           labels == '':
             labels = [labels]
-
-        if not isinstance(labels, list):
-            raise Exception(f"Invalid type for labels.")
 
         str_labels = [str(label) for label in labels]
 

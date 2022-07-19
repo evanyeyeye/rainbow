@@ -5,6 +5,7 @@ This script is used for benchmarking and exploratory testing.
 
 import os
 import rainbow as rb
+import rainbow.agilent
 
 
 time_benchmark = True
@@ -99,6 +100,7 @@ def main():
         print(i.metadata)
     # datadirs[-1].list_analog()
     debug_size(datadirs[-1])
+    datadirs[-1].export_csv('_FUNC003.DAT', 'test.csv', delim='+', labels=[399, 211])
     
     return datadirs
 

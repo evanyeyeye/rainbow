@@ -11,7 +11,7 @@ class DataTester(unittest.TestCase):
     """
     def __test_data_directory(self, color, ext):
         """ 
-        Runs all tests for a DataDirectory. 
+        Runs all tests for a DataDirectory after parsing. 
 
         The DataDirectory is specified by color because of the 
             naming scheme of the inputs directory. 
@@ -51,13 +51,14 @@ class DataTester(unittest.TestCase):
         # Tests attributes of the DataDirectory.
         # Also tests classification of its DataFiles. 
         self.assertEqual(datadir.name, color + "." + ext)
-        self.assertEqual(len(datadir.datafiles), len(data_names))
+        self.assertCountEqual(
+            [df.name for df in datadir.datafiles], data_names)
         self.assertSetEqual(datadir.detectors, detectors)
         self.assertCountEqual(datadir.by_name.keys(), 
             [name.upper() for name in data_names] + 
                 [name.upper() for name in analog_names])
         self.assertCountEqual(
-            datadir.by_detector.keys(), list(detector_to_names.keys()))
+            datadir.by_detector.keys(), detector_to_names.keys())
         for key in datadir.by_detector:
             self.assertCountEqual(
                 [df.name for df in datadir.by_detector[key]],

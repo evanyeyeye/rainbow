@@ -1,4 +1,5 @@
 import os 
+from rainbow import DataFile
 
 
 class DataDirectory:
@@ -23,6 +24,12 @@ class DataDirectory:
 
     """  
     def __init__(self, path, datafiles, metadata):
+
+        if not isinstance(path, str) or \
+           not isinstance(datafiles, list) or \
+           not all(isinstance(df, DataFile) for df in datafiles) or \
+           not isinstance(metadata, dict):
+            raise Exception("Wrong argument parameters for DataDirectory.")
 
         self.name = os.path.basename(path)
         self.datafiles = []
