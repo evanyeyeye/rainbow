@@ -5,13 +5,12 @@ This script is used for benchmarking and exploratory testing.
 
 import os
 import rainbow as rb
-import rainbow.agilent
 
 
 time_benchmark = True
 use_mp = False 
 time_by_line = False
-method_to_time = rb.agilent.chemstation.parse_uv
+method_to_time = None
 
 memory_benchmark = False
 
@@ -85,22 +84,21 @@ def main():
         return datadirs
 
     datadirs = []
-    # print(len(data_folders))
-    for folder in data_folders:
-        datadirs.append(rb.read(folder))
-        if not datadirs[-1]:
-            raise Exception("YOOO")
-        if len(datadirs[-1].datafiles) == 0:
-            print(datadirs[-1])
-            raise Exception("BOOO")
-        print(datadirs[-1])
+    # # print(len(data_folders))
+    # for folder in data_folders:
+    #     datadirs.append(rb.read(folder))
+    #     if not datadirs[-1]:
+    #         raise Exception("YOOO")
+    #     if len(datadirs[-1].datafiles) == 0:
+    #         print(datadirs[-1])
+    #         raise Exception("BOOO")
+    #     print(datadirs[-1])
     
-    print(datadirs[-1].get_info())
-    for i in datadirs[-1].analog:
-        print(i.metadata)
-    # datadirs[-1].list_analog()
-    debug_size(datadirs[-1])
-    datadirs[-1].export_csv('_FUNC003.DAT', 'test.csv', delim='+', labels=[399, 211])
+    # print(datadirs[-1].get_info())
+    # for i in datadirs[-1].analog:
+    #     print(i.metadata)
+    # # datadirs[-1].list_analog()
+    # debug_size(datadirs[-1])
     
     return datadirs
 

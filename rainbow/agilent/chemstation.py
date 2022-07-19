@@ -482,7 +482,7 @@ def parse_ms(path, prec=0):
     head = struct.unpack('>I', f.read(4))[0]
     if head != 0x01320000:
         f.close()
-        return parse_ms_partial(path)
+        return parse_ms_partial(path, prec)
 
     # Determine the type of .ms file based on header.
     # Read the number of retention times differently based on type.
@@ -499,10 +499,6 @@ def parse_ms(path, prec=0):
     f.seek(struct.unpack('>H', f.read(2))[0] * 2 - 2)
     assert(type_ms != "MSD Spectral File" or f.tell() == 754)
 
-    # f.seek(0)
-    # raw_bytes = f.read() 
-    # f.close() 
-
     short_unpack = struct.Struct('>H').unpack
     int_unpack = struct.Struct('>I').unpack
     # Extract data values.
@@ -510,7 +506,7 @@ def parse_ms(path, prec=0):
     byte_arr = bytearray()
     times = np.empty(num_times, dtype=np.uint32)
     masses_per_time = np.zeros(num_times, dtype=np.uint16)
-    # offset = data_start
+
     for i in range(num_times):
         # Read in header information.
         cur = f.tell()
@@ -534,7 +530,7 @@ def parse_ms(path, prec=0):
     counts_enc = np.ndarray(total_masses, '>H', the_bytes, 2, 4).copy()
     counts_head = counts_enc >> 14
     counts_tail = counts_enc & 0x3fff
-    counts = counts_tail * (8 ** counts_head)
+    counts = np.multiply(8 ** counts_head, counts_tail, dtype=np.uint32)
 
     masses_array = np.unique(masses)
     masses_array.sort()
@@ -569,61 +565,64 @@ def parse_ms_partial(path, prec=0):
     f.seek(0x10A)
     if struct.unpack('>H', f.read(2))[0] != 0:
         print(path)
+        f.close()
         return None
 
+    
+    short_unpack = struct.Struct('>H').unpack
+    int_unpack = struct.Struct('>I').unpack
+
     f.seek(754)
-    memo = []
-    masses_set = set()
+
+    byte_arr = bytearray()
+    times = []
+    masses_per_time = []
+
     while True:
         try:
             cur = f.tell()
-            length = struct.unpack('>H', f.read(2))[0] * 2
-            time = struct.unpack('>I', f.read(4))[0]
+            length = short_unpack(f.read(2))[0] * 2
+            times.append(int_unpack(f.read(4))[0])
             f.read(6)
-            num_masses = struct.unpack('>H', f.read(2))[0]
+            masses_per_time.append(short_unpack(f.read(2))[0])
             f.read(4)
-        
-            if num_masses == 0:
-                memo.append((time, None, None))
-                f.read(10)
-                continue
-
-            data = struct.unpack('>' + num_masses * 'HH', f.read(num_masses * 4))
-            masses = (np.array(data[::2])) / 20
-            masses = np.round(masses, prec)
-            masses_set.update(masses)
-
-            counts_enc = np.array(data[1::2])
-            counts_head = counts_enc >> 14
-            counts_tail = counts_enc & 0x3fff
-            counts = (8 ** counts_head) * counts_tail
-
-            memo.append((time, masses, counts))
-        
+            byte_arr.extend(f.read(masses_per_time[-1] * 4))
             f.read(10)
             assert(cur + length == f.tell())
         except struct.error:
             break
 
-    num_times = len(memo)
-    times = np.empty(num_times)
+    num_times = len(times)
+    times = np.array(times)
+    masses_per_time = np.array(masses_per_time)
 
-    masses_array = np.array(sorted(masses_set))
-    mass_indices = dict(zip(masses_array, range(masses_array.size)))
+    total_masses = np.sum(masses_per_time)
+    the_bytes = bytes(byte_arr)
+    # print(type(the_bytes))
+    masses = np.ndarray(total_masses, '>H', the_bytes, 0, 4).copy()
+    masses = np.round(masses / 20, prec)
+    
+    counts_enc = np.ndarray(total_masses, '>H', the_bytes, 2, 4).copy()
+    counts_head = counts_enc >> 14
+    counts_tail = counts_enc & 0x3fff
+    counts = np.multiply(8 ** counts_head, counts_tail, dtype=np.uint32)
 
-    data_array = np.zeros((num_times, masses_array.size), dtype=int)
+    masses_array = np.unique(masses)
+    masses_array.sort()
+
+    # Optimized using numpy vectorization.
+    key_indices = np.searchsorted(masses_array, masses)
+    data = np.zeros((num_times, masses_array.size), dtype=np.int64)
+    cur_index = 0
     for i in range(num_times):
-        if not memo[i][1]:
-            continue
-        time, masses, counts = memo[i]
-        times[i] = time
-        visited = set()
-        for j in range(masses.size):
-            if masses[j] in visited:
-                data_array[i, mass_indices[masses[j]]] += counts[j]
-            else:
-                data_array[i, mass_indices[masses[j]]] = counts[j]
-                visited.add(masses[j])
+        stop_index = cur_index + masses_per_time[i]
+        np.add.at(
+            data[i], 
+            key_indices[cur_index:stop_index], 
+            counts[cur_index:stop_index])
+        cur_index = stop_index
+    # del key_indices, keys, values, ylabels_per_time
+
     
     metadata_offsets = {
         'time': 0xB2,
@@ -631,13 +630,11 @@ def parse_ms_partial(path, prec=0):
     }
 
     xlabels = times / 60000
-    ylabels = masses_array 
-    data = data_array
     metadata = read_header(f, metadata_offsets, 1)
 
     f.close()
 
-    return DataFile(path, 'MS', xlabels, ylabels, data, metadata)
+    return DataFile(path, 'MS', xlabels, masses_array, data, metadata)
 
 
 """

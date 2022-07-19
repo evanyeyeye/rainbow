@@ -81,7 +81,6 @@ class DataTester(unittest.TestCase):
             self.assertEqual(datafile.xlabels.size, shape[0])
             self.assertEqual(datafile.ylabels.size, shape[1])
             self.assertTupleEqual(datafile.data.shape, shape)
- 
             csv_path = outputs_path / (Path(name).stem + ".csv")
             with open(csv_path) as csv_f:
                 csv_lines = csv_f.read().splitlines()
