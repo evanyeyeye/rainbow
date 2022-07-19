@@ -1,0 +1,32 @@
+{
+    "metadata": {
+        "vendor": "Waters", 
+        "date": "10-May-2022 15:39:24", 
+        "vialpos": "2:A,11"
+    },
+    "datafiles": {
+        "_CHRO001.DAT": {
+            "detector": "CAD",
+            "shape": [765, 1],
+            "metadata": {
+                "description": "CAD", 
+                "units": "mV"
+            },
+            "analog": false
+        },
+        "_FUNC001.DAT": {
+            "detector": "MS",
+            "shape": [725, 740],
+            "metadata": {
+                "polarity": "+"
+            },
+            "analog": false 
+        },
+        "_FUNC002.DAT": {
+            "detector": "UV",
+            "shape": [3001, 190],
+            "metadata": {},
+            "analog": false 
+        }
+    }
+}

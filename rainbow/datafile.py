@@ -43,6 +43,7 @@ class DataFile:
         Returns a string summary of the DataFile. 
 
         """ 
+        import json
         return f"\n{'-' * len(self.name)}\n" \
                f"{self.name}\n" \
                f"{'-' * len(self.name)}\n" \
@@ -50,7 +51,7 @@ class DataFile:
                f"Xlabels: {self.xlabels}\n" \
                f"Ylabels: {self.ylabels}\n" \
                f"Data: {self.data}\n" \
-               f"Metadata: {self.metadata}\n" 
+               f"Metadata: {json.dumps(self.metadata)}\n" 
 
     def extract_traces(self, labels=None):
         """

@@ -9,7 +9,7 @@ from rainbow.datafile import DataFile
 SPECTRUM PARSING METHODS
 
 """
-def parse_spectrum(path):
+def parse_spectrum(path, prec=0):
     """
     """
     datafiles = []
@@ -54,26 +54,26 @@ def parse_spectrum(path):
                 calib = calibs[func_i]
             else: 
                 calib = None
-            datafiles.append(parse_func(func_paths[func_i], 
+            datafiles.append(parse_func(func_paths[func_i], prec,
                                         polarities[func_i], calib))
             func_i += 1
 
     while func_i < len(func_paths):
-        datafiles.append(parse_func(func_paths[func_i], None, None))
+        datafiles.append(parse_func(func_paths[func_i], prec))
         func_i += 1
 
     return datafiles
 
-def parse_func(path, polarity, calib):
+def parse_func(path, prec=0, polarity=None, calib=None):
     """ 
     """
     idx_path = path[:-3] + 'IDX'
     times, ylabels_per_time, last_offset = parse_funcidx(idx_path)
     data_len = (os.path.getsize(path) - last_offset) // ylabels_per_time[-1]
     assert(data_len == 6 or data_len == 8)
-    
+
     parser = parse_funcdat6 if data_len == 6 else parse_funcdat8 
-    ylabels, data = parser(path, ylabels_per_time, calib)
+    ylabels, data = parser(path, ylabels_per_time, prec, calib)
     
     detector = 'MS' if calib else 'UV'
 
@@ -103,10 +103,11 @@ def parse_funcidx(path):
         times[i] = struct.unpack('<f', f.read(4))[0]
         f.read(6)
     assert(f.tell() == os.path.getsize(f.name))
-
+    f.close() 
+    
     return times, ylabels_per_time, last_offset
 
-def parse_funcdat6(path, ylabels_per_time, calib):
+def parse_funcdat6(path, ylabels_per_time, prec=0, calib=None):
     """
     """
     num_times = ylabels_per_time.size
@@ -114,7 +115,8 @@ def parse_funcdat6(path, ylabels_per_time, calib):
     assert(os.path.getsize(path) == num_datapairs * 6)
 
     # Optimized reading of 6-byte segments into `raw_values`. 
-    raw_bytes = open(path, 'rb').read()
+    with open(path, 'rb') as f:
+        raw_bytes = f.read()
     leastsig = np.ndarray(num_datapairs, '<I', raw_bytes, 0, 6)
     mostsig = np.ndarray(num_datapairs, '<H', raw_bytes, 4, 6)
     raw_values = leastsig | (mostsig.astype(np.int64) << 32)
@@ -134,7 +136,7 @@ def parse_funcdat6(path, ylabels_per_time, calib):
         keys = calibrate(keys, calib)
     
     # Then round the keys to the nearest whole number. 
-    keys = np.round(keys)
+    keys = np.round(keys, prec)
 
     # Calculate the `values` from each 6-byte segment.
     val_bases = (raw_values & 0xFFFF).astype(np.int16)
@@ -162,7 +164,7 @@ def parse_funcdat6(path, ylabels_per_time, calib):
 
     return ylabels, data
 
-def parse_funcdat8(path, ylabels_per_time, calib):
+def parse_funcdat8(path, ylabels_per_time, prec=0, calib=None):
     """
     """
     num_times = ylabels_per_time.size
@@ -170,7 +172,8 @@ def parse_funcdat8(path, ylabels_per_time, calib):
     assert(os.path.getsize(path) == num_datapairs * 8)
 
     # Optimized reading of 8-byte segments into `raw_values`. 
-    raw_bytes = open(path, 'rb').read()
+    with open(path, 'rb') as f:
+        raw_bytes = f.read()
     raw_values = np.ndarray(num_datapairs, '<Q', raw_bytes, 0, 8)
 
     # The data is stored as key-value pairs. 
@@ -198,7 +201,7 @@ def parse_funcdat8(path, ylabels_per_time, calib):
     del keyints, keyfracs 
 
     # Round the keys to the nearest whole number. 
-    keys = np.round(keys)
+    keys = np.round(keys, prec)
 
     # Find the integers that need to be scaled via left shift. 
     # This is based on the number of bits allocated for each integer.
@@ -313,7 +316,8 @@ def parse_chrodat(path, name, units=None):
     num_times = (os.path.getsize(path) - data_start) // 8
     assert(data_start + num_times * 8 == os.path.getsize(path))
 
-    raw_bytes = open(path, 'rb').read()
+    with open(path, 'rb') as f:
+        raw_bytes = f.read()
     times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
     vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
     times = times_immut.copy()
@@ -358,6 +362,7 @@ def parse_metadata(path):
 
     f = open(os.path.join(path, '_HEADER.TXT'), 'r')
     lines = f.read().splitlines()
+    f.close()
     for line in lines:
         if line.startswith("$$ Acquired Date"):
             value = line.split(': ')[1]

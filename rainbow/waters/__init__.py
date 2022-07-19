@@ -15,7 +15,7 @@ def parse_directory(path, prec=0):
 
     """
     datafiles = []
-    datafiles.extend(masslynx.parse_spectrum(path))
+    datafiles.extend(masslynx.parse_spectrum(path, prec))
     datafiles.extend(masslynx.parse_analog(path))
 
     metadata = masslynx.parse_metadata(path)

@@ -1,0 +1,67 @@
+{
+    "metadata": {
+        "vendor": "Waters", 
+        "date": "06-Aug-2021 10:52:20", 
+        "vialpos": "2:8"
+    },
+    "datafiles": {
+        "_CHRO001.DAT": {
+            "detector": "ELSD",
+            "shape": [24001, 1],
+            "metadata": {
+                "description": "ELSD Signal", 
+                "units": "LSU"
+            },
+            "analog": false
+        },
+        "_CHRO002.DAT": {
+            "detector": null,
+            "shape": [24001, 1],
+            "metadata": {
+                "description": "PDA Ch1 220nm@4.8nm", 
+                "units": "AU"
+            },
+            "analog": true
+        },
+        "_CHRO003.DAT": {
+            "detector": null,
+            "shape": [24001, 1],
+            "metadata": {
+                "description": "PDA Ch2 254nm@4.8nm", 
+                "units": "AU"
+            },
+            "analog": true
+        },
+        "_CHRO004.DAT": {
+            "detector": null,
+            "shape": [24001, 1],
+            "metadata": {
+                "description": "PDA Ch3 280nm@4.8nm", 
+                "units": "AU"
+            },
+            "analog": true
+        },
+        "_FUNC001.DAT": {
+            "detector": "MS",
+            "shape": [575, 1401],
+            "metadata": {
+                "polarity": "-"
+            },
+            "analog": false 
+        },
+        "_FUNC002.DAT": {
+            "detector": "MS",
+            "shape": [574, 1401],
+            "metadata": {
+                "polarity": "+"
+            },
+            "analog": false 
+        },
+        "_FUNC003.DAT": {
+            "detector": "UV",
+            "shape": [24001, 190],
+            "metadata": {},
+            "analog": false 
+        }
+    }
+}

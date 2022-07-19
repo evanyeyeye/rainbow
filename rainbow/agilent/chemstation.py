@@ -11,7 +11,7 @@ MAIN PARSING METHODS
 
 """
 
-def parse_files(path):
+def parse_files(path, prec=0):
     """
     Finds and parses Agilent Chemstation data files with a .ch, .uv, or .ms extension.
 
@@ -26,12 +26,12 @@ def parse_files(path):
     """
     datafiles = []
     for file in os.listdir(path):
-        datafile = parse_file(os.path.join(path, file))
+        datafile = parse_file(os.path.join(path, file), prec)
         if datafile:
             datafiles.append(datafile)
     return datafiles
 
-def parse_file(path):
+def parse_file(path, prec=0):
     """
     Parses an Agilent Chemstation data file. Supported extensions are .ch, .uv, and .ms. 
 
@@ -50,7 +50,7 @@ def parse_file(path):
     elif ext == '.uv':
         return parse_uv(path)
     elif ext == '.ms':
-        return parse_ms(path)
+        return parse_ms(path, prec)
     return None
 
 
@@ -214,15 +214,18 @@ def parse_ch_other(path):
             raw_array.append(accum_absorbance)
     assert(f.tell() == os.path.getsize(path))
 
+    if num_times == 0:
+        return None
+
     # Calculate all retention times using the start and end times.
     f.seek(data_offsets['time_range'])
     start_time, end_time = struct.unpack('>II', f.read(8))
     delta_time = (end_time - start_time) / (num_times - 1)
-    times = np.arange(start_time, end_time + 1, delta_time)
+    times = np.arange(start_time, end_time + 1e-3, delta_time)
 
     # Extract metadata from file header.
     metadata = read_header(f, metadata_offsets)
-    assert(metadata['unit'] == "mAU")
+    assert(metadata['unit'] in {'mAU', 'mAu'})
 
     # Determine the detector and signal using the metadata. 
     signal_str = metadata['signal']
@@ -231,7 +234,10 @@ def parse_ch_other(path):
         detector = 'UV'
     elif 'ADC' in signal_str:
         signal = ''
-        detector = 'CAD'
+        if 'ADC1 CHANNEL' in signal_str:
+            detector = 'ELSD'
+        else:
+            detector = 'CAD'
     assert('=' in signal_str or 'ADC' in signal_str)
 
     # Extract the scaling factor.
@@ -414,7 +420,7 @@ def parse_uv_partial(path):
     for i in range(num_times):
         time, raw_vals = memo[i]
         times[i] = time
-        absorbances[i] = raw_vals
+        raw_matrix[i] = raw_vals
 
     # Extract the scaling factor.
     f.seek(data_offsets['scaling_factor'])
@@ -439,7 +445,7 @@ def parse_uv_partial(path):
 
 """
 
-def parse_ms(path):   
+def parse_ms(path, prec=0):   
     """
     Parses Agilent .ms files.
 
@@ -523,8 +529,7 @@ def parse_ms(path):
     the_bytes = bytes(byte_arr)
     # print(type(the_bytes))
     masses = np.ndarray(total_masses, '>H', the_bytes, 0, 4).copy()
-    masses += 10
-    masses //= 20
+    masses = np.round(masses / 20, prec)
     
     counts_enc = np.ndarray(total_masses, '>H', the_bytes, 2, 4).copy()
     counts_head = counts_enc >> 14
@@ -556,7 +561,7 @@ def parse_ms(path):
 
     return DataFile(path, 'MS', xlabels, masses_array, data, metadata)
 
-def parse_ms_partial(path):
+def parse_ms_partial(path, prec=0):
     """
     A
     """
@@ -584,7 +589,8 @@ def parse_ms_partial(path):
                 continue
 
             data = struct.unpack('>' + num_masses * 'HH', f.read(num_masses * 4))
-            masses = (np.array(data[::2]) + 10) // 20
+            masses = (np.array(data[::2])) / 20
+            masses = np.round(masses, prec)
             masses_set.update(masses)
 
             counts_enc = np.array(data[1::2])

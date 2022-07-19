@@ -1,0 +1,28 @@
+{
+    "metadata": {
+        "vendor": "Agilent"
+    },
+    "datafiles": {
+        "MSD1.MS": {
+            "detector": "MS",
+            "shape": [469, 851],
+            "metadata": {
+                "time": "14 Nov 19   3:08 pm -0500", 
+                "method": "PURITY_HPLC.M"
+            },
+            "analog": false
+        },
+        "ADC1A.CH": {
+            "detector": "ELSD",
+            "shape": [1787, 1],
+            "metadata": {
+                "notebook": "blank", 
+                "date": "14-Nov-19, 15:08:08", 
+                "method": "PURITY_HPLC.M", 
+                "unit": "mAU", 
+                "signal": "ADC1 CHANNEL A"
+            },
+            "analog": false 
+        }
+    }
+}

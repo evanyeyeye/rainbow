@@ -1,0 +1,54 @@
+{
+    "metadata": {
+        "vendor": "Agilent"
+    },
+    "datafiles": {
+        "DAD1.UV": {
+            "detector": "UV",
+            "shape": [22138, 106],
+            "metadata": {
+                "date": "03-Feb-22, 11:22:20", 
+                "method": "IVTT.Am.Carn.Neo.Chloro.Sorting.M", 
+                "unit": "mAU", 
+                "datatype": "DAD1I, DAD: Spectrum"
+            },
+            "analog": false
+        },
+        "MSD1.MS": {
+            "detector": "MS",
+            "shape": [147192, 1],
+            "metadata": {
+                "time": " 3 Feb 22  11:22 am -0500", 
+                "method": "IVTT.Am.Carn.Neo.Ch"
+            },
+            "analog": false 
+        },
+        "MSD2.MS": {
+            "detector": "MS",
+            "shape": [147217, 1],
+            "metadata": {
+                "time": " 3 Feb 22  11:22 am -0500", 
+                "method": "IVTT.Am.Carn.Neo.Ch"
+            },
+            "analog": false 
+        },
+        "MSD3.MS": {
+            "detector": "MS",
+            "shape": [147251, 1],
+            "metadata": {
+                "time": " 3 Feb 22  11:22 am -0500", 
+                "method": "IVTT.Am.Carn.Neo.Ch"
+            },
+            "analog": false 
+        },
+        "MSD4.MS": {
+            "detector": "MS",
+            "shape": [146020, 1],
+            "metadata": {
+                "time": " 3 Feb 22  11:22 am -0500", 
+                "method": "IVTT.Am.Carn.Neo.Ch"
+            },
+            "analog": false 
+        }
+    }
+}

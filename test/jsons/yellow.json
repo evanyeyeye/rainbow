@@ -1,0 +1,36 @@
+{
+    "metadata": {
+        "vendor": "Agilent"
+    },
+    "datafiles": {
+        "FID1A.ch": {
+            "detector": "FID",
+            "shape": [10197, 1],
+            "metadata": {
+                "date": "17 Dec 19  10:04 am", 
+                "method": "HP-5MS_HTAchiral_da_100-300_simscan.M", "instrument": "Mustang ChemStation", 
+                "unit": "pA", 
+                "signal": "Front Signal"
+            },
+            "analog": false 
+        },
+        "data.ms": {
+            "detector": "MS",
+            "shape": [1307, 199],
+            "metadata": {
+                "time": "17 Dec 19  10:04 am", 
+                "method": "HP-5MS_HTAchiral_da"
+            },
+            "analog": false
+        },
+        "dataSim.ms": {
+            "detector": "MS",
+            "shape": [1309, 2],
+            "metadata": {
+                "time": "17 Dec 19  10:04 am", 
+                "method": "HP-5MS_HTAchiral_da"
+            },
+            "analog": false
+        }
+    }
+}
