@@ -1,7 +1,7 @@
-import datatester
+import tests.datatester
 
 
-class TestWaters(datatester.DataTester):
+class TestWaters(tests.datatester.DataTester):
     """
     Unit tests for parsing Waters .raw directories. 
 

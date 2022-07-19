@@ -7,29 +7,38 @@ import os
 import rainbow as rb
 
 
-time_benchmark = False
+time_benchmark = True
 use_mp = False 
 time_by_line = False
-method_to_time = rb.waters.masslynx.parse_funcdat6
+method_to_time = rb.agilent.chemstation.parse_uv
 
-memory_benchmark = True 
+memory_benchmark = False
 
-# dataset_dir = "../../../Downloads/datasets/agilent/LCMS/"
+# dataset_dir = "../../../Downloads/datasets/agilent/FID/"
 # data_folders = [dataset_dir + dir for dir in os.listdir(dataset_dir) if dir != ".DS_Store"]
 
+data_folders = ["inputs/violet.raw"]
+
 # data_folders = ["../../../Downloads/agilent/gcms/cedrol_mix_01.D"]
+# data_folders = ["../../../Downloads/agilent/fid/caye_nmr_test_mix .D"]
 # data_folders = ["../../../Downloads/agilent/hdr/HDR_data_example.D"]
 # data_folders = ["../../../Downloads/agilent/partial/Ajit-Partial.D"]
 # data_folders = ["../../../Downloads/agilent/partial/Ajit-Finished.D"]
 # data_folders = ["../../../Downloads/agilent/lcms/100518-RM_HPLC-01970.D"]
 # data_folders = ["../../../Downloads/agilent/hrms/5057649-0007_160622_3035.d"]
+# data_folders = ["../../../Downloads/agilent/fid/emma_26Oct2020/Emma-5001483-0557.D"]
 
-# data_folders = ["../../../Downloads/waters/cad/5042373-0175-55C_evap-1-0040.raw"]
+# data_folders = ["../../../Downloads/waters/cad/5042373-0175-35C_evap-Noscapine3-35C_evap-1-m09.raw"]
+# data_folders = ["../../../Downloads/waters/elsd/2021-07-28-PROTEIN-261.raw"]
 # data_folders = ["../../../Downloads/waters/sfcms/ok.raw"]
 # data_folders = ["../../../Downloads/waters/elsd/2021-07-28-PROTEIN-261.raw"]
 # data_folders = ["../../../Downloads/waters/uv/grahatho-5023368-0470-IPA-2.Raw"]
+# data_folders = ["../../../Downloads/waters/uv/bharatin-IPA-5019324-0577-4.Raw"]
 # data_folders = ["../../../Downloads/waters/lcms/Bita Parvizian1-1.raw"]
-data_folders = ["../../../Downloads/waters/elsd/2021-07-28-PROTEIN-296.raw"]
+# data_folders = ["../../../Downloads/waters/lcms/blank1203_01d.raw"]
+# data_folders = ["../../../Downloads/waters/lcms/meohflushcol10_1.raw"]
+# data_folders = ["../../../Downloads/waters/elsd/2021-07-28-PROTEIN-296.raw"]
+# data_folders = ["../../../Downloads/waters/lcms/meohflushcol10_1.raw", "../../../Downloads/waters/elsd/2021-07-28-PROTEIN-296.raw"]
 
 
 def display_top(snapshot, key_type='lineno', limit=3):
@@ -83,9 +92,12 @@ def main():
         if len(datadirs[-1].datafiles) == 0:
             print(datadirs[-1])
             raise Exception("BOOO")
-        # print(datadirs[-1])
+        print(datadirs[-1])
     
-    # print(datadirs[-1].get_info())
+    print(datadirs[-1].get_info())
+    for i in datadirs[-1].analog:
+        print(i.metadata)
+    # datadirs[-1].list_analog()
     debug_size(datadirs[-1])
     
     return datadirs
@@ -110,14 +122,7 @@ if __name__ == '__main__':
         import psutil 
         tracemalloc.start() 
 
-    # import tracemalloc 
-    # import linecache 
-    # tracemalloc.start()
     mem = main() 
-    # print(mem[0].get_file("_CHRO001.DAT").xlabels.flags)
-    # display_top(tracemalloc.take_snapshot())
-    # import psutil
-    # print()
 
     if time_benchmark:
         if time_by_line: 
@@ -126,6 +131,6 @@ if __name__ == '__main__':
             p = pstats.Stats(profiler).strip_dirs().sort_stats('tottime')
             p.print_stats(10)
     if memory_benchmark:
-        display_top(tracemalloc.take_snapshot())
+        display_top(tracemalloc.take_snapshot(), limit=5)
         ram_used = psutil.Process().memory_info().rss / (1024 * 1024)
         print(f"RAM Usage: {ram_used :.3f} MiB")

@@ -1,6 +1,6 @@
-import os
 import json
 import unittest
+from pathlib import Path
 import rainbow as rb 
 
 
@@ -23,8 +23,9 @@ class DataTester(unittest.TestCase):
             outputs directory. 
 
         """
-        json_path = os.path.join("jsons", color + ".json")
-        with open(json_path) as json_f:
+        tests_path = Path("tests")
+        json_path = tests_path / "jsons" / (color + ".json")
+        with open(str(json_path)) as json_f:
             json_data = json.load(json_f)
 
         data_names = []
@@ -44,8 +45,8 @@ class DataTester(unittest.TestCase):
             else:
                 detector_to_names[detector] = [name]
 
-        datadir_path = os.path.join("inputs", color + "." + ext)
-        datadir = rb.read(datadir_path)
+        datadir_path = tests_path / "inputs" / (color + "." + ext)
+        datadir = rb.read(str(datadir_path))
 
         # Tests attributes of the DataDirectory.
         # Also tests classification of its DataFiles. 
@@ -66,7 +67,7 @@ class DataTester(unittest.TestCase):
         self.assertDictEqual(datadir.metadata, json_data['metadata'])
 
         # Tests the attributes and data values of each DataFile.
-        outputs_path = os.path.join("outputs", color)
+        outputs_path = tests_path / "outputs" / color
         for name in json_data['datafiles']:
             datafile = datadir.get_file(name)
             file_dict = json_data['datafiles'][name]
@@ -80,8 +81,7 @@ class DataTester(unittest.TestCase):
             self.assertEqual(datafile.ylabels.size, shape[1])
             self.assertTupleEqual(datafile.data.shape, shape)
  
-            csv_name = os.path.splitext(name)[0] + ".csv"
-            csv_path = os.path.join(outputs_path, csv_name)
+            csv_path = outputs_path / (Path(name).stem + ".csv")
             with open(csv_path) as csv_f:
                 csv_lines = csv_f.read().splitlines()
             self.assertListEqual(datafile.to_csvstr().splitlines(), csv_lines)

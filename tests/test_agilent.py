@@ -1,7 +1,7 @@
-import datatester
+import tests.datatester
 
 
-class TestAgilent(datatester.DataTester):
+class TestAgilent(tests.datatester.DataTester):
     """
     Unit tests for parsing Agilent .D directories. 
 
