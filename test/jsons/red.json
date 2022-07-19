@@ -1,0 +1,58 @@
+{
+    "metadata": {
+        "vendor": "Agilent"
+    },
+    "datafiles": {
+        "DAD1.UV": {
+            "detector": "UV",
+            "shape": [2100, 106],
+            "metadata": {
+                "notebook": "usp", 
+                "date": "27-Feb-18, 10:11:50", 
+                "method": "column2_gradient14min.M", 
+                "unit": "mAU", 
+                "datatype": "DAD1I, DAD: Spectrum", 
+                "vialpos": "23"
+            },
+            "analog": false
+        },
+        "DAD1B.ch": {
+            "detector": "UV",
+            "shape": [2100, 1],
+            "metadata": {
+                "notebook": "usp", 
+                "date": "27-Feb-18, 10:11:50", 
+                "method": "column2_gradient14min.M", 
+                "instrument": "Asterix ChemStation", 
+                "unit": "mAU", 
+                "signal": "DAD1B, Sig=280.0,4.0  Ref=off"
+            },
+            "analog": false 
+        },
+        "DAD1C.ch": {
+            "detector": "UV",
+            "shape": [2100, 1],
+            "metadata": {
+                "notebook": "usp", 
+                "date": "27-Feb-18, 10:11:50", 
+                "method": "column2_gradient14min.M", 
+                "instrument": "Asterix ChemStation", 
+                "unit": "mAU", 
+                "signal": "DAD1C, Sig=220.0,4.0  Ref=off"
+            },
+            "analog": false 
+        },
+        "ADC1A.CH": {
+            "detector": "CAD",
+            "shape": [4200, 1],
+            "metadata": {
+                "notebook": "usp", 
+                "date": "27-Feb-18, 10:11:50",
+                 "method": "column2_gradient14min.M", 
+                 "unit": "mAu", 
+                 "signal": "ADC1"
+            },
+            "analog": false 
+        }
+    }
+}

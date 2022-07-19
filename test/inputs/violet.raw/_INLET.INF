@@ -1,0 +1,281 @@
+
+ACE Experimental Record
+
+
+Inlet Method File: c:\masslynx\default.pro\acqudb\protein_v4_beh-c4_20c_10-70b_5min_a-d1
+
+---------------------   Run method parameters   ----------------
+
+-- PUMP --
+
+Waters ACQUITY QSM
+ Solvent A Name: Acetonitrile 
+ Solvent B Name:  
+ Solvent C Name:  
+ Solvent D Name: Trifluoroacetic Acid 
+ Low Pressure Limit: 0.000 psi
+ High Pressure Limit: 15000.000 psi
+ Seal Wash Period: 1.00 min
+ [Gradient Table]
+  Time(min) Flow Rate(mL/min) %A %B %C %D Curve 
+ 1. Initial 0.250 10.0 0.0 0.0 90.0 Initial 
+ 2. 5.00 0.250 70.0 0.0 0.0 30.0 6 
+ 3. 6.00 0.250 90.0 0.0 0.0 10.0 6 
+ 4. 7.00 0.250 90.0 0.0 0.0 10.0 6 
+ 5. 7.10 0.250 10.0 0.0 0.0 90.0 6 
+ Comment:  
+ Flow Ramp Rate: 0.45 min
+ D Solvent Selection (if supported): 1 
+ System Pressure Data Channel: No 
+ Flow Rate Data Channel: No 
+ %A Data Channel: No 
+ %B Data Channel: No 
+ %C Data Channel: No 
+ %D Data Channel: No 
+ Primary Data Channel: No 
+ Accumulator Data Channel: No 
+ Degasser Data Channel: No 
+ Gradient Start: At Injection 
+ Gradient Start Volume: 0 uL
+ Gradient Start Time: 0.00 min
+ Participate in pre-analysis: No 
+
+-- END PUMP --
+
+-- DETECTOR -- 
+
+Waters Acquity CM
+
+ Target Column Temperature: 20.0 C
+ Temperature Alarm Band: 2.0 C
+ Shutdown all columns: No 
+ Column Valve Position: Column 4 
+ Equilibration Time: 0.1 min
+ Active Preheater: Enabled 
+ External Valve 1: No Change 
+ External Valve 2: No Change 
+ External Valve 3: No Change 
+ Comment:  
+ Column Temperature Data Channel: No 
+ Preheater Temperature Data Channel: No 
+
+
+-- END DETECTOR -- 
+
+-- DETECTOR -- 
+
+Waters Acquity ELSD
+
+ Run Time: 10.00 min
+ Comment:  
+ Lamp On: On 
+ Gas Pressure: 40.0 psi
+ Gas Pressure Data Channel: Off 
+ Data Rate: 40 Points/Sec
+ Gain: 500.0 
+ Time Constant: 0.050 sec
+ Signal Output Full-Scale LSU: 2000 LSU
+ Output Full-Scale: 2000 mV
+ Signal Output Offset: 0.000 mV
+ Auxiliary Output Offset: 0 mV
+ Auxiliary Output Source: Nebulizer Temperature 
+ Analog Output Mode: On 
+ Signal MBF Data Channel: Off 
+ Signal Data Channel: On 
+ Nebulizer Heater-Cooler Set Point: 0.0 %
+ Nebulizer Data Channel: Off 
+ Nebulizer Mode: Cooling 
+ Drift Tube Temperature Set Point: 50.0 °C
+ Drift Tube Temperature Limit: 25.0 °C
+ Drift Tube Data Channel: Off 
+ Column Heater Set Point: Off °C
+ Column Heater Temperature Limit: 5.0 °C
+ Column Heater Data Channel: Off 
+ Auxiliary Switch: Off 
+ Autozero On Inject: Yes 
+ Autozero On Gain Change: Disable 
+ Pulse Width: 0.1 sec
+ Rect Wave Period: 0.2 sec
+ Threshold Level: 1.0 
+ Threshold Event: Off 
+ Threshold Parameter: Pulse 
+ Threshold Parameter: Pulse 
+
+
+-- END DETECTOR -- 
+
+-- DETECTOR -- 
+
+Waters Acquity PDA
+
+ Run Time: 10.00 min
+ PDA Detector Type: UPLC LG 500 nm 
+ Lamp: On 
+ Sampling Rate: 40 points/sec
+ Filter Time Constant: 0.0500 sec
+ Exposure Time: Auto msec
+ Negative Absorbance Margin: -0.07 AU
+ Interpolate 2nd order filter Region: No 
+ Use UV Blocking Filter: No 
+3D Channel...
+ Range: 210  - 400  
+ Resolution: 1.2 nm
+Channel 1...
+ Data Mode: Absorbance at 220  
+ Resolution: 4.8 nm
+Channel 2...
+ Data Mode: Absorbance at 254  
+ Resolution: 4.8 nm
+Channel 3...
+ Data Mode: Absorbance at 280  
+ Resolution: 4.8 nm
+ Initial Switch 1: No Change 
+ Pulse Width: 1.0 sec
+ Rect Wave Period: 0.2 sec
+
+
+-- END DETECTOR -- 
+
+-- AUTOSAMPLER --
+
+Waters ACQUITY FTN AutoSampler 
+ Run Time: 10.00 min
+ Comment:  
+ Load Ahead: Disabled 
+ Loop Offline: Automatic min
+ Wash Solvent Name: Methanol 
+ Pre-Inject Wash Time: 0.0 sec
+ Post-Inject Wash Time: 6.0 sec
+ Purge Solvent Name: Methanol 
+ Dilution: Disabled 
+ Dilution Volume: 0 uL
+ Delay Time: 0 min
+ Dilution Needle Placement: Automatic mm
+ Target Column Temperature: Off C
+ Target Sample Temperature: 15.0 C
+ Sample Temperature Alarm Band: 5.0 C
+ Syringe Draw Rate: Automatic 
+ Needle Placement: Automatic 
+ Pre-Aspirate Air Gap: Automatic 
+ Post-Aspirate Air Gap: Automatic 
+ Column Temperature Data Channel: No 
+ Room Temperature Data Channel: No 
+ Sample Temperature Data Channel: No 
+ Sample Organizer Temperature Data Channel: No 
+ Sample Pressure Data Channel: No 
+ Preheater Temperature Data Channel: No 
+ Seal Force Data Channel: No 
+ No Injection Mode Enabled: No 
+ Autoaddition Mix Stroke Cycles: Automatic 
+ Autoaddition Mix Stroke Volume: Automatic uL
+ Active Preheater: Disabled 
+ Run Events: No 
+
+
+Sample Run Injection Parameter
+
+Injection Volume (ul)   -   1.00
+-- END AUTOSAMPLER --
+
+----------------------------  oOo  -----------------------------
+
+
+End of experimental record.
+
+
+
+------------------- Waters ACQUITY QSM Postrun Report  ---------------
+
+
+
+ Firmware Version: 1.65.287 (Apr 17 2015) 
+ Software Version: 1.65.2022 
+ Checksum: 0xaf834c27 
+ Serial Number: K15QSM719A 
+ Minimum System Pressure: 2554.7 psi
+ Maximum System Pressure: 5329.5 psi
+ Average System Pressure: 4520.7 psi
+ D Solvent Selection (if supported): 1 
+
+----------------------------  oOo  -----------------------------
+
+
+
+------------------- Waters ACQUITY FTN Postrun Report  ---------------
+
+
+
+ Software Version: 1.65.1929 
+ Firmware Version: 1.65.375 (Mar 26 2015) 
+ Checksum: 0x34728d7d 
+ Serial Number: J15SDI303G 
+ Sample Syringe Size: 100.0 
+ Extension Loop Size: 0.0 
+ Needle Size: 15.0 
+ Minimum Sample Temperature: 15.0 
+ Maximum Sample Temperature: 15.0 
+ Average Sample Temperature: 15.0 
+ Minimum Column Temperature: -0.2 
+ Maximum Column Temperature: 0.0 
+ Average Column Temperature: -0.2 
+
+----------------------------  oOo  -----------------------------
+
+
+
+------------------- Waters Acquity CM Postrun Report  ---------------
+
+
+
+ Software Version: 1.65.2263 
+ Firmware Version: 1.65.142 (Apr 02 2015) 
+ Checksum: 0x18bfb4ea 
+ Serial Number: J15CMP225G 
+ Valve Position: 4 
+ Total Injections on Column: 0 
+ Minimum Column Temperature: 20.0 C
+ Maximum Column Temperature: 20.0 C
+ Average Column Temperature: 20.0 C
+
+----------------------------  oOo  -----------------------------
+
+
+
+------------------- Generic Instrument Postrun Report  ---------------
+
+
+
+ Firmware Revision: 1.40.3827 (Oct 24 2008) 
+ Component Revision: 1.40.1882 
+ Checksum: 0x216f9370 
+ Serial Number: G12UPE196M 
+ Lamp Life: 3011 hours
+ Lamp Changed: false 
+ Gain Changed: 0 
+
+----------------------------  oOo  -----------------------------
+
+
+
+------------------- Generic Instrument Postrun Report  ---------------
+
+
+ Software Version: 1.65.1503 
+ Firmware Version: 1.65.6229 (May 07 2015) 
+ Checksum: 0xdc2f6074 
+ Serial Number: J15UPD561A 
+ Lamp On/Off Event: No 
+ Lamp Life: 4020.00 hours
+ Lamp Serial Number: E81D0F8 
+ Exposure Time: 25.000 msec
+ Lambda1: 187.587 
+ Lambda512: 502.791 
+ Flow Cell Type: Analytical LG 
+ Flow Cell Path Length: 0.000 mm
+ Flow Cell Volume: 0.000 microliters
+ Flow Cell Serial Number: NONE 
+ Flow Cell Part Number: NONE 
+ Optics Temperature Stabilzation Setting: Normal Temperature 
+
+----------------------------  oOo  -----------------------------
+

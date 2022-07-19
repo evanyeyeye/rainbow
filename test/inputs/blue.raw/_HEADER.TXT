@@ -1,0 +1,54 @@
+$$ Version: 01.00
+$$ Acquired Name: 5042373-0175-35C_evap-Noscapine3-35C_evap-1-m09
+$$ Acquired Date: 10-May-2022
+$$ Acquired Time: 15:39:24
+$$ Job Code: 5042373-0175_35c
+$$ Task Code: 
+$$ User Name: 
+$$ Instrument: ACQ-SQD2#LCA217
+$$ Conditions: 
+$$ Laboratory Name: 
+$$ Sample Description: 
+$$ Solvent Delay: 0.0000
+$$ Submitter: 
+$$ SampleID: 5042373-0175-pl3-Noscapine11-pl1-1-001
+$$ Bottle Number: 2:A,11
+$$ Plate Desc: 01TL,YX,LN,1: 8,2:12,3: 90.0,4: 90.0,5:  0.0,6:  0.0,7:O,8:O,9:1280.0,10:860.0,11:390.0,12: 70.0,13:144.0,14:112.0
+$$ Cal MS1 Static: -1.755394145184916e-1,1.000417342907419e0,-3.483293023765318e-7,1.303639779090686e-10,-1.846131972887492e-14,T0
+$$ Cal MS2 Static: ,T0
+$$ Associated Datafile: 
+$$ Cal MS1 Static Params: 20,3023,0.00,5.00,16.0,14.9,0.5,Naics,STAT
+$$ Cal MS1 Dynamic Params: 10,3072,30.6200,-1.00,16.0,14.9,0.5,Naics,SCN
+$$ Cal MS1 Fast Params: 10,3072,0.2041,-1.00,16.0,14.9,0.5,Naics,FAST
+$$ Cal MS2 Static Params: 0,0,0.00,0.00,0.0,0.0,0.0,,
+$$ Cal MS2 Dynamic Params: 0,0,0.0000,0.00,0.0,0.0,0.0,,
+$$ Cal MS2 Fast Params: 0,0,0.0000,0.00,0.0,0.0,0.0,,
+$$ Cal Time: 15:36
+$$ Cal Date: 05/05/22
+$$ Analog Channel 1 Offset: 0.000
+$$ Analog Channel 2 Offset: 0.000
+$$ Analog Channel 3 Offset: 0.000
+$$ Analog Channel 4 Offset: 0.000
+$$ Mux Stream: 0
+$$ Cal Temperature: 0.0000000
+$$ Inlet Method: C:\MassLynx\2022_HTE.PRO\ACQUDB\CAD_BEH_2p5min_A1_B1
+$$ Inlet Prerun Method: 
+$$ Inlet Postrun Method: 
+$$ Inlet Switch Method: 
+$$ HPLC Method: 
+$$ MS Method: C:\MassLynx\2022_HTE.PRO\ACQUDB\2p5min_Pos_160-900.EXP
+$$ Tune Method: C:\MassLynx\2022_HTE.PRO\ACQUDB\ESI POS NEG TUNE.ipr
+$$ FractionLynx Method: 
+$$ Spare1: C22H23NO7
+$$ Spare2: Control
+$$ Spare3: IS
+$$ Spare4: 
+$$ Spare5: 
+$$ Reinjections: 0
+$$ PIC MRM Function:  
+$$ PIC Scan Function: 0,0
+$$ ScanWave Func List: 
+$$ Calibration File: C:\MassLynx\IntelliStart\Results\Unit Resolution\Calibration_20220505_2.cal
+$$ Cal Function 1: -3.924445963614183e-1,1.000252977448459e0,-2.429571643077414e-7,1.123763027703513e-10,-1.751552988608531e-14,T0
+$$ Cal StdDev Function 1: 1.712671494250357e-2
+$$ Cal CoVar 1: 0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0,0.000000000000000e0

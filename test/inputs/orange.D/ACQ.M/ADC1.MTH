@@ -1,0 +1,12 @@
+SetSignal 1,ADC1 CHANNEL A
+SetSigSource 1,Signal
+SetUnits 1,mAU
+SetScalingFactor 1,2.000000e-005
+SetSlicewidth 1,100
+SetStoptime 1,0.00
+SetDataStorage 1,ALL
+SetDataStart 1,0.00
+SetDataStop 1,0.01
+SetAutoStart 1,0
+EventTableBegin 1
+EventTableEnd 1

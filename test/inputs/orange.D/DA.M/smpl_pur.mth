@@ -1,0 +1,75 @@
+[General]
+Status=2
+Version=3
+[MSThreshold]
+Option=0
+[ADDUCTS]
+Number=4
+Adduct_1=1
+Descr_1=M+H  (1)
+Adduct_2=0
+Descr_2=M+Na  (23)
+Adduct_3=0
+Descr_3=M+NH4  (18)
+Adduct_4=0
+Descr_4=M+K  (39)
+UseTargetMass=1
+[DIMERS]
+Number=5
+Dimer_1=0
+Descr_1=2M - no adduct
+Dimer_2=0
+Descr_2=2M+H  (1)
+Dimer_3=0
+Descr_3=2M+Na  (23)
+Dimer_4=0
+Descr_4=2M+NH4  (18)
+Dimer_5=0
+Descr_5=2M+K  (39)
+[USER DEFINED ADDUCTS]
+Number=0
+[EXCLUDED MASSES]
+Number=0
+[CHARGE STATES]
+ChargeState1=YES
+ChargeState2=NO
+ChargeState3=NO
+[Neg ADDUCTS]
+Number=4
+Adduct_1=0
+Descr_1=M-H  (-1)
+Adduct_2=0
+Descr_2=M+Cl- (35,37)
+Adduct_3=0
+Descr_3=M+formate- (45)
+Adduct_4=0
+Descr_4=M+TFA- (113)
+UseTargetMass=1
+[Neg DIMERS]
+Number=5
+Dimer_1=0
+Descr_1=2M - no adduct
+Dimer_2=0
+Descr_2=2M-H  (-1)
+Dimer_3=0
+Descr_3=2M+Cl- (35,37)
+Dimer_4=0
+Descr_4=2M+formate- (45)
+Dimer_5=0
+Descr_5=2M+TFA- (113)
+[Neg USER DEFINED ADDUCTS]
+Number=0
+[Neg EXCLUDED MASSES]
+Number=0
+[Neg CHARGE STATES]
+ChargeState1=YES
+ChargeState2=NO
+ChargeState3=NO
+[TargetMasses]
+Source=File
+[Calculations]
+Enabled=0
+AllPeaks=0
+Calculation=-1
+sCalculation=Unknown
+Number=0

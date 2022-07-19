@@ -1,0 +1,96 @@
+
+Parameters for C:\MassLynx\2022_HTE.PRO\ACQUDB\2p5min_Pos_160-900.EXP
+
+Data Processing:
+SIR / MRM Chromatogram Spike Removal	ON
+SIR / MRM Smoothing		OFF
+Smoothing window size (scans)	3
+Number of smooths		2
+
+
+Prescan Statistics:
+Initial Average Intensity	6.6768
+Initial Average Std Dev		1.7648
+Bunch Zero Level		0.0109
+Bunch Std Dev			0.0148
+Bunch Threshold			0.1188
+Spike Removal Std Dev		1.2294
+
+
+Method Events:
+Initial Stop Flow:	No Change
+Initial Switch 2:	No Change
+Initial Switch 3:	No Change
+Initial Switch 4:	No Change
+Initial Infusion:	No Change
+Initial Flow State:	LC
+Initial Flow Rate:	5
+Initial Reservoir:	No Action
+API Probe Delay Temp:	20
+Initial Refill:		No Action
+Timed Events Enabled
+Event	Time(Sec)	Name		Action
+1	0.00		Flow State	LC
+
+
+Source Information:
+Type - ESI
+Status - Option Connector Disconnected
+
+Ion Count Threshold:	30.0000
+
+Instrument Parameters - Function 1:
+Parameter File - C:\MassLynx\2022_HTE.PRO\ACQUDB\ESI POS NEG TUNE.ipr
+Polarity	ES+
+Calibration	Dynamic 1
+Capillary (kV)	3.50
+Cone (V)	40.00
+RF (V)	2.50
+Extractor (V)	3.00
+Source Temperature (°C)	150
+Desolvation Temperature (°C)	450
+Cone Gas Flow (L/Hr)	20
+Desolvation Gas Flow (L/Hr)	650
+LM 1 Resolution	16.00
+HM 1 Resolution	14.90
+Ion Energy 1	0.50
+Gain	1.00
+Active Reservoir	B
+Cone Energy Ramp :Disabled
+Probe Temperature Ramp :Disabled
+Collision Energy Ramp :Enabled
+
+
+Engineers Settings:
+Low Mass Position       	519
+High Mass Position      	518
+Low Mass Resolution     	513
+High Mass Resolution    	581
+Resolution Linearity    	815
+High Mass DC Balance    	0.73
+DC Polarity             	Positive
+HM RF Lens Correction + 	0.00
+HM RF Lens Correction - 	0.00
+
+
+   Instrument Readbacks   
+Capillary (kV)	3.49
+Cone (V)	45.18
+Extractor (V)	4.64
+Source Temperature (°C)	149
+Desolvation Temperature (°C)	447
+Cone Gas Flow (L/Hr)	20
+Desolvation Gas Flow (L/Hr)	644
+
+
+Inter-scan delays:
+Automatic Mode
+MS Delay Table
+         R     delay
+<=   1.000     0.003
+<=   1.500     0.004
+<=   3.000     0.005
+<=   7.000     0.007
+<=  11.000     0.009
+<=  30.000     0.010
+>   30.000     0.011

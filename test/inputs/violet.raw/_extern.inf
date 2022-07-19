@@ -1,0 +1,93 @@
+
+Parameters for C:\MassLynx\Default.PRO\ACQUDB\Protein_ESI_POS_NEG_to-waste_10min.EXP
+
+Data Processing:
+SIR / MRM Chromatogram Spike Removal	ON
+SIR / MRM Smoothing		OFF
+Smoothing window size (scans)	3
+Number of smooths		2
+
+
+Prescan Statistics:
+Initial Average Intensity	0.0049
+Initial Average Std Dev		0.2403
+Bunch Zero Level		0.0000
+Bunch Std Dev			0.0000
+Bunch Threshold			0.0001
+Spike Removal Std Dev		0.0001
+
+
+Method Events:
+Initial Stop Flow:	No Change
+Initial Switch 2:	No Change
+Initial Switch 3:	No Change
+Initial Switch 4:	No Change
+Initial Infusion:	No Change
+Initial Flow State:	Waste
+Initial Flow Rate:	5
+Initial Reservoir:	No Action
+API Probe Delay Temp:	20
+Initial Refill:		No Action
+Timed Events Enabled
+Event	Time	Name		Action
+
+
+Instrument Parameters - Function 1:
+Parameter File - C:\MassLynx\Default.pro\Acqudb\default.ipr
+Polarity	ES-
+Calibration	Dynamic 1
+Capillary (kV)	3.00	3.00
+Cone (V)	30.00	-27.11
+Extractor (V)	3.00	-5.62
+RF (V)	0.10
+Source Temperature (°C)	150	147
+Desolvation Temperature (°C)	350	350
+Cone Gas Flow (L/Hr)	50	50
+Desolvation Gas Flow (L/Hr)	650	647
+LM 1 Resolution	15.50
+HM 1 Resolution	15.10
+Ion Energy 1	0.60
+Gain	1.00
+Multiplier	-591.70
+Active Reservoir	B
+
+Instrument Parameters - Function 2:
+Parameter File - C:\MassLynx\Default.pro\Acqudb\default.ipr
+Polarity	ES+
+Calibration	Dynamic 1
+Capillary (kV)	3.50	3.00
+Cone (V)	30.00	-27.11
+Extractor (V)	3.00	-5.62
+RF (V)	0.60
+Source Temperature (°C)	150	147
+Desolvation Temperature (°C)	350	350
+Cone Gas Flow (L/Hr)	50	50
+Desolvation Gas Flow (L/Hr)	650	647
+LM 1 Resolution	15.20
+HM 1 Resolution	15.00
+Ion Energy 1	0.40
+Gain	1.00
+Multiplier	-591.70
+Active Reservoir	B
+
+
+Engineers Settings:
+Low Mass Position       	523
+High Mass Position      	265
+Low Mass Resolution     	514
+High Mass Resolution    	749
+Resolution Linearity    	760
+High Mass DC Balance    	-0
+DC Polarity             	Negative
+HM RF Lens Correction + 	0
+HM RF Lens Correction - 	0
+
+
+Inter-scan delays:
+Automatic Mode
+MS Delay Table
+         R     delay
+<=   3.000     0.005
+<=   5.000     0.006
+<=  10.000     0.007
+>   10.000     0.008
