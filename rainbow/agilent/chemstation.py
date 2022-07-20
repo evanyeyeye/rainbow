@@ -2,6 +2,7 @@ import os
 import struct
 from collections import deque
 import numpy as np
+from lxml import etree
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 
@@ -637,10 +638,30 @@ def parse_ms_partial(path, prec=0):
     return DataFile(path, 'MS', xlabels, masses_array, data, metadata)
 
 
-"""
-UTILITY METHODS
+""" 
+METADATA PARSING METHODS
 
 """
+
+def read_header(f, offsets, gap=2):
+    """
+    Extracts metadata from the header of an Agilent data file. 
+
+    Args:
+        f (_io.BufferedReader): File opened in 'rb' mode.
+        offsets (dict): Dictionary mapping properties to file offsets. 
+        gap (int): Distance between two adjacent characters.
+
+    Returns:
+        Dictionary containing metadata as string key-value pairs. 
+
+    """
+    metadata = {}
+    for key, offset in offsets.items():
+        string = read_string(f, offset, gap)
+        if string:
+            metadata[key] = string
+    return metadata
 
 def read_string(f, offset, gap=2):
     """
@@ -664,22 +685,128 @@ def read_string(f, offset, gap=2):
     except:
         return ""
 
-def read_header(f, offsets, gap=2):
+def parse_metadata(path, datafiles):
     """
-    Extracts metadata from the header of an Agilent data file. 
+    Parses Agilent metadata at the directory level.
+
+    Since metadata is also stored in Agilent files, the parsed DataFiles \
+        are first checked for date and vial position metadata. 
+
+    Then, several possible files are scanned for the vial position. \
+        This method can look inside the AcqData directory, which may be \
+        misleading because this is the Chemstation module.  
 
     Args:
-        f (_io.BufferedReader): File opened in 'rb' mode.
-        offsets (dict): Dictionary mapping properties to file offsets. 
-        gap (int): Distance between two adjacent characters.
-
+        path (str): Path to the directory.
+        datafiles (list): List of DataFile objects.  
+    
     Returns:
-        Dictionary containing metadata as string key-value pairs. 
+        Dictionary containing directory metadata. 
 
     """
     metadata = {}
-    for key, offset in offsets.items():
-        string = read_string(f, offset, gap)
-        if string:
-            metadata[key] = string
+    metadata['vendor'] = "Agilent"
+
+    # Scan each DataFile for the date and vial position. 
+    for datafile in datafiles:
+        if 'date' not in metadata and 'date' in datafile.metadata:
+            metadata['date'] = datafile.metadata['date']
+        if 'vialpos' not in metadata and 'vialpos' in datafile.metadata:
+            metadata['vialpos'] = datafile.metadata['vialpos']
+    if 'date' in metadata and 'vialpos' in metadata:
+        print("FROM DATAFILES")
+        return metadata
+
+    # Scan certain files for the vial position. 
+
+    dircontents = set(os.listdir(path))
+
+    # sequence.acam_
+    if "sequence.acam_" in dircontents:
+        tree = etree.parse(os.path.join(path, "sequence.acam_"))
+        root = tree.getroot()
+        for vialnum in root.xpath("//*[local-name()='VialNumber']"):
+            if vialnum.text:
+                metadata['vialpos'] = vialnum.text
+                print("FROM SEQUENCE")
+                return metadata
+    else: assert(all(n.lower() != "sequence.acam_" for n in dircontents))
+
+    # sample.acaml
+    if "sample.acaml" in dircontents:
+        tree = etree.parse(os.path.join(path, "sample.acaml"))
+        root = tree.getroot()
+        for vialnum in root.xpath("//*[local-name()='VialNumber']"):
+            if vialnum.text:
+                metadata['vialpos'] = vialnum.text
+                print("FROM SAMPLE")
+                return metadata
+    else: assert(all(n.lower() != "sample.acaml" for n in dircontents))
+
+    # AcqData/sample_info.xml
+    if "AcqData" in dircontents:
+        acqdata_path = os.path.join(path, "AcqData")
+        if "sample_info.xml" in os.listdir(acqdata_path):
+            tree = etree.parse(os.path.join(acqdata_path, "sample_info.xml"))
+            root = tree.getroot()
+            for samplefield in root.xpath('//Field[Name="Sample Position"]'):
+                vialnum = samplefield.find("Value")
+                if vialnum is not None and len(vialnum.text.split()) == 1:
+                    metadata['vialpos'] = vialnum.text
+                    print("FROM SAMPLE_INFO")
+                    return metadata
+        else: assert(all(n.lower() != "sample_info.xml" for n in os.listdir(acqdata_path)))
+
+    # runstart.txt 
+    if "runstart.txt" in dircontents:
+        f = open(os.path.join(path, "runstart.txt"))
+        lines = f.read().splitlines()
+        f.close()
+        for line in lines:
+            stripped = line.strip()
+            if "Alsbottle" in stripped:
+                assert(int(stripped.split(" ")[-1]) != 0)
+                metadata['vialpos'] = stripped.split(" ")[-1]
+                print("FROM RUNSTART")
+                return metadata
+    else: assert(all(n.lower() != "runstart.txt" for n in dircontents))
+
+    # RUN.LOG
+    if "RUN.LOG" in dircontents:
+        f = open(os.path.join(path, "RUN.LOG"), 'rb')
+        plaintext = f.read().decode('ascii', 'ignore').replace("\x00", "")
+        f.close()
+        for line in plaintext.splitlines():
+            if "Method started" in line:
+                split = line.split()
+                try:
+                    metadata['vialpos'] = split[split.index("vial#") + 1]
+                    print("FROM RUNLOG")
+                    return metadata
+                except:
+                    pass
+                try:
+                    metadata['vialpos'] = \
+                        split[split.index("location") + 1][1:-1]
+                    print("FROM RUNLOG")
+                    return metadata
+                except: 
+                    pass
+            elif "Instrument running sample" in line:
+                split = line.split()
+                print("FROM RUNLOG")
+                try:
+                    metadata['vialpos'] = split[split.index("Vial") + 1]
+                    print("FROM RUNLOG")
+                    return metadata
+                except:
+                    pass
+                try:
+                    metadata['vialpos'] = split[split.index("sample") + 1]
+                    print("FROM RUNLOG")
+                    return metadata
+                except: 
+                    pass
+    else: assert(all(n.upper() != "RUN.LOG" for n in dircontents))
+    
     return metadata

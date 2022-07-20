@@ -399,13 +399,15 @@ def parse_chrodat(path, name, units=None):
 
 
 """ 
-METADATA PARSING METHODS 
+METADATA PARSING METHOD
 
 """
 
 def parse_metadata(path):
     """
-    Extracts the date and vial position from _HEADER.txt. 
+    Parses metadata from a Waters .raw directory.
+
+    Specifically, the date and vial position are extracted from _HEADER.txt.
 
     Args:
         path (str): Path to the directory. 
@@ -426,7 +428,7 @@ def parse_metadata(path):
             if not value.isspace():
                 metadata['date'] = value + " "
         elif line.startswith("$$ Acquired Time"):
-            assert('date' in metadata)
+            # assert('date' in metadata)
             value = line.split(': ')[1]
             if not value.isspace():
                 metadata['date'] += value
@@ -434,5 +436,4 @@ def parse_metadata(path):
             value = line.split(': ')[1]
             if not value.isspace():
                 metadata['vialpos'] = value
-
     return metadata 

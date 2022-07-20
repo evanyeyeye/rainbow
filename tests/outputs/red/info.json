@@ -1,6 +1,8 @@
 {
     "metadata": {
-        "vendor": "Agilent"
+        "vendor": "Agilent",
+        "date": "27-Feb-18, 10:11:50",
+        "vialpos": "23"
     },
     "datafiles": {
         "DAD1.UV": {

@@ -1,6 +1,8 @@
 {
     "metadata": {
-        "vendor": "Agilent"
+        "vendor": "Agilent",
+        "date": "17 Dec 19  10:04 am",
+        "vialpos": "15"
     },
     "datafiles": {
         "FID1A.ch": {
