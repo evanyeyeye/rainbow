@@ -11,8 +11,7 @@
                 "method": "IVTT.Am.Carn.Neo.Chloro.Sorting.M", 
                 "unit": "mAU", 
                 "datatype": "DAD1I, DAD: Spectrum"
-            },
-            "analog": false
+            }
         },
         "MSD1.MS": {
             "detector": "MS",
@@ -20,8 +19,7 @@
             "metadata": {
                 "time": " 3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
-            },
-            "analog": false 
+            }
         },
         "MSD2.MS": {
             "detector": "MS",
@@ -29,8 +27,7 @@
             "metadata": {
                 "time": " 3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
-            },
-            "analog": false 
+            }
         },
         "MSD3.MS": {
             "detector": "MS",
@@ -38,8 +35,7 @@
             "metadata": {
                 "time": " 3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
-            },
-            "analog": false 
+            }
         },
         "MSD4.MS": {
             "detector": "MS",
@@ -47,8 +43,7 @@
             "metadata": {
                 "time": " 3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
-            },
-            "analog": false 
+            }
         }
     }
 }

@@ -13,8 +13,7 @@
                 "unit": "mAU", 
                 "datatype": "DAD1I, DAD: Spectrum", 
                 "vialpos": "23"
-            },
-            "analog": false
+            }
         },
         "DAD1B.ch": {
             "detector": "UV",
@@ -26,8 +25,7 @@
                 "instrument": "Asterix ChemStation", 
                 "unit": "mAU", 
                 "signal": "DAD1B, Sig=280.0,4.0  Ref=off"
-            },
-            "analog": false 
+            } 
         },
         "DAD1C.ch": {
             "detector": "UV",
@@ -39,8 +37,7 @@
                 "instrument": "Asterix ChemStation", 
                 "unit": "mAU", 
                 "signal": "DAD1C, Sig=220.0,4.0  Ref=off"
-            },
-            "analog": false 
+            }
         },
         "ADC1A.CH": {
             "detector": "CAD",
@@ -51,8 +48,7 @@
                  "method": "column2_gradient14min.M", 
                  "unit": "mAu", 
                  "signal": "ADC1"
-            },
-            "analog": false 
+            }
         }
     }
 }

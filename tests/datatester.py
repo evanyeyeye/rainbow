@@ -24,7 +24,7 @@ class DataTester(unittest.TestCase):
 
         """
         tests_path = Path("tests")
-        json_path = tests_path / "jsons" / (color + ".json")
+        json_path = tests_path / "outputs" / color / "info.json"
         with open(str(json_path)) as json_f:
             json_data = json.load(json_f)
 
@@ -34,11 +34,11 @@ class DataTester(unittest.TestCase):
         analog_names = []
         for name in json_data['datafiles']:
             file_dict = json_data['datafiles'][name]
-            if file_dict['analog']:
+            detector = file_dict['detector']
+            if detector is None:
                 analog_names.append(name)
                 continue 
             data_names.append(name)
-            detector = file_dict['detector']
             detectors.add(detector)
             if detector in detector_to_names:
                 detector_to_names[detector].append(name)

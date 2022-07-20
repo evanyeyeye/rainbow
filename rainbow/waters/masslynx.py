@@ -374,18 +374,19 @@ def parse_chrodat(path, name, units=None):
     if len(raw_bytes) <= 0x80:
         return None
 
-    times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
-    vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
+    times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 8)
+    vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 8)
     times = times_immut.copy()
     vals = vals_immut.copy().reshape(-1, 1)
     del times_immut, vals_immut, raw_bytes
 
     detector = None
-    name_split = set(name.split(' '))
-    if "CAD" in name_split:
+    if "CAD" in name:
         detector = 'CAD'
-    elif "ELSD" in name_split:
+    elif "ELSD" in name:
         detector = 'ELSD'
+    elif "nm@" in name:
+        detector = 'UV'
 
     ylabels = np.array([''])
     metadata = {

@@ -9,8 +9,7 @@
             "metadata": {
                 "time": "14 Nov 19   3:08 pm -0500", 
                 "method": "PURITY_HPLC.M"
-            },
-            "analog": false
+            }
         },
         "ADC1A.CH": {
             "detector": "ELSD",
@@ -21,8 +20,7 @@
                 "method": "PURITY_HPLC.M", 
                 "unit": "mAU", 
                 "signal": "ADC1 CHANNEL A"
-            },
-            "analog": false 
+            }
         }
     }
 }

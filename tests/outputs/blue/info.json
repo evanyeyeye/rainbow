@@ -11,22 +11,19 @@
             "metadata": {
                 "description": "CAD", 
                 "units": "mV"
-            },
-            "analog": false
+            }
         },
         "_FUNC001.DAT": {
             "detector": "MS",
             "shape": [725, 740],
             "metadata": {
                 "polarity": "+"
-            },
-            "analog": false 
+            }
         },
         "_FUNC002.DAT": {
             "detector": "UV",
             "shape": [3001, 190],
-            "metadata": {},
-            "analog": false 
+            "metadata": {}
         }
     }
 }
