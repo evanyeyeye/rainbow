@@ -16,6 +16,15 @@ class TestWaters(tests.datatester.DataTester):
         """
         self._DataTester__test_data_directory("blue", "raw")
 
+    def test_indigo(self):
+        """
+        Tests a directory containing:
+            - MS trace (2-byte format)
+            - 2 analog channels
+        
+        """
+        self._DataTester__test_data_directory("indigo", "raw")
+
     def test_violet(self):
         """
         Tests a directory containing:
