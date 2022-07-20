@@ -45,9 +45,9 @@
             "metadata": {
                 "notebook": "usp", 
                 "date": "27-Feb-18, 10:11:50",
-                 "method": "column2_gradient14min.M", 
-                 "unit": "mAu", 
-                 "signal": "ADC1"
+                "method": "column2_gradient14min.M", 
+                "unit": "mAu", 
+                "signal": "ADC1"
             }
         }
     }
