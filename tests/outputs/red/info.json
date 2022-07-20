@@ -11,7 +11,7 @@
                 "date": "27-Feb-18, 10:11:50", 
                 "method": "column2_gradient14min.M", 
                 "unit": "mAU", 
-                "datatype": "DAD1I, DAD: Spectrum", 
+                "signal": "DAD1I, DAD: Spectrum", 
                 "vialpos": "23"
             }
         },

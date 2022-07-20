@@ -9,32 +9,32 @@
             "detector": "ELSD",
             "shape": [24001, 1],
             "metadata": {
-                "description": "ELSD Signal", 
-                "units": "LSU"
+                "signal": "ELSD Signal", 
+                "unit": "LSU"
             }
         },
         "_CHRO002.DAT": {
             "detector": "UV",
             "shape": [24001, 1],
             "metadata": {
-                "description": "PDA Ch1 220nm@4.8nm", 
-                "units": "AU"
+                "signal": "PDA Ch1 220nm@4.8nm", 
+                "unit": "AU"
             }
         },
         "_CHRO003.DAT": {
             "detector": "UV",
             "shape": [24001, 1],
             "metadata": {
-                "description": "PDA Ch2 254nm@4.8nm", 
-                "units": "AU"
+                "signal": "PDA Ch2 254nm@4.8nm", 
+                "unit": "AU"
             }
         },
         "_CHRO004.DAT": {
             "detector": "UV",
             "shape": [24001, 1],
             "metadata": {
-                "description": "PDA Ch3 280nm@4.8nm", 
-                "units": "AU"
+                "signal": "PDA Ch3 280nm@4.8nm", 
+                "unit": "AU"
             }
         },
         "_FUNC001.DAT": {

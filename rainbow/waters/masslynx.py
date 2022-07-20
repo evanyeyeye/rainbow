@@ -390,10 +390,10 @@ def parse_chrodat(path, name, units=None):
 
     ylabels = np.array([''])
     metadata = {
-        'description': name,
+        'signal': name,
     }
     if units: 
-        metadata['units'] = units 
+        metadata['unit'] = units 
 
     return DataFile(path, detector, times, ylabels, vals, metadata)
 

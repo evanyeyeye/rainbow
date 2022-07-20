@@ -10,14 +10,14 @@
                 "date": "03-Feb-22, 11:22:20", 
                 "method": "IVTT.Am.Carn.Neo.Chloro.Sorting.M", 
                 "unit": "mAU", 
-                "datatype": "DAD1I, DAD: Spectrum"
+                "signal": "DAD1I, DAD: Spectrum"
             }
         },
         "MSD1.MS": {
             "detector": "MS",
             "shape": [147192, 1],
             "metadata": {
-                "time": " 3 Feb 22  11:22 am -0500", 
+                "date": " 3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
             }
         },
@@ -25,7 +25,7 @@
             "detector": "MS",
             "shape": [147217, 1],
             "metadata": {
-                "time": " 3 Feb 22  11:22 am -0500", 
+                "date": " 3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
             }
         },
@@ -33,7 +33,7 @@
             "detector": "MS",
             "shape": [147251, 1],
             "metadata": {
-                "time": " 3 Feb 22  11:22 am -0500", 
+                "date": " 3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
             }
         },
@@ -41,7 +41,7 @@
             "detector": "MS",
             "shape": [146020, 1],
             "metadata": {
-                "time": " 3 Feb 22  11:22 am -0500", 
+                "date": " 3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
             }
         }

@@ -284,7 +284,7 @@ def parse_uv(path):
         "date": 0x957,
         "method": 0xA0E,
         "unit": 0xC15,
-        "datatype": 0xC40,
+        "signal": 0xC40,
         "vialpos": 0xFD7
     }
 
@@ -368,7 +368,7 @@ def parse_uv_partial(path):
         "date": 0x957,
         "method": 0xA0E,
         "unit": 0xC15,
-        "datatype": 0xC40,
+        "signal": 0xC40,
         "vialpos": 0xFD7
     }
 
@@ -471,7 +471,7 @@ def parse_ms(path, prec=0):
         'gc_num_times': 0x142
     }
     metadata_offsets = {
-        'time': 0xB2,
+        'date': 0xB2,
         'method': 0xE4
     }
 
@@ -625,7 +625,7 @@ def parse_ms_partial(path, prec=0):
 
     
     metadata_offsets = {
-        'time': 0xB2,
+        'date': 0xB2,
         'method': 0xE4
     }
 

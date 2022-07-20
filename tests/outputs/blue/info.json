@@ -9,8 +9,8 @@
             "detector": "CAD",
             "shape": [765, 1],
             "metadata": {
-                "description": "CAD", 
-                "units": "mV"
+                "signal": "CAD", 
+                "unit": "mV"
             }
         },
         "_FUNC001.DAT": {

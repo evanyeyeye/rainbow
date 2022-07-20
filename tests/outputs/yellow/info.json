@@ -18,7 +18,7 @@
             "detector": "MS",
             "shape": [1307, 199],
             "metadata": {
-                "time": "17 Dec 19  10:04 am", 
+                "date": "17 Dec 19  10:04 am", 
                 "method": "HP-5MS_HTAchiral_da"
             }
         },
@@ -26,7 +26,7 @@
             "detector": "MS",
             "shape": [1309, 2],
             "metadata": {
-                "time": "17 Dec 19  10:04 am", 
+                "date": "17 Dec 19  10:04 am", 
                 "method": "HP-5MS_HTAchiral_da"
             }
         }

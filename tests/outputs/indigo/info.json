@@ -9,14 +9,14 @@
             "detector": null,
             "shape": [3120, 1],
             "metadata": {
-                "description": "Channel 1" 
+                "signal": "Channel 1" 
             }
         },
         "_CHRO002.DAT": {
             "detector": null,
             "shape": [3120, 1],
             "metadata": {
-                "description": "Channel 2"
+                "signal": "Channel 2"
             }
         },
         "_FUNC001.DAT": {
