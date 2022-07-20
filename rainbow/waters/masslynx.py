@@ -17,21 +17,22 @@ def parse_spectrum(path, prec=0):
     func_paths = sorted([os.path.join(path, fn) for fn in os.listdir(path) 
                          if re.match('^_FUNC[0-9]{3}.DAT$', fn)])
     func_i = 0
+    inf = parse_funcinf(os.path.join(path, '_FUNCTNS.INF'))
+    polarities = []
+    calibs = []
     if '_extern.inf' in os.listdir(path):
 
         f = open(os.path.join(path, '_HEADER.TXT'), 'r')
         lines = f.read().splitlines()
-        calibs = []
         for line in lines:
             if line.startswith("$$ Cal Function"):
                 calib = [float(s) for s in line.split(': ')[1].split(',')[:-1]]
-                assert(len(calib) == 5)
+                # assert(len(calib) == 5)
                 calibs.append(calib)
         f.close()
 
         f = open(os.path.join(path, '_extern.inf'), 'rb')
         lines = f.read().splitlines()
-        polarities = []
         nums = []
         for i in range(len(lines)):
             if lines[i].startswith(b"Instrument Parameters"):
@@ -49,31 +50,33 @@ def parse_spectrum(path, prec=0):
         assert(nums == sorted(nums))
         f.close()
         
-        while func_i < len(polarities):
+    while func_i < len(func_paths):
+        polarity = None
+        calib = None
+        if func_i < len(polarities):
+            polarity = polarities[func_i]
             if func_i < len(calibs):
                 calib = calibs[func_i]
-            else: 
-                calib = None
-            datafiles.append(parse_func(func_paths[func_i], prec,
-                                        polarities[func_i], calib))
-            func_i += 1
-
-    while func_i < len(func_paths):
-        datafiles.append(parse_func(func_paths[func_i], prec))
+        datafiles.append(parse_func(func_paths[func_i], inf, prec, polarity, calib))
         func_i += 1
 
     return datafiles
 
-def parse_func(path, prec=0, polarity=None, calib=None):
+def parse_func(path, inf, prec=0, polarity=None, calib=None):
     """ 
     """
     idx_path = path[:-3] + 'IDX'
-    times, ylabels_per_time, last_offset = parse_funcidx(idx_path)
-    data_len = (os.path.getsize(path) - last_offset) // ylabels_per_time[-1]
-    assert(data_len == 6 or data_len == 8)
+    times, ylabels_per_time, data_len = parse_funcidx(idx_path)
+    if data_len not in {2, 6, 8}:
+        print(path, data_len, times)
+    assert(data_len == 6 or data_len == 8 or data_len == 2)
 
-    parser = parse_funcdat6 if data_len == 6 else parse_funcdat8 
-    ylabels, data = parser(path, ylabels_per_time, prec, calib)
+    if data_len == 2:
+        ylabels, data = parse_funcdat2(path, ylabels_per_time, inf, prec, calib)
+    elif data_len == 6:
+        ylabels, data = parse_funcdat6(path, ylabels_per_time, prec, calib)
+    elif data_len == 8:
+        ylabels, data = parse_funcdat8(path, ylabels_per_time, prec, calib) 
     
     detector = 'MS' if calib else 'UV'
 
@@ -83,20 +86,44 @@ def parse_func(path, prec=0, polarity=None, calib=None):
 
     return DataFile(path, detector, times, ylabels, data, metadata)
 
+def parse_funcinf(path):
+    """ 
+    """
+    f = open(path, 'rb')
+    while True:
+        try:
+            packed = struct.unpack('<H', f.read(2))[0]
+            func = packed & 0x1F 
+            form = packed >> 10
+            f.read(16)
+            num_scans = struct.unpack('<I', f.read(4))[0]
+            f.read(10)
+            f.read(32 * 4)
+            q1 = np.ndarray(32, '<f', f.read(32 * 4))
+            q3 = np.ndarray(32, '<f', f.read(34 * 4))
+        except:
+            break 
+    assert(f.tell() == os.path.getsize(path))
+    f.close()
+    return (num_scans, func, q1, q3)
+
 def parse_funcidx(path):
     """ 
     """
     f = open(path, 'rb')
-    num_times = os.path.getsize(path) // 22 
+    size = os.path.getsize(path)
+    num_times = size // 22 
     assert(os.path.getsize(path) // 22 == os.path.getsize(path) / 22)
     times = np.empty(num_times, dtype=np.float32)
     ylabels_per_time = np.empty(num_times, dtype=np.uint32)
+    int_unpack = struct.Struct('<I').unpack
     for i in range(num_times):
-        offset_bytes = f.read(4)
-        if i == num_times - 1:
-            last_offset = struct.unpack('<I', offset_bytes)[0]
+        offset = int_unpack(f.read(4))[0]
         info = struct.unpack('<I', f.read(4))[0]
-        ylabels_per_time[i] = info & 0x3FFFFF 
+        ylabels_per_time[i] = info & 0x3FFFFF
+        if ylabels_per_time[i] != 0:
+            last_offset = offset
+            last_index = i
         calibrated_flag = (info & 0x40000000) >> 30
         assert(calibrated_flag == 0)
         f.read(4) # tic
@@ -104,8 +131,31 @@ def parse_funcidx(path):
         f.read(6)
     assert(f.tell() == os.path.getsize(f.name))
     f.close() 
-    
-    return times, ylabels_per_time, last_offset
+    data_len = (os.path.getsize(path[:-3] + 'DAT') - last_offset) // ylabels_per_time[last_index]
+
+    return times, ylabels_per_time, data_len
+
+def parse_funcdat2(path, ylabels_per_time, inf, prec=0, calib=None):
+    num_times, func, q1, q3 = inf
+    num_datapairs = np.sum(ylabels_per_time)
+    assert(np.all(ylabels_per_time == ylabels_per_time[0]))
+    assert(os.path.getsize(path) == num_datapairs * 2)
+    with open(path, 'rb') as f:
+        raw_bytes = f.read()
+    raw_values = np.ndarray(num_datapairs, '<H', raw_bytes)
+    val_base = raw_values >> 3
+    val_pow = raw_values & 0x7
+    values = np.multiply(val_base, 4 ** val_pow, dtype=np.uint32)
+    assert(func == 1)
+    ylabels = q1[:ylabels_per_time[0]]
+    data = np.empty((ylabels_per_time.size, ylabels_per_time[0]), dtype=np.uint32)
+    index = 0
+    for i in range(ylabels_per_time.size):
+        for j in range(ylabels_per_time[0]):
+            data[i][j] = values[index]
+            index += 1
+
+    return ylabels, data
 
 def parse_funcdat6(path, ylabels_per_time, prec=0, calib=None):
     """
@@ -286,7 +336,9 @@ def parse_analog(path):
     assert(len(analog_info) == len(analog_paths))  
     for i in range(len(analog_info)):
         fn = os.path.join(path, f"_CHRO{i+1:0>3}.DAT")
-        datafiles.append(parse_chrodat(fn, *analog_info[i]))
+        datafile = parse_chrodat(fn, *analog_info[i])
+        if datafile:
+            datafiles.append(datafile)
     return datafiles
 
 def parse_chroinf(path):
@@ -318,6 +370,10 @@ def parse_chrodat(path, name, units=None):
 
     with open(path, 'rb') as f:
         raw_bytes = f.read()
+   
+    if len(raw_bytes) <= 0x80:
+        return None
+
     times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 4)
     vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 4)
     times = times_immut.copy()

@@ -1,0 +1,33 @@
+{
+    "metadata": {
+        "vendor": "Waters", 
+        "date": "03-Dec-2011 18:34:05", 
+        "vialpos": "f,3"
+    },
+    "datafiles": {
+        "_CHRO001.DAT": {
+            "detector": null,
+            "shape": [3120, 1],
+            "metadata": {
+                "description": "Channel 1" 
+            },
+            "analog": true
+        },
+        "_CHRO002.DAT": {
+            "detector": null,
+            "shape": [3120, 1],
+            "metadata": {
+                "description": "Channel 2"
+            },
+            "analog": true
+        },
+        "_FUNC001.DAT": {
+            "detector": "MS",
+            "shape": [3865, 1],
+            "metadata": {
+                "polarity": "+"
+            },
+            "analog": false 
+        }
+    }
+}

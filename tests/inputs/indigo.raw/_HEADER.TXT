@@ -1,0 +1,49 @@
+$$ Version: 01.00
+$$ Acquired Name: yl-0322059-0090-02_h
+$$ Acquired Date: 03-Dec-2011
+$$ Acquired Time: 18:34:05
+$$ Job Code: 12032011_2
+$$ Task Code: 
+$$ User Name: 
+$$ Instrument: ZQ
+$$ Conditions: 
+$$ Laboratory Name: 
+$$ Sample Description: 
+$$ Solvent Delay: 0.0000
+$$ Submitter: 
+$$ SampleID: 
+$$ Bottle Number: f,3
+$$ Plate Desc: 
+$$ Cal MS1 Static: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Cal MS2 Static: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Associated Datafile: 
+$$ Cal MS1 Static Params: 0,0,0.00,0.00,0.0,0.0,0.0,,
+$$ Cal MS1 Dynamic Params: 0,0,0.00,0.00,0.0,0.0,0.0,,
+$$ Cal MS1 Fast Params: 0,0,0.00,0.00,0.0,0.0,0.0,,
+$$ Cal MS2 Static Params: 0,0,0.00,0.00,0.0,0.0,0.0,,
+$$ Cal MS2 Dynamic Params: 0,0,0.00,0.00,0.0,0.0,0.0,,
+$$ Cal MS2 Fast Params: 0,0,0.00,0.00,0.0,0.0,0.0,,
+$$ Cal Time: 09:25
+$$ Cal Date: 03/01/06
+$$ Analog Channel 1 Offset: 0.000
+$$ Analog Channel 2 Offset: 0.000
+$$ Analog Channel 3 Offset: 0.000
+$$ Analog Channel 4 Offset: 0.000
+$$ Mux Stream: 0
+$$ Cal Temperature: 0.0000000
+$$ Inlet Method: C:\MassLynx\SFCMS.PRO\ACQUDB\gradient_M4_C8_13min
+$$ Inlet Prerun Method: 
+$$ Inlet Postrun Method: 
+$$ Inlet Switch Method: 
+$$ HPLC Method: 
+$$ MS Method: C:\MassLynx\SFCMS.PRO\ACQUDB\SIR534.EXP
+$$ Tune Method: C:\MassLynx\SFCMS.PRO\ACQUDB\ESI_positive.IPR
+$$ FractionLynx Method: 
+$$ Spare1: 
+$$ Spare2: 
+$$ Spare3: 
+$$ Spare4: 
+$$ Spare5: 
+$$ Cal Function 1: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Cal StdDev Function 1: 0.000000000000000e0
+$$ Cal CoVar 1: 0.000000000000000e0,0.000000000000000e0,0.000000000000000e0

@@ -1,0 +1,29 @@
+Parameters for C:\MassLynx\SFCMS.PRO\ACQUDB\SIR534.EXP
+ 
+ 
+Prescan Statistics:
+Initial Average Intensity	25.8785
+Initial Average Std Dev		2.3232
+Bunch Zero Level		0.1927
+Bunch Std Dev			0.0882
+Bunch Threshold			0.7055
+Spike Removal Std Dev		2.1534
+ 
+Instrument Parameters - Function 1:
+Parameter File - C:\MassLynx\SFCMS.PRO\ACQUDB\ESI_positive.IPR
+Polarity	ES+
+Calibration	Static 1
+Capillary (kV)	3.50	3.51
+Cone (V)	30.00	33.58
+Extractor (V)	3.00	3.54
+RF Lens (V)	0.1	0.1
+Source Temperature (°C)	120	119
+Desolvation Temperature (°C)	300	300
+Cone Gas Flow (L/Hr)	OFF
+Desolvation Gas Flow (L/Hr)	600	598
+LM 1 Resolution	15.0
+HM 1 Resolution	15.0
+Ion Energy 1	0.5
+Multiplier (V)	600	-600
+ 
+ 

@@ -1,0 +1,53 @@
+
+ACE Experimental Record
+
+
+---------------------   Run method parameters   ----------------
+
+-- PUMP --
+
+Thar FDM
+Run Time:                   13.00 minutes
+Gradient run
+          Start Perc | End Perc   | Start Flow | End Flow   | Total Dur  | Gradient  
+          5          | 5          | 4.0        | 4.0        | 60.0       | sec       
+          5          | 50         | 4.0        | 4.0        | 540.0      | sec       
+          50         | 50         | 4.0        | 4.0        | 120.0      | sec       
+          50         | 5          | 4.0        | 4.0        | 60.0       | sec       
+Solvent:                    Solvent4
+System Back Pressure:       100 bar
+System Back Pressure Alarm: 300 bar
+External Heater Temp:       30 C
+External Heater Temp Alarm: 300 C
+Column Oven Temperature:    35 C
+Column:                     Column8
+
+-- END PUMP --
+
+-- AUTOSAMPLER --
+
+Thar Auto Sampler 
+Endurance Auto Sampler
+Injection Parameters:
+Injection Method:           µl Pickup
+Transport Vial:             Vial 1
+Compression in Vials:       Disabled
+Wash After Each Injection:  Enabled
+Device Settings:
+Tubing Volume:              15 µL
+Loop Volume:                10 µL
+Needle Height:              3 mm
+Needle Speed:               3
+Well Plate:                 48 Vial
+Syringe:                    250 µl
+
+
+Sample Run Injection Parameter
+
+Injection Volume (ul)   -   3.00
+-- END AUTOSAMPLER --
+
+----------------------------  oOo  -----------------------------
+
+
+End of experimental record.

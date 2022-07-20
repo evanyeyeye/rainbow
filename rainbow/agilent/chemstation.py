@@ -225,7 +225,7 @@ def parse_ch_other(path):
 
     # Extract metadata from file header.
     metadata = read_header(f, metadata_offsets)
-    assert(metadata['unit'] in {'mAU', 'mAu'})
+    assert('unit' not in metadata or metadata['unit'] in {'mAU', 'mAu'})
 
     # Determine the detector and signal using the metadata. 
     signal_str = metadata['signal']
@@ -234,7 +234,7 @@ def parse_ch_other(path):
         detector = 'UV'
     elif 'ADC' in signal_str:
         signal = ''
-        if 'ADC1 CHANNEL' in signal_str:
+        if 'CHANNEL' in signal_str:
             detector = 'ELSD'
         else:
             detector = 'CAD'
@@ -659,7 +659,10 @@ def read_string(f, offset, gap=2):
     """
     f.seek(offset)
     str_len = struct.unpack("<B", f.read(1))[0] * gap
-    return f.read(str_len)[::gap].decode()
+    try:
+        return f.read(str_len)[::gap].decode()
+    except:
+        return ""
 
 def read_header(f, offsets, gap=2):
     """
