@@ -3,158 +3,233 @@ import struct
 import numpy as np
 import lzf
 from lxml import etree
+from rainbow import DataFile
 
 
-def parse_files(path):
+"""
+MAIN PARSING METHOD 
+
+"""
+
+def parse_files(path, prec=0):
     """
+    Tries to detect and parse Agilent HRMS data.  
+    See the documentation on `parse_msdata` for the limitations.
+
+    If more Masshunter file formats are added in the future, \
+        parsing should branch out from this method. 
+
+    Args:
+        path (str): Path to the Agilent .D directory.
+        prec (int, optional): Number of decimals to round ylabels.
+    
+    Returns:
+        List containing a DataFile for each parsed file.
+
     """
     datafiles = []
 
-    contents = set(os.listdir(path))
-    if 'AcqData' not in contents:
+    acqdata_path = os.path.join(path, "AcqData")
+    if not os.path.isdir(acqdata_path):
         return datafiles
 
-    acqdata_path = os.path.join(path, 'AcqData')
-    acqdata_contents = set(os.listdir(acqdata_path))
-    if {'MSTS.xml', 'MSScan.xsd', 'MSScan.bin'} <= acqdata_contents:
-        if 'MSProfile.bin' in acqdata_contents:
-            datafiles.append(parse_msdata(path))
+    acqdata_files = set(os.listdir(acqdata_path))
+    if {"MSTS.xml", "MSScan.xsd", "MSScan.bin"} <= acqdata_files:
+        if "MSProfile.bin" in acqdata_files:
+            datafiles.append(parse_msdata(acqdata_path, prec))
+        # Future work should also parse the MSPeak.bin format. 
+        # elif "MSPeak.bin" in acqdata_files:
+        #     ...
 
     return datafiles
 
-def parse_msdata(path):
-    """
-    """
-    acqdata_path = os.path.join(path, 'AcqData')
 
-    # Get number of scans from MSTS.xml
-    tree = etree.parse(os.path.join(acqdata_path, "MSTS.xml"))
+"""
+MS PARSING METHODS 
+
+"""
+
+def parse_msdata(path, prec=0):
+    """
+    Parses Agilent Masshunter MS data. 
+
+    IMPORTANT: Masshunter MS data is either stored in MSProfile.bin or
+        MSPeak.bin. This method only attempts to parse MSProfile.bin.  
+    
+    The following is parsed in order:
+        MSTS.xml -> Number of retention times
+        MSScan.xsd -> File structure of MSScan.bin 
+        MSScan.bin -> Offsets and compression info for MSProfile.bin 
+        MSMassCal.bin -> Calibration info for masses 
+        MSProfile.bin -> Actual data values
+
+    Args:
+        path (str): Path to the AcqData subdirectory.
+        prec (int, optional): Number of decimals to round mz values.
+    
+    Returns:
+        DataFile containing Masshunter MS data.
+
+    """
+    # MSTS.xml: Extract number of retention times. 
+    # In future work, this step could potentially be skipped by reading 
+    #    MSScan.bin until EOF and counting the offsets. 
+    # This would remove reliance on MSTS.xml being in the directory.
+    tree = etree.parse(os.path.join(path, "MSTS.xml"))
     root = tree.getroot()
     num_times = 0
-    for time_segment in root.findall("TimeSegment"):
-        num_times += int(time_segment.find("NumOfScans").text)
-    # print(num_times)
+    for time_seg in root.findall("TimeSegment"):
+        num_times += int(time_seg.find("NumOfScans").text)
 
-    # Get file structure of MSScan.bin from MSScan.xsd
-    # The root type is ScanRecordType
-    tree = etree.parse(os.path.join(acqdata_path, "MSScan.xsd"))
+    # MSScan.xsd: Extract the file structure of MSScan.bin. 
+    # There are "simple" types can be directly translated into number types.
+    # But there are "complex" types that are made up of other
+    #     "simple" and "complex" types.
+    # These are stored in a dictionary to enable recursive parsing. 
+    tree = etree.parse(os.path.join(path, "MSScan.xsd"))
     root = tree.getroot()
     namespace = tree.xpath('namespace-uri(.)') 
-
-    complex_types = {}
-    for complex_type in root.findall(f"{{{namespace}}}complexType"):
-        elements = []
-        for element in complex_type[0].findall(f"{{{namespace}}}element"):
-            elements.append((element.get('name'), element.get('type')))
-        complex_types[complex_type.get('name')] = elements 
+    complextypes_dict = {}
+    for complextype in root.findall(f"{{{namespace}}}complexType"):
+        innertypes = []
+        for element in complextype[0].findall(f"{{{namespace}}}element"):
+            innertypes.append((element.get('name'), element.get('type')))
+        complextypes_dict[complextype.get('name')] = innertypes
     assert(len(root[0][1][0].getchildren()) == 1)
 
-    # Parse info from MSScan.bin
-    offsets = {
-        'start': 0x58
-    }
-
-    f = open(os.path.join(acqdata_path, "MSScan.bin"), 'rb')
-
-    f.seek(offsets['start'])
+    # MSScan.bin: Extract information about MSProfile.bin. 
+    # For each retention time, this includes: 
+    #   - the retention time itself 
+    #   - starting offset of data in MSProfile.bin
+    #   - length in bytes of the compressed data 
+    #   - length in bytes of the uncompressed data 
+    #   - number of masses recorded at the retention time
+    # Future work could determine if the data blocks for each retention time 
+    #     are always contiguous. If that is the case, the offset is unneeded. 
+    f = open(os.path.join(path, "MSScan.bin"), 'rb')
+    f.seek(0x58) # start offset
     f.seek(struct.unpack('<I', f.read(4))[0])
-    info = np.empty(num_times, dtype=object)
+    data_info = np.empty(num_times, dtype=object)
     for i in range(num_times):
-        scan_vals = recur_complex_type(f, complex_types, "ScanRecordType")
-        # if i == 0:
-        #     print(scan_vals)
-        spec_vals = scan_vals['SpectrumParamValues']
-        info[i] = (
-            scan_vals['ScanTime'], 
-            spec_vals['SpectrumOffset'], 
-            spec_vals['ByteCount'], 
-            spec_vals['PointCount'],
-            spec_vals['UncompressedByteCount'],
-            scan_vals['CalibrationID']
+        # "ScanRecordType" is always the name of the root "complex" type.
+        scan_info = parse_complextype(f, complextypes_dict, "ScanRecordType")
+        spectrum_info = scan_info['SpectrumParamValues']
+        data_info[i] = (
+            scan_info['ScanTime'], 
+            spectrum_info['PointCount'],
+            spectrum_info['SpectrumOffset'], 
+            spectrum_info['ByteCount'], 
+            spectrum_info['UncompressedByteCount']
         )
-    assert(f.tell() == os.path.getsize(os.path.join(acqdata_path, "MSScan.bin")))
+    assert(f.tell() == os.path.getsize(f.name))
+    f.close()
 
-    # Parse calibration info from MSMassCal.bin
-    f = open(os.path.join(acqdata_path, "MSMassCal.bin"), 'rb')
-    f.seek(0x44)
+    # MSMassCal.bin: Extract calibration values for masses. 
+    # There seem to be 10 doubles stored for each retention time. But this
+    #     method only uses the first 2. Future work could determine what the
+    #     other 8 doubles are used for.
+    f = open(os.path.join(path, "MSMassCal.bin"), 'rb')
+    f.seek(0x4c) # start offset
+    assert(f.tell() + num_times * 84 - 4 == os.path.getsize(f.name))
+    calib_vals = np.ndarray((num_times, 2), '<d', f.read(), 0, (84, 8))
+    f.close()
 
-    start, stop = struct.unpack('<II', f.read(8))
-    cals = np.empty(num_times, dtype=object)
-    for i in range(num_times): 
-        traditional = struct.unpack('<dd', f.read(16))
-        poly = struct.unpack('<' + 8 * 'd', f.read(8 * 8))
-        cals[i] = (traditional, poly)
-        f.read(4)
-    assert(f.tell() == os.path.getsize(os.path.join(acqdata_path, "MSMassCal.bin")))
-
-    # Decode compressed MSProfile.bin
-    f = open(os.path.join(acqdata_path, "MSProfile.bin"), 'rb')
-    const_1 = None
-    const_2 = None
-    const_3 = None
+    # MSProfile.bin: Extract the data values. 
+    # The raw bytes are decompressed using the `python-lzf` library. 
+    # This code may be slow. We note that LZF decompression seems to not
+    #     rely on being decoded in smaller blocks as the code suggests. 
+    #     Future work could potentially implement numpy speedups by
+    #     decompressing all the bytes at once and using clever indexing. 
+    f = open(os.path.join(path, "MSProfile.bin"), 'rb')
+    twodoubles_unpack = struct.Struct('<dd').unpack
     times = np.empty(num_times)
-    masses = None
-    data_array = None
+    num_mz_per_time = np.empty(num_times)
+    mz_list = []
+    intensity_bytearr = bytearray()
     for i in range(num_times):
-        
-        time, offset, byte_c, points_c, uncompressed_byte_c, cal_id = info[i]
+        time, num_mz, offset, comp_len, decomp_len = data_info[i]
         times[i] = time
-        assert(cal_id >= 1 and cal_id <= 1)
-        if not const_1:
-            const_1 = (points_c, uncompressed_byte_c)
-        assert(points_c == const_1[0])
-        assert(uncompressed_byte_c == const_1[1])
+        num_mz_per_time[i] = num_mz
 
+        # Decompress the bytes for the current retention time. 
         f.seek(offset)
-        db = lzf.decompress(f.read(byte_c), uncompressed_byte_c)
-        assert(len(db) == 16 + points_c * 4)
+        comp_bytes = f.read(comp_len)
+        decomp_bytes = lzf.decompress(comp_bytes, decomp_len)
+        decomp_view = memoryview(decomp_bytes)
 
-        initial, delta = struct.unpack('<dd', db[:16])
-        if not const_2:
-            const_2 = (initial, delta)
-        assert(initial == const_2[0])
-        assert(delta == const_2[1])
-        intensities = struct.unpack('<' + points_c * 'I', db[16:])
-        
-        scale, t0 = cals[cal_id - 1][0]
-        if not const_3:
-            const_3 = (scale, t0)
-        assert(scale == const_3[0])
-        assert(t0 == const_3[1])
-        pairs = {}
-        if masses is None:
-            masses = np.empty(len(intensities))
-            for j in range(len(intensities)):
-                masses[j] = (scale * (initial - t0)) ** 2
-                initial += delta
-        if data_array is None:
-            data_array = np.empty((num_times, masses.size), dtype=np.uint32)
-        data_array[i] = np.array(intensities)
+        # Calculate the calibrated mz values. 
+        start_mz, delta_mz = twodoubles_unpack(decomp_view[:16])
+        mzs = np.arange(
+            start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
+        coeff, base = calib_vals[i]
+        mzs -= base
+        mzs *= coeff
+        mzs **= 2
 
-    print(times)
-    print(masses, len(masses))
-    for i in range(10):
-        print(i, np.sum(data_array[i]))
+        mz_list.extend(mzs.tolist())   
+        intensity_bytearr.extend(decomp_view[16:])
+
+    # Process the extracted data values. 
+    mz_arr = np.round(np.array(mz_list), prec)
+    intensities = np.ndarray(mz_arr.size, '<I', bytes(intensity_bytearr))
+
+    # Make the array of ylabels containing mz values. 
+    mz_ylabels = np.unique(mz_arr)
+    mz_ylabels.sort()
+
+    # Fill the `data` array containing intensities. 
+    # Optimized using numpy vectorization.
+    mz_indices = np.searchsorted(mz_ylabels, mz_arr)
+    data = np.zeros((num_times, mz_ylabels.size), dtype=np.uint64)
+    cur_index = 0
+    for i in range(num_times):
+        stop_index = cur_index + int(num_mz_per_time[i])
+        np.add.at(
+            data[i], 
+            mz_indices[cur_index:stop_index], 
+            intensities[cur_index:stop_index])
+        cur_index = stop_index
+    
+    f.close()
+    
+    return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
    
-def recur_complex_type(f, complex_types, complex_name):
-    values = {}
-    complex_type = complex_types[complex_name]
-    for element_name, type_name in complex_type:
-        values[element_name] = parse_type(f, complex_types, type_name)
-    return values
+def parse_complextype(f, complextypes_dict, name):
+    """ 
+    Parses a "complex" type from a file object. 
 
-def parse_type(f, complex_types, name):
+    Args:
+        f (_io.BufferedReader): File opened in 'rb' mode.
+        complextypes_dict (dict): Dictionary defining all "complex" types.
+        name (str): Name of the "complex" type to parse. 
+
+    Returns:
+        Dictionary mapping subtype names to values.
+            If the subtype is "complex", the value is a nested dictionary.
+
+    """ 
+    desc_to_value = {}
+    for subname, subtype in complextypes_dict[name]:
+        desc_to_value[subname] = parse_type(f, complextypes_dict, subtype)
+    return desc_to_value
+
+def parse_type(f, complextype_dict, name):
+    """
+    For a "simple" type, parses the corresponding number. 
+
+    For a "complex" type, mutually recurs with `parse_complextype`.
+
+    """
     if name == 'xs:byte':
         return struct.unpack('c', f.read(1))[0]
     elif name == 'xs:short':
-        raise Exception("THE TYPE {name} EXISTS")
+        return struct.unpack('<H', f.read(2))[0]
     elif name == 'xs:int':
         return struct.unpack('<I', f.read(4))[0]
     elif name == 'xs:long':
         return struct.unpack('<Q', f.read(8))[0]
     elif name == 'xs:float':
-        raise Exception("THE TYPE {name} EXISTS")
+        return struct.unpack('<f', f.read(4))[0]
     elif name == 'xs:double':
         return struct.unpack('<d', f.read(8))[0]
-    return recur_complex_type(f, complex_types, name)
-
+    return parse_complextype(f, complextype_dict, name)

@@ -300,8 +300,8 @@ def calibrate(masses, calib_nums):
     """
     calib_masses = np.zeros(masses.size, dtype=np.float32)
     var = np.ones(masses.size, dtype=np.float32)
-    for cof in calib_nums:
-        calib_masses += cof * var
+    for coeff in calib_nums:
+        calib_masses += coeff * var
         var *= masses
     del var 
     return calib_masses

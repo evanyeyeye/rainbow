@@ -1,6 +1,7 @@
 import os 
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
+from rainbow import agilent, waters
 
 
 def read(path, prec=0, hrms=False):
@@ -16,7 +17,7 @@ def read(path, prec=0, hrms=False):
     
     Max precision recommended for Waters MS data is 3. 
    
-    The accuracy of Agilent HRMS is not guaranteed. Set the flag to try it.
+    Agilent HRMS parsing may be slow. Set the flag to enable it.
 
     Args:
         path (str): Path of the directory.
@@ -39,10 +40,8 @@ def read(path, prec=0, hrms=False):
     datadir = None
     ext = os.path.splitext(path)[1]
     if ext.upper() == '.D':
-        from rainbow import agilent
         datadir = agilent.parse_directory(path, prec, hrms)
     elif ext.lower() == '.raw':
-        from rainbow import waters
         datadir = waters.parse_directory(path, prec)
     
     if datadir is None:
