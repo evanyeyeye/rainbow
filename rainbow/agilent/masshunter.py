@@ -11,12 +11,13 @@ MAIN PARSING METHOD
 
 """
 
-def parse_files(path, prec=0):
+def parse_allfiles(path, prec=0):
     """
-    Tries to detect and parse Agilent HRMS data.  
-    See the documentation on `parse_msdata` for the limitations.
+    Finds and parses Agilent Masshunter data files. \
+    Currently, only HRMS data is supported. \
+    See the documentation on :obj:`parse_msdata` for info on the limitations.
 
-    If more Masshunter file formats are added in the future, \
+    If more file formats are added in the future, \
         parsing should branch out from this method. 
 
     Args:
@@ -51,17 +52,17 @@ MS PARSING METHODS
 
 def parse_msdata(path, prec=0):
     """
-    Parses Agilent Masshunter MS data. 
+    Parses Masshunter MS data. 
 
-    IMPORTANT: Masshunter MS data is either stored in MSProfile.bin or
-        MSPeak.bin. This method only attempts to parse MSProfile.bin.  
+    IMPORTANT: Masshunter MS data can be either stored in MSProfile.bin or \
+        MSPeak.bin. This method only supports parsing MSProfile.bin.  
     
-    The following is parsed in order:
-        MSTS.xml -> Number of retention times
-        MSScan.xsd -> File structure of MSScan.bin 
-        MSScan.bin -> Offsets and compression info for MSProfile.bin 
-        MSMassCal.bin -> Calibration info for masses 
-        MSProfile.bin -> Actual data values
+    The following files are used (in order of listing): 
+        - MSTS.xml -> Number of retention time.
+        - MSScan.xsd -> File structure of MSScan.bin.
+        - MSScan.bin -> Offsets and compression info for MSProfile.bin.
+        - MSMassCal.bin -> Calibration info for masses.
+        - MSProfile.bin -> Actual data values.
 
     Args:
         path (str): Path to the AcqData subdirectory.
@@ -112,7 +113,7 @@ def parse_msdata(path, prec=0):
     data_info = np.empty(num_times, dtype=object)
     for i in range(num_times):
         # "ScanRecordType" is always the name of the root "complex" type.
-        scan_info = parse_complextype(f, complextypes_dict, "ScanRecordType")
+        scan_info = read_complextype(f, complextypes_dict, "ScanRecordType")
         spectrum_info = scan_info['SpectrumParamValues']
         data_info[i] = (
             scan_info['ScanTime'], 
@@ -194,9 +195,11 @@ def parse_msdata(path, prec=0):
     
     return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
    
-def parse_complextype(f, complextypes_dict, name):
+def read_complextype(f, complextypes_dict, name):
     """ 
-    Parses a "complex" type from a file object. 
+    Reads a "complex" type from a file object. Used only for MSScan.bin. 
+
+    Mutually recurs with :obj:`read_type`.
 
     Args:
         f (_io.BufferedReader): File opened in 'rb' mode.
@@ -204,20 +207,30 @@ def parse_complextype(f, complextypes_dict, name):
         name (str): Name of the "complex" type to parse. 
 
     Returns:
-        Dictionary mapping subtype names to values.
-            If the subtype is "complex", the value is a nested dictionary.
-
+        Dictionary mapping subtype names to values. \
+        If the subtype is "complex", the value is a nested dictionary. \
+        Otherwise, the value is a number.
+        
     """ 
     desc_to_value = {}
     for subname, subtype in complextypes_dict[name]:
-        desc_to_value[subname] = parse_type(f, complextypes_dict, subtype)
+        desc_to_value[subname] = read_type(f, complextypes_dict, subtype)
     return desc_to_value
 
-def parse_type(f, complextype_dict, name):
+def read_type(f, complextype_dict, name):
     """
-    For a "simple" type, parses the corresponding number. 
+    Reads a type from a file object. Used only for MSScan.bin. 
 
-    For a "complex" type, mutually recurs with `parse_complextype`.
+    Mutually recurs with :obj:`read_complextype`.
+
+    Args: 
+        f (_io.BufferedReader): File opened in 'rb' mode.
+        complextypes_dict (dict): Dictionary defining all "complex" types.
+        name (str): Name of the type to parse. 
+
+    Returns:
+        If the type is "simple", a number value. \
+        If the type is "complex", a dictionary mapping names to values. 
 
     """
     if name == 'xs:byte':
@@ -232,4 +245,4 @@ def parse_type(f, complextype_dict, name):
         return struct.unpack('<f', f.read(4))[0]
     elif name == 'xs:double':
         return struct.unpack('<d', f.read(8))[0]
-    return parse_complextype(f, complextype_dict, name)
+    return read_complextype(f, complextype_dict, name)

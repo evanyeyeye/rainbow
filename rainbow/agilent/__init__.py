@@ -16,9 +16,9 @@ def parse_directory(path, prec=0, hrms=False):
 
     """
     datafiles = []
-    datafiles.extend(chemstation.parse_files(path, prec))
+    datafiles.extend(chemstation.parse_allfiles(path, prec))
     if hrms: 
         from rainbow.agilent import masshunter 
-        datafiles.extend(masshunter.parse_files(path))
+        datafiles.extend(masshunter.parse_allfiles(path))
 
     return DataDirectory(path, datafiles, {'vendor': "Agilent"})

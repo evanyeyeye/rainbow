@@ -11,7 +11,7 @@ MAIN PARSING METHODS
 
 """
 
-def parse_files(path, prec=0):
+def parse_allfiles(path, prec=0):
     """
     Finds and parses Agilent Chemstation data files with a .ch, .uv, or .ms extension.
 
