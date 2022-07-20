@@ -8,7 +8,8 @@
             "shape": [10197, 1],
             "metadata": {
                 "date": "17 Dec 19  10:04 am", 
-                "method": "HP-5MS_HTAchiral_da_100-300_simscan.M", "instrument": "Mustang ChemStation", 
+                "method": "HP-5MS_HTAchiral_da_100-300_simscan.M", 
+                "instrument": "Mustang ChemStation", 
                 "unit": "pA", 
                 "signal": "Front Signal"
             }
