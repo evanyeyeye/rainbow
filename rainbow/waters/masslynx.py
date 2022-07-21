@@ -502,7 +502,7 @@ def parse_chrodat(path, name, units=None):
         units (str, optional): Units of the analog data.
     
     Returns:
-        DataFile with the analog data, if the file can be parsed. 
+        DataFile with analog data, if the file can be parsed. Otherwise, None.
 
     """
     data_start = 0x80
