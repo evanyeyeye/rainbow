@@ -324,16 +324,21 @@ ANALOG PARSING METHODS
 """
 def parse_analog(path):
     """
+    Finds and parses analog data from a Waters .raw directory.
+
+    Args:
+        path (str): Path to the Waters .raw directory. 
+    
+    Returns:
+        List of DataFiles that contain analog data. 
+
     """
     datafiles = []
 
-    dir_contents = os.listdir(path)
-    if not '_CHROMS.INF' in dir_contents:
+    if '_CHROMS.INF' not in os.listdir(path):
         return datafiles 
 
     analog_info = parse_chroinf(os.path.join(path, '_CHROMS.INF'))
-    analog_paths = [fn for fn in os.listdir(path) if fn.startswith('_CHRO') and fn.endswith('.DAT')]
-    assert(len(analog_info) == len(analog_paths))  
     for i in range(len(analog_info)):
         fn = os.path.join(path, f"_CHRO{i+1:0>3}.DAT")
         datafile = parse_chrodat(fn, *analog_info[i])
@@ -343,43 +348,71 @@ def parse_analog(path):
 
 def parse_chroinf(path):
     """
+    Parses a Waters _CHROMS.INF file.
+
+    Retrieves the name and unit for each analog data file. 
+
+    Args:
+        path (str): Path to the _CHROMS.INF file. 
+    
+    Returns:
+        List of string lists that contain the name of each analog file. \
+            The inner lists also includes the unit, if it exists. 
+
     """
     f = open(path, 'r')
-    f.seek(0x84)
-
+    f.seek(0x84) # start offset 
     analog_info = []
-    end = os.path.getsize(path)
-    while f.tell() < end:
+    while f.tell() < os.path.getsize(path):
         line = re.sub('[\0-\x04]|\$CC\$|\([0-9]*\)', '', f.read(0x55)).strip()
-        line_split = line.split(',')
-        assert(len(line_split) == 6 or len(line_split) == 1)
+        split = line.split(',')
         info = []
-        info.append(line_split[0])
-        if len(line_split) == 6:
-            info.append(line_split[5])
+        info.append(split[0]) # name
+        if len(split) == 6:
+            info.append(split[5]) # unit
         analog_info.append(info)
     f.close()
     return analog_info
 
 def parse_chrodat(path, name, units=None):
     """
+    Parses a Waters _CHRO .DAT file.
+
+    These files may contain data for CAD, ELSD, or UV channels. \
+        They may also contain other miscellaneous data like system pressure.
+    
+    IMPORTANT: MassLynx classifies all of these files as "analog" data, but \
+        a DataDirectory will not treat CAD, ELSD, or UV channels as analog \
+        data. Instead, those channels will be mapped to their detector.
+
+    Args:
+        path (str): Path to the _CHRO .DAT file. 
+        name (str): Name of the analog data.
+        units (str, optional): Units of the analog data.
+    
+    Returns:
+        DataFile containing the analog data, if it exists. 
+
     """
     data_start = 0x80
+
     num_times = (os.path.getsize(path) - data_start) // 8
-    assert(data_start + num_times * 8 == os.path.getsize(path))
+    if num_times == 0:
+        return None
 
     with open(path, 'rb') as f:
         raw_bytes = f.read()
-   
-    if len(raw_bytes) <= 0x80:
-        return None
 
     times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 8)
     vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 8)
+
+    # The arrays are copied so that they are mutable. 
+    # This is just for user convenience. 
     times = times_immut.copy()
     vals = vals_immut.copy().reshape(-1, 1)
     del times_immut, vals_immut, raw_bytes
 
+    # A `detector` value of None corresponds to miscellaneous analog data.
     detector = None
     if "CAD" in name:
         detector = 'CAD'
@@ -389,9 +422,7 @@ def parse_chrodat(path, name, units=None):
         detector = 'UV'
 
     ylabels = np.array([''])
-    metadata = {
-        'signal': name,
-    }
+    metadata = {'signal': name}
     if units: 
         metadata['unit'] = units 
 
@@ -432,7 +463,7 @@ def parse_metadata(path):
             value = line.split(': ')[1]
             if not value.isspace():
                 metadata['date'] += value
-        if line.startswith("$$ Bottle Number"):
+        elif line.startswith("$$ Bottle Number"):
             value = line.split(': ')[1]
             if not value.isspace():
                 metadata['vialpos'] = value
