@@ -197,7 +197,7 @@ def parse_msdata(path, prec=0):
    
 def read_complextype(f, complextypes_dict, name):
     """ 
-    Reads a "complex" type from a file object. Used only for MSScan.bin. 
+    Reads a "complex" type from :obj:`f`. Used only for MSScan.bin. 
 
     Mutually recurs with :obj:`read_type`.
 
@@ -219,7 +219,7 @@ def read_complextype(f, complextypes_dict, name):
 
 def read_type(f, complextype_dict, name):
     """
-    Reads a type from a file object. Used only for MSScan.bin. 
+    Reads a type from :obj:`f`. Used only for MSScan.bin. 
 
     Mutually recurs with :obj:`read_complextype`.
 

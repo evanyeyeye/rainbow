@@ -454,8 +454,6 @@ def parse_ms(path, prec=0):
 
     Because the data segments for each retention time (x-axis label) contain data values for an arbitrary set of masses, the entire file must be read to determine the whole list of unique masses. To avoid rereading the file, the data is saved in a numpy matrix named memo as (mass, count) tuples.
 
-    It turns out that checking membership in a python set is significantly faster than reading a value from a 2D numpy matrix. Accordingly, this method uses a set to populate the data array which increases speed by more than 3x.  
-
     More information about this file structure can be found :ref:`here <agilent_ms>`.
 
     Args:
@@ -504,9 +502,9 @@ def parse_ms(path, prec=0):
     int_unpack = struct.Struct('>I').unpack
     # Extract data values.
 
-    byte_arr = bytearray()
+    mz_bytearr = bytearray()
     times = np.empty(num_times, dtype=np.uint32)
-    masses_per_time = np.zeros(num_times, dtype=np.uint16)
+    pair_counts = np.zeros(num_times, dtype=np.uint16)
 
     for i in range(num_times):
         # Read in header information.
@@ -515,15 +513,15 @@ def parse_ms(path, prec=0):
         # f.read(2)
         times[i] = int_unpack(f.read(4))[0]
         f.read(6)
-        masses_per_time[i] = short_unpack(f.read(2))[0]
+        pair_counts[i] = short_unpack(f.read(2))[0]
         f.read(4)
-        byte_arr.extend(f.read(masses_per_time[i] * 4))
+        mz_bytearr.extend(f.read(pair_counts[i] * 4))
 
         f.read(10)
         assert(cur + length == f.tell())
 
-    total_masses = np.sum(masses_per_time)
-    the_bytes = bytes(byte_arr)
+    total_masses = np.sum(pair_counts)
+    the_bytes = bytes(mz_bytearr)
     # print(type(the_bytes))
     masses = np.ndarray(total_masses, '>H', the_bytes, 0, 4).copy()
     masses = np.round(masses / 20, prec)
@@ -541,7 +539,7 @@ def parse_ms(path, prec=0):
     data = np.zeros((num_times, masses_array.size), dtype=np.int64)
     cur_index = 0
     for i in range(num_times):
-        stop_index = cur_index + masses_per_time[i]
+        stop_index = cur_index + pair_counts[i]
         np.add.at(
             data[i], 
             key_indices[cur_index:stop_index], 
@@ -560,81 +558,92 @@ def parse_ms(path, prec=0):
 
 def parse_ms_partial(path, prec=0):
     """
-    A
+    Parses partial Agilent .ms files. 
+
+    IMPORTANT: This method only supports .ms partials in the LC format.
+
     """
     f = open(path, 'rb')
-    f.seek(0x10A)
-    if struct.unpack('>H', f.read(2))[0] != 0:
-        print(path)
-        f.close()
-        return None
-
-    
     short_unpack = struct.Struct('>H').unpack
     int_unpack = struct.Struct('>I').unpack
 
-    f.seek(754)
+    # Partial .ms files do not store the start offset.
+    # Shallow validation of filetype by checking that offset is null.
+    f.seek(0x10A)
+    if short_unpack(f.read(2))[0] != 0:
+        f.close()
+        return None
 
-    byte_arr = bytearray()
+    # The start offset for data in .ms files is technically variable, 
+    #     but it has been constant for every .ms file we have tested. 
+    # Since the start offset is not stored in partials, this code uses that
+    #     "constant" common starting offset. It may not work in all cases. 
+    f.seek(0x2F2) # start offset
+
+    # Extract retention times and data pair counts for each time. 
+    # Store the bytes holding mz-intensity pairs.
     times = []
-    masses_per_time = []
-
+    pair_counts = []
+    pair_bytearr = bytearray()
     while True:
         try:
-            cur = f.tell()
-            length = short_unpack(f.read(2))[0] * 2
-            times.append(int_unpack(f.read(4))[0])
+            f.read(2)
+            time = int_unpack(f.read(4))[0]
             f.read(6)
-            masses_per_time.append(short_unpack(f.read(2))[0])
+            pair_count = short_unpack(f.read(2))[0]
             f.read(4)
-            byte_arr.extend(f.read(masses_per_time[-1] * 4))
+            pair_bytes = f.read(pair_count * 4)
             f.read(10)
-            assert(cur + length == f.tell())
-        except struct.error:
+            times.append(time)
+            pair_counts.append(pair_count)
+            mz_bytearr.extend(pair_bytes)
+        except:
             break
+    f.close() 
 
-    num_times = len(times)
-    times = np.array(times)
-    masses_per_time = np.array(masses_per_time)
-
-    total_masses = np.sum(masses_per_time)
-    the_bytes = bytes(byte_arr)
-    # print(type(the_bytes))
-    masses = np.ndarray(total_masses, '>H', the_bytes, 0, 4).copy()
-    masses = np.round(masses / 20, prec)
+    # Minor processing on the extracted data.
+    raw_bytes = bytes(mz_bytearr)
+    times = np.array(times) / 60000
+    pair_counts = np.array(pair_counts)
+    num_times = times.size
+    total_paircount = np.sum(pair_counts)
     
-    counts_enc = np.ndarray(total_masses, '>H', the_bytes, 2, 4).copy()
-    counts_head = counts_enc >> 14
-    counts_tail = counts_enc & 0x3fff
-    counts = np.multiply(8 ** counts_head, counts_tail, dtype=np.uint32)
+    # Calculate the mz values. 
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4)
+    mzs = np.round(mzs / 20, prec)
+    
+    # Calculate the intensity values.
+    int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
+    int_heads = int_encs >> 14
+    int_tails = int_encs & 0x3fff
+    int_values = np.multiply(8 ** int_head, int_tail, dtype=np.uint32)
+    del int_encs, int_heads, int_tails, raw_bytes
 
-    masses_array = np.unique(masses)
-    masses_array.sort()
+    # Make the array of `ylabels` with mz values. 
+    ylabels = np.unique(mzs)
+    ylabels.sort()
 
-    # Optimized using numpy vectorization.
-    key_indices = np.searchsorted(masses_array, masses)
-    data = np.zeros((num_times, masses_array.size), dtype=np.int64)
+    # Fill the `data` array with intensities.
+    mz_indices = np.searchsorted(ylabels, mzs)
+    data = np.zeros((num_times, ylabels.size), dtype=np.uint32)
     cur_index = 0
     for i in range(num_times):
-        stop_index = cur_index + masses_per_time[i]
+        stop_index = cur_index + pair_counts[i]
         np.add.at(
             data[i], 
-            key_indices[cur_index:stop_index], 
-            counts[cur_index:stop_index])
+            mz_indices[cur_index:stop_index], 
+            int_values[cur_index:stop_index])
         cur_index = stop_index
-    # del key_indices, keys, values, ylabels_per_time
+    del key_indices, keys, values, ylabels_per_time
 
+    # Read file metadata. 
     metadata_offsets = {
         'date': 0xB2,
         'method': 0xE4
     }
-
-    xlabels = times / 60000
     metadata = read_header(f, metadata_offsets, 1)
 
-    f.close()
-
-    return DataFile(path, 'MS', xlabels, masses_array, data, metadata)
+    return DataFile(path, 'MS', times, ylabels, data, metadata)
 
 
 """ 
@@ -694,12 +703,11 @@ def parse_metadata(path, datafiles):
     """
     Parses Agilent metadata at the directory level.
 
-    Since metadata is also stored in Agilent files, the parsed DataFiles \
-        are first checked for date and vial position metadata. 
+    First, the DataFiles are checked for date and vial position metadata.
 
-    Then, several possible files are scanned for the vial position. \
+    Then, several files are scanned for the vial position. \
         This method can look inside the AcqData directory, which may be \
-        misleading because it is the Chemstation module.  
+        misleading because this method resides in the Chemstation module.
 
     Args:
         path (str): Path to the directory.
@@ -712,7 +720,9 @@ def parse_metadata(path, datafiles):
     metadata = {}
     metadata['vendor'] = "Agilent"
 
-    # Scan each DataFile for the date and vial position. 
+    # Scan each DataFile for the date and vial position.
+    # These may be stored in multiple files but the values are constant. 
+    # In MS files, the time may be saved in a different format. 
     for datafile in datafiles:
         if 'date' not in metadata and 'date' in datafile.metadata:
             metadata['date'] = datafile.metadata['date']
@@ -791,7 +801,7 @@ def parse_metadata(path, datafiles):
 
 def get_xml_vialnum(path):
     """
-    Returns the VialNumber value from an XML document, if it exists.
+    Returns the VialNumber from an XML document, if it exists.
 
     Args:
         path (str): Path to the XML document. 
@@ -806,7 +816,7 @@ def get_xml_vialnum(path):
 
 def get_nextstr(str_list, target_str):
     """ 
-    Returns the string at the next index in the list, if it exists.
+    Returns the string at the next index in :obj:`str_list`, if it exists.
 
     Args:
         str_list (str): List of strings. 
