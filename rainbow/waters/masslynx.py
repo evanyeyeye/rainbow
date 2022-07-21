@@ -11,58 +11,72 @@ SPECTRUM PARSING METHODS
 """
 def parse_spectrum(path, prec=0):
     """
+    Finds and parses Waters UV and MS spectra.
+
+    Args:
+        path (str): Path to the Waters .raw directory. 
+        prec (int, optional): Number of decimals to round ylabels. 
+    
+    Returns:
+        List containing a DataFile for each parsed spectrum.  
+
     """
     datafiles = []
 
-    func_paths = sorted([os.path.join(path, fn) for fn in os.listdir(path) 
-                         if re.match('^_FUNC[0-9]{3}.DAT$', fn)])
-    func_i = 0
-    inf = parse_funcinf(os.path.join(path, '_FUNCTNS.INF'))
+    # There is MS spectrum data if and only if there is an _extern.inf file.
+    # The file stores information about each MS spectrum, like polarity.
+    # Future work may find useful metadata there. 
     polarities = []
-    calibs = []
+    calib_nums = []
     if '_extern.inf' in os.listdir(path):
+        # Parse MS polarities from _extern.inf. 
+        f = open(os.path.join(path, '_extern.inf'), 'rb')
+        lines = f.read().decode('ascii', 'ignore').splitlines()
+        f.close()
+        for i in range(len(lines)):
+            if not lines[i].startswith("Instrument Parameters"):
+                continue
+            if lines[i + 1].startswith("Polarity"):
+                polarity = lines[i + 1].split('\t\t\t')[1][-1]
+            else:
+                try:
+                    polarity = lines[i + 2].split('\t')[1][-1]
+                except:
+                    raise Exception("Waters HRMS data is not supported.")
+            polarities.append(polarity)
 
+        # Parse mz calibration values from _HEADER.txt. 
+        # There are a separate list of values for each MS spectrum. 
         f = open(os.path.join(path, '_HEADER.TXT'), 'r')
         lines = f.read().splitlines()
+        f.close()
         for line in lines:
-            if line.startswith("$$ Cal Function"):
-                calib = [float(s) for s in line.split(': ')[1].split(',')[:-1]]
-                # assert(len(calib) == 5)
-                calibs.append(calib)
-        f.close()
+            if not line.startswith("$$ Cal Function"):
+                continue
+            calib_nums.append(
+                [float(num) for num in line.split(': ')[1].split(',')[:-1]])
 
-        f = open(os.path.join(path, '_extern.inf'), 'rb')
-        lines = f.read().splitlines()
-        nums = []
-        for i in range(len(lines)):
-            if lines[i].startswith(b"Instrument Parameters"):
-                assert(len(lines[i].split(b" ")) == 5)
-                nums.append(int(lines[i].split(b" ")[4][:-1]))
-                assert(lines[i+1].startswith(b"Polarity") or lines[i+2].startswith(b"Polarity"))
-                if lines[i+1].startswith(b"Polarity"):
-                    assert(len(lines[i+1].split(b'\t\t\t')) == 2)
-                    polarity = chr(lines[i+1].split(b'\t\t\t')[1][-1])
-                else:
-                    assert(len(lines[i+2].split(b'\t')) == 2)
-                    polarity = chr(lines[i+2].split(b'\t')[1][-1])
-                polarities.append(polarity)
-        assert(nums[0] == 1 and nums[-1] == len(nums))
-        assert(nums == sorted(nums))
-        f.close()
-        
-    while func_i < len(func_paths):
+    # The raw spectrum data is stored in _FUNC .DAT files. 
+    # Each MS spectrum has an assigned polarity, 
+    #     but may not have calibration values. 
+    funcdat_paths = sorted([os.path.join(path, fn) for fn in os.listdir(path)
+                            if re.match('^_FUNC[0-9]{3}.DAT$', fn)])
+    funcdat_index = 0
+    while funcdat_index < len(funcdat_paths):
         polarity = None
         calib = None
-        if func_i < len(polarities):
-            polarity = polarities[func_i]
-            if func_i < len(calibs):
-                calib = calibs[func_i]
-        datafiles.append(parse_func(func_paths[func_i], inf, prec, polarity, calib))
-        func_i += 1
+        if funcdat_index < len(polarities):
+            polarity = polarities[funcdat_index]
+            if funcdat_index < len(calib_nums):
+                calib = calib_nums[funcdat_index]
+        datafile = parse_func(
+            funcdat_paths[funcdat_index], prec, polarity, calib)
+        datafiles.append(datafile)
+        funcdat_index += 1
 
     return datafiles
 
-def parse_func(path, inf, prec=0, polarity=None, calib=None):
+def parse_func(path, prec=0, polarity=None, calib=None):
     """ 
     """
     idx_path = path[:-3] + 'IDX'
@@ -71,14 +85,19 @@ def parse_func(path, inf, prec=0, polarity=None, calib=None):
         print(path, data_len, times)
     assert(data_len == 6 or data_len == 8 or data_len == 2)
 
+    if polarity is None and data_len != 6:
+        print(data_len)
+
     if data_len == 2:
+        inf = parse_funcinf(os.path.join(os.path.dirname(path), '_FUNCTNS.INF'))
         ylabels, data = parse_funcdat2(path, ylabels_per_time, inf, prec, calib)
     elif data_len == 6:
         ylabels, data = parse_funcdat6(path, ylabels_per_time, prec, calib)
     elif data_len == 8:
         ylabels, data = parse_funcdat8(path, ylabels_per_time, prec, calib) 
     
-    detector = 'MS' if calib else 'UV'
+    # Spectra without an assigned polarity contain UV data. 
+    detector = 'MS' if polarity else 'UV'
 
     metadata = {}
     if polarity:
@@ -402,7 +421,6 @@ def parse_chrodat(path, name, units=None):
 
     with open(path, 'rb') as f:
         raw_bytes = f.read()
-
     times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 8)
     vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 8)
 

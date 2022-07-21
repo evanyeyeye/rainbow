@@ -8,7 +8,7 @@ def parse_directory(path, prec=0, hrms=False):
 
     Args:
         path (str): Path of the directory.
-        prec (int, optional): Number of decimals to round ylabels.
+        prec (int, optional): Number of decimals to round masses.
         hrms (bool, optional): Flag for HRMS parsing. 
 
     Returns:
