@@ -1,8 +1,8 @@
 import os 
 import struct
-from collections import deque
 import numpy as np
 from lxml import etree
+from collections import deque
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 
@@ -624,7 +624,6 @@ def parse_ms_partial(path, prec=0):
         cur_index = stop_index
     # del key_indices, keys, values, ylabels_per_time
 
-    
     metadata_offsets = {
         'date': 0xB2,
         'method': 0xE4
