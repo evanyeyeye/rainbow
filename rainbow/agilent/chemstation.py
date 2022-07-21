@@ -89,7 +89,7 @@ def parse_ch(path):
 
 def parse_ch_fid(path):
     """
-    Parses an Agilent .ch files with FID channel data. 
+    Parses an Agilent .ch file with FID channel data. 
     
     This method should not be called directly. Use :obj:`parse_ch` instead. 
 
@@ -155,7 +155,7 @@ def parse_ch_fid(path):
 
 def parse_ch_other(path):
     """
-    Parses an Agilent .ch files with CAD, ELSD, or UV channel data.
+    Parses an Agilent .ch file with CAD, ELSD, or UV channel data.
     
     This method should not be called directly. Use :obj:`parse_ch` instead.
 
@@ -165,8 +165,7 @@ def parse_ch_other(path):
         path (str): Path to the .ch file with UV, CAD, or ELSD data. 
 
     Returns:
-        DataFile with UV, CAD, or ELSD data, if the file can be parsed. \
-            Otherwise, None.
+        DataFile with CAD, ELSD, or UV data, if parsable. Otherwise, None.
 
     """
     data_offsets = {
