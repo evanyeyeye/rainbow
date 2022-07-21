@@ -1,7 +1,7 @@
 {
     "metadata": {
         "vendor": "Agilent",
-        "date": " 3 Feb 22  11:22 am -0500"
+        "date": "3 Feb 22  11:22 am -0500"
     },
     "datafiles": {
         "DAD1.UV": {
@@ -18,7 +18,7 @@
             "detector": "MS",
             "shape": [147192, 1],
             "metadata": {
-                "date": " 3 Feb 22  11:22 am -0500", 
+                "date": "3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
             }
         },
@@ -26,7 +26,7 @@
             "detector": "MS",
             "shape": [147217, 1],
             "metadata": {
-                "date": " 3 Feb 22  11:22 am -0500", 
+                "date": "3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
             }
         },
@@ -34,7 +34,7 @@
             "detector": "MS",
             "shape": [147251, 1],
             "metadata": {
-                "date": " 3 Feb 22  11:22 am -0500", 
+                "date": "3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
             }
         },
@@ -42,7 +42,7 @@
             "detector": "MS",
             "shape": [146020, 1],
             "metadata": {
-                "date": " 3 Feb 22  11:22 am -0500", 
+                "date": "3 Feb 22  11:22 am -0500", 
                 "method": "IVTT.Am.Carn.Neo.Ch"
             }
         }

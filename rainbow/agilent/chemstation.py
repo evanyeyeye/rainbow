@@ -639,7 +639,7 @@ def parse_ms_partial(path, prec=0):
 
 
 """ 
-METADATA PARSING METHODS
+FILE METADATA PARSING METHODS
 
 """
 
@@ -681,9 +681,15 @@ def read_string(f, offset, gap=2):
     f.seek(offset)
     str_len = struct.unpack("<B", f.read(1))[0] * gap
     try:
-        return f.read(str_len)[::gap].decode()
+        return f.read(str_len)[::gap].decode().strip()
     except:
         return ""
+
+
+""" 
+DIRECTORY METADATA PARSING METHODS 
+
+"""
 
 def parse_metadata(path, datafiles):
     """
@@ -694,7 +700,7 @@ def parse_metadata(path, datafiles):
 
     Then, several possible files are scanned for the vial position. \
         This method can look inside the AcqData directory, which may be \
-        misleading because this is the Chemstation module.  
+        misleading because it is the Chemstation module.  
 
     Args:
         path (str): Path to the directory.
@@ -714,34 +720,24 @@ def parse_metadata(path, datafiles):
         if 'vialpos' not in metadata and 'vialpos' in datafile.metadata:
             metadata['vialpos'] = datafile.metadata['vialpos']
     if 'date' in metadata and 'vialpos' in metadata:
-        print("FROM DATAFILES")
         return metadata
 
     # Scan certain files for the vial position. 
-
     dircontents = set(os.listdir(path))
 
     # sequence.acam_
     if "sequence.acam_" in dircontents:
-        tree = etree.parse(os.path.join(path, "sequence.acam_"))
-        root = tree.getroot()
-        for vialnum in root.xpath("//*[local-name()='VialNumber']"):
-            if vialnum.text:
-                metadata['vialpos'] = vialnum.text
-                print("FROM SEQUENCE")
-                return metadata
-    else: assert(all(n.lower() != "sequence.acam_" for n in dircontents))
+        vialnum = get_xml_vialnum(os.path.join(path, "sequence.acam_"))
+        if vialnum:
+            metadata['vialpos'] = vialnum
+            return metadata
 
     # sample.acaml
     if "sample.acaml" in dircontents:
-        tree = etree.parse(os.path.join(path, "sample.acaml"))
-        root = tree.getroot()
-        for vialnum in root.xpath("//*[local-name()='VialNumber']"):
-            if vialnum.text:
-                metadata['vialpos'] = vialnum.text
-                print("FROM SAMPLE")
-                return metadata
-    else: assert(all(n.lower() != "sample.acaml" for n in dircontents))
+        vialnum = get_xml_vialnum(os.path.join(path, "sample.acaml"))
+        if vialnum:
+            metadata['vialpos'] = vialnum
+            return metadata
 
     # AcqData/sample_info.xml
     if "AcqData" in dircontents:
@@ -753,9 +749,7 @@ def parse_metadata(path, datafiles):
                 vialnum = samplefield.find("Value")
                 if vialnum is not None and len(vialnum.text.split()) == 1:
                     metadata['vialpos'] = vialnum.text
-                    print("FROM SAMPLE_INFO")
                     return metadata
-        else: assert(all(n.lower() != "sample_info.xml" for n in os.listdir(acqdata_path)))
 
     # runstart.txt 
     if "runstart.txt" in dircontents:
@@ -764,12 +758,12 @@ def parse_metadata(path, datafiles):
         f.close()
         for line in lines:
             stripped = line.strip()
-            if "Alsbottle" in stripped:
-                assert(int(stripped.split(" ")[-1]) != 0)
-                metadata['vialpos'] = stripped.split(" ")[-1]
-                print("FROM RUNSTART")
+            if "Alsbottle" not in stripped:
+                continue 
+            vialnum = stripped.split()[-1]
+            if int(vialnum):
+                metadata['vialpos'] = vialnum
                 return metadata
-    else: assert(all(n.lower() != "runstart.txt" for n in dircontents))
 
     # RUN.LOG
     if "RUN.LOG" in dircontents:
@@ -777,36 +771,51 @@ def parse_metadata(path, datafiles):
         plaintext = f.read().decode('ascii', 'ignore').replace("\x00", "")
         f.close()
         for line in plaintext.splitlines():
+            vialpos = None
             if "Method started" in line:
                 split = line.split()
-                try:
-                    metadata['vialpos'] = split[split.index("vial#") + 1]
-                    print("FROM RUNLOG")
-                    return metadata
-                except:
-                    pass
-                try:
-                    metadata['vialpos'] = \
-                        split[split.index("location") + 1][1:-1]
-                    print("FROM RUNLOG")
-                    return metadata
-                except: 
-                    pass
+                vialpos = get_nextstr(split, "vial#")
+                if not vialpos:
+                    vialpos = get_nextstr(split, "location")
             elif "Instrument running sample" in line:
                 split = line.split()
-                print("FROM RUNLOG")
-                try:
-                    metadata['vialpos'] = split[split.index("Vial") + 1]
-                    print("FROM RUNLOG")
-                    return metadata
-                except:
-                    pass
-                try:
-                    metadata['vialpos'] = split[split.index("sample") + 1]
-                    print("FROM RUNLOG")
-                    return metadata
-                except: 
-                    pass
-    else: assert(all(n.upper() != "RUN.LOG" for n in dircontents))
+                vialpos = get_nextstr(split, "Vial")
+                if not vialpos:
+                    vialpos = get_nextstr(split, "location")
+                if not vialpos: 
+                    vialpos = get_nextstr(split, "sample")
+            if vialpos:
+                metadata['vialpos'] = vialpos.replace("'", "")
+                break
     
     return metadata
+
+def get_xml_vialnum(path):
+    """
+    Returns the VialNumber value from an XML document, if it exists.
+
+    Args:
+        path (str): Path to the XML document. 
+
+    """
+    tree = etree.parse(path)
+    root = tree.getroot()
+    for vialnum in root.xpath("//*[local-name()='VialNumber']"):
+        if vialnum.text:
+            return vialnum.text
+    return None
+
+def get_nextstr(str_list, target_str):
+    """ 
+    Returns the string at the next index in the list, if it exists.
+
+    Args:
+        str_list (str): List of strings. 
+        target_str (str): Initial string to find. 
+
+    """
+    try:
+        next_str = str_list[str_list.index(target_str) + 1]
+        return next_str
+    except:
+        return None
