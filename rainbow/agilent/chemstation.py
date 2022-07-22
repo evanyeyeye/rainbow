@@ -3,7 +3,6 @@ import struct
 import numpy as np
 from lxml import etree
 from rainbow.datafile import DataFile
-from rainbow.datadirectory import DataDirectory
 
 
 """
@@ -374,7 +373,7 @@ def parse_uv_partial(path):
         start_wlen, end_wlen, delta_wlen = \
             tuple(num // 20 for num in struct.unpack("<HHH", f.read(6)))
         wavelengths = np.arange(start_wlen, end_wlen + 1, delta_wlen)
-    except:
+    except Exception:
         return None
 
     # Extract the retention times and absorbances from each data segment.
@@ -398,7 +397,7 @@ def parse_uv_partial(path):
                 else: 
                     absorb_accum += check_int
                 absorbances.append(absorb_accum)
-        except:
+        except Exception:
             break
 
     # Process the extracted values.
@@ -584,7 +583,7 @@ def parse_ms_partial(path, prec=0):
             times.append(time)
             pair_counts.append(pair_count)
             pair_bytearr.extend(pair_bytes)
-        except:
+        except Exception:
             break
 
     # Minor processing on the extracted data.
@@ -677,7 +676,7 @@ def read_string(f, offset, gap=2):
     str_len = struct.unpack("<B", f.read(1))[0] * gap
     try:
         return f.read(str_len)[::gap].decode().strip()
-    except:
+    except Exception:
         return ""
 
 
@@ -813,5 +812,5 @@ def get_nextstr(str_list, target_str):
     try:
         next_str = str_list[str_list.index(target_str) + 1]
         return next_str
-    except:
+    except Exception:
         return None

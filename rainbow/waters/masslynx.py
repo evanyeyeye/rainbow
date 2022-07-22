@@ -1,6 +1,5 @@
 import os
 import re
-import struct
 import numpy as np
 from rainbow.datafile import DataFile
 
@@ -44,7 +43,7 @@ def parse_spectrum(path, prec=0):
             else:
                 try:
                     polarity = lines[i + 2].split('\t')[1][-1]
-                except:
+                except Exception:
                     raise Exception("Waters HRMS data is not supported.")
             polarities.append(polarity)
 
