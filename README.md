@@ -1,9 +1,10 @@
 # Rainbow
+[![PyPI version](https://badge.fury.io/py/rainbow-api.svg)](https://badge.fury.io/py/rainbow-api)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/evanyeyeye/rainbow.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/evanyeyeye/rainbow/context:python)
 
 *a python library for parsing chromatography data*
 
-by Eugene Kwan and Evan Shi
+by Evan Shi and Eugene Kwan
 
 ## Setup
 
