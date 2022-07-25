@@ -1,4 +1,5 @@
 # Rainbow
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/evanyeyeye/rainbow.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/evanyeyeye/rainbow/context:python)
 
 *a python library for parsing chromatography data*
 
