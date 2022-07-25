@@ -1,0 +1,26 @@
+[build-system]
+requires      = ["setuptools>=63.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rainbow-api"
+version = "0.1.0"
+description = "Read chromatography and mass spectrometry binary files"
+readme = "README.md"
+license = {text = "LICENSE"}
+authors = [
+    {name = "Evan Shi and Eugene Kwan"},
+    {email = "evanyshi@cmu.edu"}
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License"
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "lxml",
+    "python-lzf"
+]
+
+[project.urls]
+Repository = "https://github.com/evanyeyeye/rainbow"
