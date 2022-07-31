@@ -24,7 +24,7 @@ pip install rainbow-api
 
 ## Usage
 
-The easiest way to get started is to parse a directory as such:
+The easiest way to get started is to give *rainbow* a directory path:
 ```python
 import rainbow as rb
 datadir = rb.read("some_path.D")
