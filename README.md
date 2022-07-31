@@ -24,16 +24,19 @@ pip install rainbow-api
 
 ## Usage
 
-The easiest way to get started is to give *rainbow* a directory path:
+The easiest way to get started is to give *rainbow* a directory path. Assume that we have a directory `mydata.D` that contains a binary file `DAD1A.uv` with UV data. 
+
 ```python
 import rainbow as rb
-datadir = rb.read("some_path.D")
+datadir = rb.read("mydata.D")
+datafile = datadir.get_file("DAD1A.uv")
 ```
 
-The raw data is contained in numpy arrays that are attributes of the `datadir` DataDirectory object. Users may find the following particularly useful:
-* `datadir.xlabels` - retention times
-* `datadir.ylabels` - wavelengths, mz values, etc.
-* `datadir.data` - absorbances, intensities, etc. 
+Here, the `datadir` DataDirectory object contains a DataFile object for `DAD1A.uv`. 
+The raw UV data is contained in numpy arrays that are attributes of `datafile`. Users may find the following particularly useful:
+* `datafile.xlabels` - 1D numpy array with retention times
+* `datafile.ylabels` - 1D numpy array with wavelengths
+* `datafile.data` - 2D numpy array with absorbances 
 
 There is a tutorial available. There are also example scripts for basic tasks. 
 
