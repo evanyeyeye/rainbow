@@ -14,7 +14,7 @@
 * `CHRO` - CAD and ELSD, as well as miscellaneous analog data
 * `FUNC` - UV and MS 
 
-There is documentation for *rainbow* that also details the structure of each file format.
+There is documentation for *rainbow* that also details the structure of each binary file format.
 
 ## Installation
 
