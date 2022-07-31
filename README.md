@@ -1,47 +1,43 @@
-# Rainbow
+# rainbow
 [![PyPI version](https://badge.fury.io/py/rainbow-api.svg)](https://badge.fury.io/py/rainbow-api)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/evanyeyeye/rainbow.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/evanyeyeye/rainbow/context:python)
 
-*a python library for parsing chromatography data*
+*rainbow* provides programmatic access to the raw data encoded in chromatography and mass spectrometry binary files. This library supports the following vendors and detectors:
 
-by Evan Shi and Eugene Kwan
+**Agilent .D**
+* `.uv` - UV spectrum (supports incomplete files)
+* `.ch` - UV, FID, CAD, and ELSD channels
+* `.ms` - MS (supports incomplete files)
+* `MSProfile.bin` - HRMS
 
-## Setup
+**Waters .raw**
+* `CHRO` - CAD and ELSD, as well as miscellaneous analog data
+* `FUNC` - UV and MS 
 
-Clone the repository and enter the main directory.
-```
-git clone https://github.com/evanyeyeye/rainbow.git
-cd rainbow
-```
+There is documentation for *rainbow* that also details the structure of each file format.
 
-Create and activate a virtual environment. 
-```
-virtualenv venv
-source venv/bin/activate
-```
-
-Install the required dependencies.
-```
-pip install -r requirements.txt
-```
-
-Update your PYTHONPATH by adding this line to your .bash_profile or .bashrc file. 
-```
-export PYTHONPATH="$PYTHONPATH:(YOUR CURRENT WORKING DIRECTORY)"
-```
-
-## Testing
+## Installation
 
 ```
-cd test
-python test_agilent.py
+pip install rainbow-api
 ```
 
-## Docs
+## Usage
 
-```
-cd docs
-make html
+The easiest way to get started is to parse a directory as such:
+```python
+import rainbow as rb
+datadir = rb.read("some_path.D")
 ```
 
-The docpages are generated under the docs/_build directory. 
+The raw data is contained in numpy arrays that are attributes of the `datadir` DataDirectory object. Users may find the following particularly useful:
+* `datadir.xlabels` - retention times
+* `datadir.ylabels` - wavelengths, mz values, etc.
+* `datadir.data` - absorbances, intensities, etc. 
+
+There is a tutorial available. There are also example scripts for basic tasks. 
+
+## Contents
+* `rainbow/` contains the code of the Python library.
+* `docs/` contains code for generating documentation. To build documentation locally, you will need to install the `sphinx` and `sphinx-rtd-theme` packages. Then, move to the `docs/` directory and run `make html`. The docpages will be generated under `docs/_build`. 
+* `tests/` contains unit tests for the library. These can be run with `python -m unittest`. 
