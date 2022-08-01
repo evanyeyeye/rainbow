@@ -1,7 +1,7 @@
 .. _api:
 
-API
-==============
+rainbow API 
+===========
 
 .. autosummary::
    :toctree: _autosummary

@@ -5,7 +5,7 @@ rainbow
 
 It is available on :code:`pip`. To install, run :code:`pip install rainbow-api`. 
 
-To get started, check out the usage :ref:`tutorial <tutorial>` or example :ref:`snippets <examples>`. For more information, this documentation contains the full library :ref:`API` and details the structure of each :ref:`binary file format <formats>`.
+To get started, check out the usage :ref:`tutorial <tutorial>` or example :ref:`snippets <examples>`. For more information, this documentation contains the full library :ref:`API <api>` and details the structure of each :ref:`binary file format <formats>`.
 
 The GitHub repository can be found `here <https://github.com/evanyeyeye/rainbow>`_. 
 
@@ -14,7 +14,7 @@ The GitHub repository can be found `here <https://github.com/evanyeyeye/rainbow>
    :titlesonly:
 
    Overview <self>
-   tutorial
+   Tutorial <tutorial>
    Examples <examples>
-   api
+   API <api>
    Formats <formats>

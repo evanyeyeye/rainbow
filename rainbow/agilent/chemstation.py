@@ -92,7 +92,7 @@ def parse_ch_fid(path):
     
     This method should not be called directly. Use :obj:`parse_ch` instead. 
 
-    Learn more about this file format :ref:`here <agilent_fid>`.
+    Learn more about this file format :ref:`here <ch_fid>`.
 
     Args:
         path (str): Path to the .ch file with FID data. 
@@ -158,7 +158,9 @@ def parse_ch_other(path):
     
     This method should not be called directly. Use :obj:`parse_ch` instead.
 
-    Learn more about this file format :ref:`here <agilent_uv_ch>`.
+    IMPORTANT: ELSD data may be mistakenly labeled as CAD on rare occasions. Users may need to make this distinction on their own when decoding Agilent CAD or ELSD data.
+
+    Learn more about this file format :ref:`here <ch_other>`.
 
     Args:
         path (str): Path to the .ch file with UV, CAD, or ELSD data. 
@@ -259,7 +261,7 @@ def parse_uv(path):
 
     These files contain UV spectra. 
 
-    Learn more about this file format :ref:`here <agilent_uv_uv>`.
+    Learn more about this file format :ref:`here <uv>`.
 
     Args:
         path (str): Path to the Agilent .uv file. 
@@ -346,6 +348,8 @@ def parse_uv(path):
 def parse_uv_partial(path):
     """
     Parses a partial Agilent .uv file. 
+
+    Learn more about this file format :ref:`here <uv>`.
 
     Args:
         path (str): Path to the partial .uv file. 
@@ -435,7 +439,7 @@ def parse_ms(path, prec=0):
 
     These files contain MS spectra and SIM. 
 
-    Learn more about this file format :ref:`here <agilent_ms>`.
+    Learn more about this file format :ref:`here <ms>`.
 
     Args:
         path (str): Path to Agilent .ms file.
@@ -540,6 +544,8 @@ def parse_ms_partial(path, prec=0):
     Parses a partial Agilent .ms file. 
 
     IMPORTANT: This method only supports LC .ms partials.
+
+    Learn more about this file format :ref:`here <ms>`.
 
     Args:
         path (str): Path to the partial .ms file.
