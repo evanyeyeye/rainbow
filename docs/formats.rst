@@ -1,5 +1,7 @@
-File Formats
-============
+.. _formats:
+
+Binary File Formats
+===================
 
 This section describes the binary files from the following vendors.
 

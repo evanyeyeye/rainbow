@@ -1,4 +1,4 @@
-project = 'rainbow-api'
+project = 'rainbow'
 copyright = '2022, Evan Shi and Eugene Kwan'
 author = 'Evan Shi and Eugene Kwan'
 release = '1.0'
@@ -12,6 +12,7 @@ extensions = [
 
 autosummary_generate = True
 add_module_names = False
+html_show_sourcelink = False
 autodoc_member_order = "bysource"
 autodoc_default_options = {
     'members': True, 
