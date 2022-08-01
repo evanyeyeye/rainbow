@@ -24,7 +24,7 @@ pip install rainbow-api
 
 ## Usage
 
-The easiest way to get started is to give *rainbow* a directory path. Assume that we have a directory `mydata.D` that contains a binary file `DAD1A.uv` with UV data. 
+The easiest way to get started is to give *rainbow* a directory path. Assume that we have a directory `mydata.D` that contains a binary file `DAD1.uv` with UV data. 
 
 ```python
 import rainbow as rb
