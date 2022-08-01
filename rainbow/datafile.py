@@ -1,3 +1,7 @@
+""" 
+DataFile: Class representing a chromatogram binary file.
+
+"""
 import os
 import numpy as np
 

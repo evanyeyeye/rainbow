@@ -1,3 +1,7 @@
+""" 
+Entry method to read an Agilent .D directory.
+
+"""
 from rainbow.agilent import chemstation
 from rainbow.datadirectory import DataDirectory
 

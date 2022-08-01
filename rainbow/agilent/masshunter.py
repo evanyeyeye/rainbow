@@ -1,3 +1,7 @@
+""" 
+Methods for parsing Agilent Masshunter files. 
+ 
+"""
 import os
 import struct
 import numpy as np

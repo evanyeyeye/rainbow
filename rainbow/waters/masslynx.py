@@ -1,3 +1,7 @@
+""" 
+Methods for parsing Waters Masslynx files. 
+ 
+"""
 import os
 import re
 import numpy as np

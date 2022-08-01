@@ -1,3 +1,7 @@
+""" 
+Entry method to read a Waters .raw directory.
+
+"""
 from rainbow.waters import masslynx
 from rainbow.datadirectory import DataDirectory
 

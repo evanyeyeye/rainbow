@@ -27,7 +27,7 @@ It may be useful to search for a binary format by detector.
      - :ref:`Agilent .uv <uv>` :raw-html:`<br/>`
        :ref:`Agilent .ch (other) <ch_other>`
    * - MS 
-     - :ref:`Agilent .ms <uv>`
+     - :ref:`Agilent .ms <ms>`
    * - FID 
      - :ref:`Agilent .ch (FID) <ch_fid>`
    * - CAD 

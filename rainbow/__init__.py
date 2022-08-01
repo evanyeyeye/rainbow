@@ -1,3 +1,7 @@
+""" 
+read: Main method to read a chromatogram directory. 
+
+"""
 import os 
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
