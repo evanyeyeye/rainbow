@@ -19,18 +19,19 @@ It may be useful to search for a binary format by detector.
     :format: html
 
 .. list-table::
+   :widths: 30 70
    :header-rows: 1
 
    * - Detector
      - Formats
    * - UV
-     - :ref:`Agilent .uv <uv>` :raw-html:`<br/>`
-       :ref:`Agilent .ch (other) <ch_other>`
+     - :doc:`Agilent .uv <agilent/uv>` :raw-html:`<br/>`
+       :doc:`Agilent .ch (other) <agilent/ch_other>`
    * - MS 
-     - :ref:`Agilent .ms <ms>`
+     - :doc:`Agilent .ms <agilent/ms>`
    * - FID 
-     - :ref:`Agilent .ch (FID) <ch_fid>`
+     - :doc:`Agilent .ch (FID) <agilent/ch_fid>`
    * - CAD 
-     - :ref:`Agilent .ch (other) <ch_other>`
+     - :doc:`Agilent .ch (other) <agilent/ch_other>`
    * - ELSD
-     - :ref:`Agilent .ch (other) <ch_other>`
+     - :doc:`Agilent .ch (other) <agilent/ch_other>`

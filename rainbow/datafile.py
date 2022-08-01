@@ -63,9 +63,9 @@ class DataFile:
 
     def extract_traces(self, labels=None):
         """
-        Extracts data corresponding to the specified ylabel(s).
+        Extracts data corresponding to the specified :code:`labels`.
 
-        Raises an exception if any ylabel(s) are invalid. 
+        Raises an exception if any :code:`labels` are invalid. 
 
         Args:
             labels (int/float/list, optional): Ylabel(s) to extract. 
@@ -99,7 +99,7 @@ class DataFile:
 
     def export_csv(self, filename, labels=None, delim=','):
         """
-        Outputs a CSV containing data for the specified ylabel(s).
+        Outputs a CSV containing data for the specified :code:`labels`.
 
         Args:
             filename (str): Filename for the output CSV.
@@ -114,7 +114,7 @@ class DataFile:
     def to_csvstr(self, labels=None, delim=','):
         """
         Returns a string representation of a CSV containing data \
-            for the specified ylabel(s).
+            for the specified :code:`labels`.
         
         Args:
             labels (int/float/list, optional): Ylabel(s) to return.
@@ -141,7 +141,7 @@ class DataFile:
 
     def plot(self, label, **kwargs):
         """
-        Shows a basic matplotlib plot for the specified ylabel.
+        Shows a basic matplotlib plot for the specified :code:`label`.
 
         Args:
             label (int/float): Ylabel to be plotted. 

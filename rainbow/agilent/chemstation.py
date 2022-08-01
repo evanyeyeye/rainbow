@@ -1,7 +1,3 @@
-""" 
-Methods for parsing Agilent Chemstation files. 
- 
-"""
 import os 
 import struct
 import numpy as np

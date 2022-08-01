@@ -1,2 +1,4 @@
-a
-=
+.. _chrodat:
+
+Waters CHRO .DAT File Structure
+===============================

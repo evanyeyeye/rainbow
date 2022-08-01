@@ -68,9 +68,9 @@ class DataDirectory:
 
     def get_file(self, filename):
         """
-        Returns a DataFile object by filename. 
+        Returns a DataFile object by :code:`filename`. 
 
-        Raises an exception is the file is not in the DataDirectory.
+        Raises an exception if the :code:`filename` is not in the DataDirectory.
 
         Args:
             filename (str): DataFile name. 
@@ -82,9 +82,9 @@ class DataDirectory:
     
     def get_detector(self, detector):
         """
-        Returns a list of DataFile objects by detector. 
+        Returns a list of DataFile objects by :code:`detector`. 
 
-        Raises an exception if the detector name is invalid. 
+        Raises an exception if the :code:`detector` is invalid. 
 
         Args:
             detector (str): Detector name. 
@@ -104,7 +104,7 @@ class DataDirectory:
         
     def extract_traces(self, filename, labels=None):
         """
-        Extracts data corresponding to the specified DataFile and ylabel(s).
+        Extracts data corresponding to the specified DataFile and :code:`labels`.
 
         Args:
             filename (str): DataFile name. 
@@ -120,7 +120,7 @@ class DataDirectory:
 
     def export_csv(self, in_filename, out_filename, labels=None, delim=','):
         """
-        Outputs a CSV with data for the specified DataFile and ylabel(s).
+        Outputs a CSV with data for the specified DataFile and :code:`labels`.
 
         Args:
             in_filename (str): DataFile name. 
@@ -133,7 +133,7 @@ class DataDirectory:
     
     def plot(self, filename, label, **kwargs):
         """
-        Shows a basic matplotlib plot for the specified DataFile and ylabel.
+        Shows a basic matplotlib plot for the specified DataFile and :code:`label`.
 
         Args:
             filename (str): DataFile name. 
