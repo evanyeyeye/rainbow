@@ -1,7 +1,27 @@
+"""
+Sphinx Configuration
+
+"""
+
+################################
+# General Documentation Config #
+################################
+
 project = 'rainbow'
 copyright = '2022, Evan Shi and Eugene Kwan'
 author = 'Evan Shi and Eugene Kwan'
 release = '1.0'
+
+language = 'en'
+master_doc = 'index'
+source_suffix = '.rst'
+
+templates_path = ['_templates']
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+html_theme = 'sphinx_rtd_theme'
+
+html_show_sourcelink = False
+add_module_names = False
 
 extensions = [
     'sphinx.ext.autodoc',
@@ -9,10 +29,12 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode'
 ]
+ 
+#######################################
+# Autosummary & Autodoc Configuration #
+#######################################
 
 autosummary_generate = True
-add_module_names = False
-html_show_sourcelink = False
 autodoc_member_order = "bysource"
 autodoc_default_options = {
     'members': True, 
@@ -20,18 +42,6 @@ autodoc_default_options = {
     'show-inheritance': True, 
     'inherited-members': True
 }
-
-master_doc = 'index'
-source_suffix = '.rst'
-language = 'en'
-
-templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
-html_theme = 'sphinx_rtd_theme'
-html_static_path = ['_static']
-
-# -- Extension configuration -------------------------------------------------
 
 from sphinx.ext.napoleon.docstring import GoogleDocstring
 
