@@ -1,7 +1,3 @@
-""" 
-DataDirectory: Class representing a chromatogram directory.
-
-"""
 import os 
 from rainbow import DataFile
 

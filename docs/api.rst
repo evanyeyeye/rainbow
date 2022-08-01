@@ -1,5 +1,7 @@
 .. _api:
 
+.. currentmodule:: rainbow
+
 rainbow API 
 ===========
 
@@ -9,17 +11,18 @@ The :code:`read` method, :code:`DataFile` class, and :code:`DataDirectory` class
    :nosignatures:
    :toctree: _autosummary
 
-   rainbow
-   rainbow.datafile
-   rainbow.datadirectory
+   read
+   datafile.DataFile
+   datadirectory.DataDirectory
 
 Those interested in directly parsing specific files should also view the following: 
 
 .. autosummary::
+   :nosignatures:
    :toctree: _autosummary
 
-   rainbow.agilent
-   rainbow.agilent.chemstation
-   rainbow.agilent.masshunter
-   rainbow.waters
-   rainbow.waters.masslynx
+   agilent.read
+   agilent.chemstation
+   agilent.masshunter
+   waters.read
+   waters.masslynx

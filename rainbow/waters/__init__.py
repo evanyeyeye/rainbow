@@ -1,14 +1,10 @@
-""" 
-Entry method to read a Waters .raw directory.
-
-"""
 from rainbow.waters import masslynx
 from rainbow.datadirectory import DataDirectory
 
 
-def parse_directory(path, prec=0):
+def read(path, prec=0):
     """
-    Parses a Waters .raw directory. 
+    Reads a Waters .raw directory. 
 
     Args:
         path (str): Path of the directory.

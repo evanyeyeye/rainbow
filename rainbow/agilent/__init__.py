@@ -1,14 +1,10 @@
-""" 
-Entry method to read an Agilent .D directory.
-
-"""
 from rainbow.agilent import chemstation
 from rainbow.datadirectory import DataDirectory
 
 
-def parse_directory(path, prec=0, hrms=False):
+def read(path, prec=0, hrms=False):
     """
-    Parses an Agilent .D directory. 
+    Reads an Agilent .D directory. 
 
     Args:
         path (str): Path of the directory.

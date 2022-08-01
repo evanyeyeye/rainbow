@@ -1,7 +1,3 @@
-""" 
-read: Main method to read a chromatogram directory. 
-
-"""
 import os 
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
@@ -44,9 +40,9 @@ def read(path, prec=0, hrms=False):
     datadir = None
     ext = os.path.splitext(path)[1]
     if ext.upper() == '.D':
-        datadir = agilent.parse_directory(path, prec, hrms)
+        datadir = agilent.read(path, prec, hrms)
     elif ext.lower() == '.raw':
-        datadir = waters.parse_directory(path, prec)
+        datadir = waters.read(path, prec)
     
     if datadir is None:
         raise Exception(f"Rainbow cannot read {path}.")
