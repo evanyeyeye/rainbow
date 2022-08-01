@@ -8,11 +8,11 @@ Waters directories are distinguished by the .raw extension.
 .. toctree::
    :maxdepth: 1
 
-   Waters CHRO .DAT <waters/chrodat>
    Waters FUNC .IDX <waters/funcidx>
    Waters FUNC .DAT (2-byte) <waters/funcdat2>
    Waters FUNC .DAT (6-byte) <waters/funcdat6>
    Waters FUNC .DAT (8-byte) <waters/funcdat8>
+   Waters CHRO .DAT <waters/chrodat>
 
 It may be useful to search for a binary format by detector. 
 

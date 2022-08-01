@@ -7,7 +7,7 @@ This file format contains UV, CAD, or ELSD channel data.
 
 Note that this is not the same as :ref:`.ch files <ch_fid>` that contain FID data.
 
-Files in this format are often named something like DAD1A.ch or ADC1A.ch. 
+Files in this format are named something like DAD1A.ch or ADC1A.ch. 
 
 A UV .ch file contains data for a single wavelength after a user-specified bandwidth, reference wavelength, and reference bandwith has been applied (to correct for drift). The exact calculation formula is unknown. Note that this is different from the unmodified raw UV data in a :ref:`.uv file <uv>`.
 

@@ -179,7 +179,7 @@ Finally, each data segment ends with a 10-byte footer. All known values are unsi
 
 Note that the TIC stored in the footer is not always the exact sum of the raw intensities. 
 
-A data segment for a single retention time can be visualized by the following diagram. The segments are not drawn to scale.
+A data segment for a single retention time can be visualized by the following diagram. The inner segments are not drawn to scale.
 
 .. code-block:: text 
 

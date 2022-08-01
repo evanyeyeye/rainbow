@@ -7,7 +7,7 @@ This file format contains FID channel data.
 
 Note that this is not the same as :ref:`.ch files <ch_fid>` that contain UV, CAD, or ELSD data.
 
-Files in this format are often named something like FID1A.ch.
+Files in this format are named something like FID1A.ch.
 
 These files are comprised of a file header and data body. 
 

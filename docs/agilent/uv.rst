@@ -5,7 +5,7 @@ Agilent .uv File Structure
 
 This file format contains UV spectra data.
 
-Files in this format are often named something like DAD1.uv. 
+Files in this format are named something like DAD1.uv. 
 
 The absorbances are stored in these files are unmodified, unlike in :ref:`.ch files <ch_other>`.
 
