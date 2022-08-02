@@ -1,5 +1,6 @@
 # rainbow
 [![PyPI version](https://badge.fury.io/py/rainbow-api.svg)](https://badge.fury.io/py/rainbow-api)
+[![Documentation Status](https://readthedocs.org/projects/rainbow-api/badge/?version=latest)](https://rainbow-api.readthedocs.io/en/latest/?badge=latest)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/evanyeyeye/rainbow.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/evanyeyeye/rainbow/context:python)
 
 *rainbow* provides programmatic access to the raw data encoded in chromatography and mass spectrometry binary files. This library supports the following vendors and detectors:
@@ -14,7 +15,7 @@
 * `CHRO` - CAD and ELSD, as well as miscellaneous analog data
 * `FUNC` - UV and MS 
 
-There is documentation for *rainbow* that also details the structure of each binary file format.
+There is [documentation](http://rainbow-api.readthedocs.io/) for *rainbow* that also details the structure of each [binary file format](https://rainbow-api.readthedocs.io/en/latest/formats.html).
 
 ## Installation
 
@@ -38,7 +39,7 @@ The raw UV data is contained in numpy arrays that are attributes of `datafile`. 
 * `datafile.ylabels` - 1D numpy array with wavelengths
 * `datafile.data` - 2D numpy array with absorbances 
 
-There is a tutorial available. There are also example snippets for basic tasks. 
+There is a [tutorial](https://rainbow-api.readthedocs.io/en/latest/tutorial.html) available. There are also example [snippets](https://rainbow-api.readthedocs.io/en/latest/examples.html) for basic tasks. You can also check out the full [API](https://rainbow-api.readthedocs.io/en/latest/api.html). 
 
 ## Contents
 * `rainbow/` contains the code of the Python library.
