@@ -100,7 +100,6 @@ def parse_msdata(path, prec=0):
         for element in complextype[0].findall(f"{{{namespace}}}element"):
             innertypes.append((element.get('name'), element.get('type')))
         complextypes_dict[complextype.get('name')] = innertypes
-    assert(len(root[0][1][0].getchildren()) == 1)
 
     # MSScan.bin: Extract information about MSProfile.bin. 
     # For each retention time, this includes: 
@@ -126,7 +125,6 @@ def parse_msdata(path, prec=0):
             spectrum_info['ByteCount'], 
             spectrum_info['UncompressedByteCount']
         )
-    assert(f.tell() == os.path.getsize(f.name))
     f.close()
 
     # MSMassCal.bin: Extract calibration values for masses. 
@@ -135,7 +133,6 @@ def parse_msdata(path, prec=0):
     #     other 8 doubles are used for.
     f = open(os.path.join(path, "MSMassCal.bin"), 'rb')
     f.seek(0x4c) # start offset
-    assert(f.tell() + num_times * 84 - 4 == os.path.getsize(f.name))
     calib_vals = np.ndarray((num_times, 2), '<d', f.read(), 0, (84, 8))
     f.close()
 
