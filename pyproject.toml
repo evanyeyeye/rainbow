@@ -7,13 +7,13 @@ name = "rainbow-api"
 version = "0.1.0"
 description = "Read chromatography and mass spectrometry binary files"
 readme = "README.md"
-license = {text = "LICENSE"}
+license = {text = "COPYING"}
 authors = [
     {name = "Evan Shi and Eugene Kwan"},
     {email = "evanyshi@cmu.edu"}
 ]
 classifiers = [
-    "License :: OSI Approved :: MIT License"
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
 ]
 dependencies = [
     "numpy",
