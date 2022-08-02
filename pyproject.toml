@@ -24,3 +24,4 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/evanyeyeye/rainbow"
+Documentation = "https://rainbow-api.readthedocs.io"
