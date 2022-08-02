@@ -39,7 +39,7 @@ The raw UV data is contained in numpy arrays that are attributes of `datafile`. 
 * `datafile.ylabels` - 1D numpy array with wavelengths
 * `datafile.data` - 2D numpy array with absorbances 
 
-There is a [tutorial](https://rainbow-api.readthedocs.io/en/latest/tutorial.html) available. There are also example [snippets](https://rainbow-api.readthedocs.io/en/latest/examples.html) for basic tasks. You can also check out the full [API](https://rainbow-api.readthedocs.io/en/latest/api.html). 
+There is a [tutorial](https://rainbow-api.readthedocs.io/en/latest/tutorial.html) available. There are also example [snippets](https://rainbow-api.readthedocs.io/en/latest/examples.html) for basic tasks. Or just check out the full [API](https://rainbow-api.readthedocs.io/en/latest/api.html). 
 
 ## Contents
 * `rainbow/` contains the code of the Python library.
