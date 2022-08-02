@@ -151,9 +151,9 @@ Next, there are two big-endian unsigned shorts for each data value. The first sh
 
 The value of the first short is the result of multiplying the raw mz value by 20. The mz values may have one decimal place. For example, a short with the value 19796 represents the mass 989.8. Also, each mz value is not necessarily recorded at each retention time. For example, one data segment could have intensities for mz 100, 200, and 300 while another has intensities for mz 200 and 400. 
 
-The value of the second short is encoded using its bits. The most significant two bits represent a :code:`power` of eight. Note that there are four possible powers: 0, 1, 2, 3 (since there are only two bits). The remaining 14 bits represent a :code:`base` value. The count is calculated with the formula: :code:`base * 8^power`.
+The value of the second short is encoded using its bits. The most significant two bits represent a :code:`power` of eight. Note that there are four possible powers: 0, 1, 2, 3 (since there are only two bits). The remaining 14 bits represent a :code:`base` value. The intensity is calculated with the formula: :code:`base * 8^power`.
 
-For example, the count 574016 = 8969 * 8^2 would be represented by the short 41737:
+For example, the intensity 574016 = 8969 * 8^2 would be represented by the short 41737:
 
 .. code-block:: text 
 
@@ -183,14 +183,14 @@ A data segment for a single retention time can be visualized by the following di
 
 .. code-block:: text 
 
-   +--------------------------------------------------+
-   |    header (retention time and # of data values)  |
-   +--------+-------+--------+-------+--------+-------+
-   | mass 1 | count | mass 2 | count | mass 3 | count |
-   +--------+-------+--------+-------+--------+-------+
-   | mass 4 | count | mass 5 | count | mass 6 | count |
-   +--------+-------+--------+-------+--------+-------+
-   |         repeats for the # of data values         |
-   +--------------------------------------------------+
-   |                  footer (TIC)                    |
-   +--------------------------------------------------+
+   +--------------------------------------------------------------+
+   |         header (retention time and # of data values)         |
+   +--------+-----------+--------+-----------+--------+-----------+
+   | mass 1 | intensity | mass 2 | intensity | mass 3 | intensity |
+   +--------+-----------+--------+-----------+--------+-----------+
+   | mass 4 | intensity | mass 5 | intensity | mass 6 | intensity |
+   +--------+-----------+--------+-----------+--------+-----------+
+   |               repeats for the # of data values               |
+   +--------------------------------------------------------------+
+   |                        footer (TIC)                          |
+   +--------------------------------------------------------------+
