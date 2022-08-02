@@ -3,7 +3,9 @@
 Waters FUNC .DAT File Structure (2-byte)
 ========================================
 
-This format stores the intensity values for MS data. MS data can also be stored in the FUNC .DAT :doc:`6-byte <funcdat6>` and :doc:`8-byte <funcdat8>` formats.
+This format stores the intensity values for MS data. 
+
+MS data can also be stored in the FUNC .DAT :doc:`6-byte <funcdat6>` and :doc:`8-byte <funcdat8>` formats.
 
 These files are named something like _FUNC001.DAT. 
 

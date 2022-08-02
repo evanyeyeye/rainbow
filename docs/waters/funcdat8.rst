@@ -3,11 +3,13 @@
 Waters FUNC .DAT File Structure (8-byte)
 ========================================
 
-This format stores the mz-intensity pairs for MS data. MS data can also be stored in the FUNC .DAT :doc:`2-byte <funcdat2>` and :doc:`6-byte <funcdat6>` formats.
+This format stores the mz-intensity pairs for MS data. 
+
+MS data can also be stored in the FUNC .DAT :doc:`2-byte <funcdat2>` and :doc:`6-byte <funcdat6>` formats.
 
 These files are named something like _FUNC001.DAT. 
 
-Each FUNC .DAT file is paired by number with a :doc:`FUNC .IDX <funcidx>` file. For example, _FUNC001.DAT is paired with _FUNC001.IDX. The paired FUNC .IDX file stores the retention times and the number of mz-pairs recorded at each time. 
+Each FUNC .DAT file is paired by number with a :doc:`FUNC .IDX <funcidx>` file. For example, _FUNC001.DAT is paired with _FUNC001.IDX. The paired FUNC .IDX file stores the retention times and the number of mz-intensity pairs recorded at each time. 
 
 This format is comprised entirely of contiguous 8-byte segments, one for each mz-intensity pair. This is the reason why this format is referred to as the 8-byte format.
 
