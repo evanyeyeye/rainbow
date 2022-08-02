@@ -62,11 +62,13 @@ def parse_msdata(path, prec=0):
         MSPeak.bin. This method only supports parsing MSProfile.bin.  
     
     The following files are used (in order of listing): 
-        - MSTS.xml -> Number of retention time.
+        - MSTS.xml -> Number of retention times.
         - MSScan.xsd -> File structure of MSScan.bin.
         - MSScan.bin -> Offsets and compression info for MSProfile.bin.
         - MSMassCal.bin -> Calibration info for masses.
         - MSProfile.bin -> Actual data values.
+
+    Learn more about this file format :ref:`here <hrms>`.
 
     Args:
         path (str): Path to the AcqData subdirectory.

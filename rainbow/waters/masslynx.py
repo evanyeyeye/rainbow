@@ -128,6 +128,8 @@ def parse_funcidx(path):
     """ 
     Parses a Waters _FUNC .IDX file. 
 
+    Learn more about this file format :ref:`here <funcidx>`.
+
     Args:
         path (str): Path to the _FUNC .IDX file. 
 
@@ -160,6 +162,8 @@ def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     Parses a Waters _FUNC .DAT file with the 2-bytes format. 
 
     This format contains MS data. 
+
+    Learn more about this file format :ref:`here <funcdat2>`.
 
     Args:
         path (str): Path to the _FUNC .DAT file. 
@@ -203,6 +207,8 @@ def parse_funcinf(path):
 
     This file contains mz values for the 2-byte format. 
 
+    Learn more about this file format :ref:`here <funcdat2>`.
+
     Args:
         path (str): Path to the _FUNCTNS.INF file. 
 
@@ -221,6 +227,8 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     Parses a Waters _FUNC .DAT file with the 6-bytes format. 
 
     This format may contain MS or UV data. 
+
+    Learn more about this file format :ref:`here <funcdat6>`.
 
     Args:
         path (str): Path to the Waters _FUNC .DAT file. 
@@ -289,6 +297,8 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     Parses a Waters _FUNC .DAT file with the 8-bytes format. 
 
     This format contains MS data. 
+
+    Learn more about this file format :ref:`here <funcdat8>`.
 
     Args:
         path (str): Path to the _FUNC .DAT file. 
@@ -495,6 +505,8 @@ def parse_chrodat(path, name, units=None):
     IMPORTANT: MassLynx classifies these files as "analog" data, but \
         a DataDirectory will not treat CAD, ELSD, or UV channels as analog. \
         Instead, those channels will be mapped to their detector.
+
+    Learn more about this file format :ref:`here <chrodat>`.
 
     Args:
         path (str): Path to the _CHRO .DAT file. 
