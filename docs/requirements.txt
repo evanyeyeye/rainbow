@@ -1,0 +1,4 @@
+numpy
+lxml
+matplotlib
+python-lzf
