@@ -12,6 +12,7 @@ Agilent directories are distinguished by the .D extension.
    Agilent .ms <agilent/ms>
    Agilent .ch (FID) <agilent/ch_fid>
    Agilent .ch (other) <agilent/ch_other>
+   Agilent MSProfile.bin <agilent/hrms>
 
 It may be useful to search for a binary format by detector. 
 
@@ -35,3 +36,5 @@ It may be useful to search for a binary format by detector.
      - :doc:`Agilent .ch (other) <agilent/ch_other>`
    * - ELSD
      - :doc:`Agilent .ch (other) <agilent/ch_other>`
+   * - HRMS 
+     - :doc:`Agilent MSProfile.bin <agilent/hrms>`
