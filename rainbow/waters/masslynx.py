@@ -238,20 +238,17 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     num_times = pair_counts.size
     num_datapairs = np.sum(pair_counts)
 
-    # Optimized reading of 6-byte segments into `raw_values`. 
+    # Read most significant 4 bytes from each segment into `raw_values`.
     with open(path, 'rb') as f:
         raw_bytes = f.read()
-    leastsig = np.ndarray(num_datapairs, '<I', raw_bytes, 0, 6)
-    mostsig = np.ndarray(num_datapairs, '<H', raw_bytes, 4, 6)
-    raw_values = leastsig | (mostsig.astype(np.int64) << 32)
-    del leastsig, mostsig, raw_bytes
+    raw_values = np.ndarray(num_datapairs, '<I', raw_bytes, 2, 6)
 
     # The data is stored as key-value pairs. 
     # For example, in MS data these are mz-intensity pairs. 
     # Calculate the `keys` from each 6-byte segment. 
-    key_bases = (raw_values & 0xFFFFFE000000) >> 25
-    key_powers = (raw_values & 0x1F00000) >> 20
-    key_powers -= 23
+    key_bases = raw_values >> 9
+    key_powers = (raw_values & 0x1F0) >> 4
+    key_powers = np.subtract(key_powers, 23, dtype=np.int32)
     keys = key_bases * (2.0 ** key_powers)
     del key_bases, key_powers
 
@@ -263,10 +260,10 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     keys = np.round(keys, prec)
 
     # Calculate the `values` from each 6-byte segment.
-    val_bases = (raw_values & 0xFFFF).astype(np.int16)
-    val_powers = (raw_values & 0xF0000) >> 16
+    val_bases = np.ndarray(num_datapairs, '<h', raw_bytes, 0, 6)
+    val_powers = raw_values & 0xF
     values = val_bases * (4 ** val_powers)
-    del val_bases, val_powers, raw_values
+    del val_bases, val_powers, raw_values, raw_bytes
 
     # Make the array of `ylabels` with keys. 
     ylabels = np.unique(keys)
