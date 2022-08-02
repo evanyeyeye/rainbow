@@ -23,6 +23,7 @@ source_suffix = '.rst'
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 html_theme = 'sphinx_rtd_theme'
+html_favicon = 'favicon.ico'
 
 html_show_sourcelink = False
 add_module_names = False
