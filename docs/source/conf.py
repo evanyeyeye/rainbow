@@ -25,8 +25,11 @@ exclude_patterns = ['Thumbs.db', '.DS_Store']
 html_theme = 'sphinx_rtd_theme'
 html_favicon = '_static/favicon.ico'
 
-html_show_sourcelink = False
 add_module_names = False
+html_show_sourcelink = False
+html_context = {
+    "display_github": False
+}
 
 extensions = [
     'sphinx.ext.autodoc',
