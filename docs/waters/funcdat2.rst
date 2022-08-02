@@ -11,7 +11,7 @@ Each FUNC .DAT file is paired by number with a :doc:`FUNC .IDX <funcidx>` file. 
 
 This format is comprised entirely of contiguous 2-byte segments, one for each intensity. This is the reason why this format is referred to as the 2-byte format.
 
-The value of each intensity is encoded into the bits of each 2-byte segment. Assume little-endianness. The least significant 3 bits represent a :code:`power` of four. The most significant 13 bits represent a :code:`base` value. The intensity is calculated with the formula: :code:`base * 4^power`.
+The value of each intensity is encoded into the bits of a 2-byte segment. Assume little-endianness. The least significant 3 bits represent a :code:`power` of four. The most significant 13 bits represent a :code:`base` value. The intensity is calculated with the formula: :code:`base * 4^power`.
 
 For example, the intensity 13924 = 3481 * 4^1 would be represented by the following 2 bytes:
 
