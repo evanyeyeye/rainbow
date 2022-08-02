@@ -9,7 +9,7 @@ These files are named something like _FUNC001.IDX.
 
 Each FUNC .IDX file is paired by number with a FUNC .DAT file (which may be in the :doc:`2-byte <funcdat2>`, :doc:`6-byte <funcdat6>`, or :doc:`8-byte <funcdat8>` format). For example, _FUNC001.IDX is paired with _FUNC001.DAT. 
 
-FUNC .IDX files store the retention times as well as the number of data pairs recorded at each retention time. A data pair refers to a pair of mz-intensity or wavelength-absorbance values. 
+FUNC .IDX files store the retention times as well as the number of data pairs recorded at each retention time. A data pair refers to a pair of mz-intensity or wavelength-absorbance values. The paired FUNC .DAT file stores the data pairs. 
 
 A FUNC .IDX file is comprised of contiguous 22-byte segments, one for each retention time. All known values in this file format are little-endian and unsigned. In order from start to end:
 
