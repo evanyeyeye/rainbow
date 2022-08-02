@@ -1,5 +1,5 @@
 # rainbow
-![PyPI](https://img.shields.io/pypi/v/rainbow-api)
+[![PyPI](https://img.shields.io/pypi/v/rainbow-api)](https://pypi.org/project/rainbow-api)
 [![Documentation Status](https://readthedocs.org/projects/rainbow-api/badge/?version=latest)](https://rainbow-api.readthedocs.io/en/latest/?badge=latest)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/evanyeyeye/rainbow.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/evanyeyeye/rainbow/context:python)
 
