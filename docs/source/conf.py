@@ -5,7 +5,7 @@ Sphinx Configuration
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../..'))
 
 ################################
 # General Documentation Config #
@@ -21,9 +21,9 @@ master_doc = 'index'
 source_suffix = '.rst'
 
 templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['Thumbs.db', '.DS_Store']
 html_theme = 'sphinx_rtd_theme'
-html_favicon = 'favicon.ico'
+html_favicon = '_static/favicon.ico'
 
 html_show_sourcelink = False
 add_module_names = False

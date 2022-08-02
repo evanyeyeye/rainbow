@@ -9,7 +9,7 @@ The :code:`read` method, :code:`DataFile` class, and :code:`DataDirectory` class
 
 .. autosummary::
    :nosignatures:
-   :toctree: _autosummary
+   :toctree: api
 
    read
    datafile.DataFile
@@ -19,7 +19,7 @@ Those interested in directly parsing specific files should also view the followi
 
 .. autosummary::
    :nosignatures:
-   :toctree: _autosummary
+   :toctree: api
 
    agilent.read
    agilent.chemstation
