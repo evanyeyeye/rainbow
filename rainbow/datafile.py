@@ -1,4 +1,5 @@
 import os
+import warnings
 import numpy as np
 
 
@@ -43,6 +44,7 @@ class DataFile:
         self.ylabels = ylabels
         self.data = data
         self.metadata = metadata
+        warnings.filterwarnings("ignore", category=FutureWarning)
 
     def __repr__(self):
         return f"{self.name}"
@@ -88,8 +90,8 @@ class DataFile:
         if not isinstance(labels, list):
             raise Exception("Invalid type for labels.")
 
-        for label in labels:
-            if not label in self.ylabels.tolist():
+        for label in np.array(labels):
+            if label not in self.ylabels:
                 raise Exception(f"Label {label} not in {self.name}.")
         
         indices = np.searchsorted(self.ylabels, labels)   
@@ -103,7 +105,7 @@ class DataFile:
 
         Args:
             filename (str): Filename for the output CSV.
-            labels (int/float/list, optional): Ylabel(s) to export. 
+            labels (int/float/list, optional):   Ylabel(s) to export. 
             delim (str, optional): Delimiter used in the output CSV. 
 
         """
@@ -123,13 +125,13 @@ class DataFile:
         """
         str_traces_tp = self.extract_traces(labels).T.astype(str)
 
-        if labels is None:
-            labels = self.ylabels.tolist()
-
         if isinstance(labels, int) or \
            isinstance(labels, float) or \
            labels == '':
             labels = [labels]
+
+        if labels is None:
+            labels = self.ylabels
 
         str_labels = [str(label) for label in labels]
 
