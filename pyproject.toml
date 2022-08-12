@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rainbow-api"
-version = "1.0.0"
+version = "1.0.1"
 description = "Read chromatography and mass spectrometry binary files"
 readme = "README.md"
 license = {text = "COPYING"}
