@@ -65,7 +65,7 @@ def parse_spectrum(path, prec=0):
     # Each MS spectrum has an assigned polarity, 
     #     but may not have calibration values. 
     funcdat_paths = sorted([os.path.join(path, fn) for fn in os.listdir(path)
-                            if re.match('^_FUNC\d{3}.DAT$', fn)])
+                            if re.match(r'^_FUNC\d{3}.DAT$', fn)])
     funcdat_index = 0
     assert(os.path.getsize(os.path.join(path, "_FUNCTNS.INF")) == 32 * 13 * len(funcdat_paths))
     while funcdat_index < len(funcdat_paths):
@@ -182,7 +182,7 @@ def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     # This code makes the assumption that in this format the  
     #     number of mz values is constant at each retention time. 
     inf_path = os.path.join(os.path.dirname(path), '_FUNCTNS.INF')
-    func_index = int(re.findall("\d+", os.path.basename(path))[0]) - 1
+    func_index = int(re.findall(r"\d+", os.path.basename(path))[0]) - 1
     mzs = parse_funcinf(inf_path)[func_index]
     ylabels = mzs[mzs != 0.0]
 
@@ -485,7 +485,7 @@ def parse_chroinf(path):
     f.seek(0x84) # start offset 
     analog_info = []
     while f.tell() < os.path.getsize(path):
-        line = re.sub('[\0-\x04]|\$CC\$|\([0-9]*\)', '', f.read(0x55)).strip()
+        line = re.sub(r'[\0-\x04]|\$CC\$|\([0-9]*\)', '', f.read(0x55)).strip()
         split = line.split(',')
         info = []
         info.append(split[0]) # name

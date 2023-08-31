@@ -21,3 +21,18 @@ def read(path, prec=0):
     metadata = masslynx.parse_metadata(path)
 
     return DataDirectory(path, datafiles, metadata)
+
+def read_metadata(path):
+    """
+    Reads metdata from a Waters .raw directory.
+
+    Args:
+        path (str): Path of the directory.
+
+    Returns:
+        DataDirectory representing the Waters .raw directory.
+    """
+    datafiles = []
+    metadata = masslynx.parse_metadata(path)
+
+    return DataDirectory(path, datafiles, metadata)

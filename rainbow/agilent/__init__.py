@@ -24,3 +24,18 @@ def read(path, prec=0, hrms=False):
     metadata = chemstation.parse_metadata(path, datafiles)
 
     return DataDirectory(path, datafiles, metadata)
+
+def read_metadata(path):
+    """
+    Reads metadata from an Agilent .D directory.
+
+    Args:
+        path (str): Path of the directory.
+
+    Returns:
+        DataDirectory representing the Agilent .D directory.
+
+    """
+    datafiles = []
+    metadata = chemstation.parse_metadata(path, datafiles)
+    return DataDirectory(path, datafiles, metadata)

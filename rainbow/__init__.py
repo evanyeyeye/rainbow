@@ -47,3 +47,25 @@ def read(path, prec=0, hrms=False):
     if datadir is None:
         raise Exception(f"Rainbow cannot read {path}.")
     return datadir
+
+def read_metadata(path):
+    """
+    Reads the metadata for a chromatogram data directory. Main method of the package.
+
+    Args:
+        path (str): Path of the directory.
+
+    Returns:
+        DataDirectory representing the directory.
+
+    """
+    datadir = None
+    ext = os.path.splitext(path)[1]
+    if ext.upper() == '.D':
+        datadir = agilent.read_metadata(path)
+    elif ext.lower() == '.raw':
+        datadir = waters.read_metadata(path)
+
+    if datadir is None:
+        raise Exception(f"Rainbow cannot read {path}.")
+    return datadir
