@@ -56,16 +56,16 @@ def read_metadata(path):
         path (str): Path of the directory.
 
     Returns:
-        DataDirectory representing the directory.
+        Dictionary representing the metadata of the directory.
 
     """
     datadir = None
     ext = os.path.splitext(path)[1]
     if ext.upper() == '.D':
-        datadir = agilent.read_metadata(path)
+        metadata = agilent.read_metadata(path)
     elif ext.lower() == '.raw':
-        datadir = waters.read_metadata(path)
+        metadata = waters.read_metadata(path)
 
-    if datadir is None:
+    if metadata is None:
         raise Exception(f"Rainbow cannot read {path}.")
-    return datadir
+    return metadata

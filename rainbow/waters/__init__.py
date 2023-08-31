@@ -30,9 +30,11 @@ def read_metadata(path):
         path (str): Path of the directory.
 
     Returns:
-        DataDirectory representing the Waters .raw directory.
+        Dictionary representing metadata in the Waters .raw directory.
     """
     datafiles = []
     metadata = masslynx.parse_metadata(path)
-
-    return DataDirectory(path, datafiles, metadata)
+    if len(metadata) == 1:
+        datadir = read(path)
+        return datadir.metadata if datadir else None
+    return metadata
