@@ -18,8 +18,7 @@ classifiers = [
 dependencies = [
     "numpy",
     "matplotlib",
-    "lxml",
-    "python-lzf"
+    "lxml"
 ]
 
 [project.urls]
