@@ -17,9 +17,12 @@ def read(path, prec=0, hrms=False):
     """
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(path, prec))
-    if hrms: 
-        from rainbow.agilent import masshunter 
-        datafiles.extend(masshunter.parse_allfiles(path))
+    if hrms:
+        try:
+            from rainbow.agilent import masshunter
+            datafiles.extend(masshunter.parse_allfiles(path))
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError("You must install python-lzf to parse masshunter files.")
 
     metadata = chemstation.parse_metadata(path, datafiles)
 
