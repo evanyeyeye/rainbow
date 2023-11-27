@@ -81,15 +81,13 @@ def parse_ch(path):
             Otherwise, None.
 
     """
-    f = open(path, 'rb')
-    head = struct.unpack('>I', f.read(4))[0]
-    f.close()
-    # Determines the .ch file format using the file header.
-    if head == 0x03313739:
+    head = read_string(open(path, 'rb'), offset=0, gap=1)
+    if head == '179':
         return parse_ch_fid(path)
-    elif head == 0x03313330:
-        return parse_ch_other(path)
+    elif head == '130' or head == '30':
+        return parse_ch_other(path, head)
     return None
+
 
 def parse_ch_fid(path):
     """
@@ -157,7 +155,7 @@ def parse_ch_fid(path):
 
     return DataFile(path, 'FID', times, ylabels, data, metadata)
 
-def parse_ch_other(path):
+def parse_ch_other(path, head):
     """
     Parses an Agilent .ch file with CAD, ELSD, or UV channel data.
     
@@ -174,11 +172,38 @@ def parse_ch_other(path):
         DataFile with CAD, ELSD, or UV data, if parsable. Otherwise, None.
 
     """
-    data_offsets = {
-        'time_range': 0x11A,
-        'scaling_factor': 0x127C,
-        'data_start': 0x1800
-    }
+    if head == '130':
+        data_offsets = {
+            'time_range': 0x11A,
+            'scaling_factor': 0x127C,
+            'data_start': 0x1800
+        }
+        metadata_offsets = {
+            'notebook': 0x35A,
+            'date': 0x957,
+            'method': 0xA0E,
+            'instrument': 0xC11,
+            'unit': 0x104C,
+            'signal': 0x1075
+        }
+        gap = 2
+    elif head == '30':
+        data_offsets = {
+            'time_range': 0x11A,
+            'scaling_factor': 0x284,
+            'data_start': 0x400
+        }
+        metadata_offsets = {
+            'notebook': 0x18,
+            'date': 0xB2,
+            'method': 0xE4,
+            'instrument': 0xDA,
+            'unit': 0x244,
+            'signal': 0x254
+        }
+        gap = 1
+    else:
+        return None
 
     f = open(path, 'rb')
     byte_unpack = struct.Struct('>B').unpack
@@ -230,15 +255,8 @@ def parse_ch_other(path):
     data = data.reshape(-1, 1) * scaling_factor
 
     # Read file metadata.
-    metadata_offsets = {
-        'notebook': 0x35A, 
-        'date': 0x957, 
-        'method': 0xA0E, 
-        'instrument': 0xC11, 
-        'unit':  0x104C, 
-        'signal': 0x1075 
-    }
-    metadata = read_header(f, metadata_offsets)
+
+    metadata = read_header(f, metadata_offsets, gap=gap)
     f.close()
 
     # Determine the detector and ylabels using metadata. 
@@ -275,20 +293,45 @@ def parse_uv(path):
         DataFile with UV data, if the file can be parsed. Otherwise, None.
 
     """
-    data_offsets = {
-        'num_times': 0x116,
-        'scaling_factor': 0xC0D,
-        'data_start': 0x1000
-    }
+
 
     f = open(path, 'rb')
     uint_unpack = struct.Struct('<I').unpack 
     int_unpack = struct.Struct('<i').unpack 
     short_unpack = struct.Struct('<h').unpack
 
-    # Validate file header. 
-    head = struct.unpack('>I', f.read(4))[0]
-    if head != 0x03313331:
+    # Validate file header.
+    head = read_string(f, 0, gap=1)
+
+    if head == '131':
+        data_offsets = {
+            'num_times': 0x116,
+            'scaling_factor': 0xC0D,
+            'data_start': 0x1000
+        }
+        metadata_offsets = {
+            "notebook": 0x35A,
+            "date": 0x957,
+            "method": 0xA0E,
+            "unit": 0xC15,
+            "signal": 0xC40,
+            "vialpos": 0xFD7
+        }
+        gap = 2
+    elif head == '31':
+        data_offsets = {
+            'num_times': 0x116,
+            'scaling_factor': 0x13E,
+            'data_start': 0x200
+        }
+        metadata_offsets = {
+            "notebook": 0x18,
+            "date": 0xB2,
+            "method": 0xE4,
+            "unit": 0x146
+        }
+        gap = 1
+    else:
         f.close()
         return None
 
@@ -337,15 +380,8 @@ def parse_uv(path):
     data = data * scaling_factor
 
     # Read file metadata.
-    metadata_offsets = {
-        "notebook": 0x35A,
-        "date": 0x957,
-        "method": 0xA0E,
-        "unit": 0xC15,
-        "signal": 0xC40,
-        "vialpos": 0xFD7
-    }
-    metadata = read_header(f, metadata_offsets)
+
+    metadata = read_header(f, metadata_offsets, gap=gap)
     f.close()
 
     return DataFile(path, 'UV', times, wavelengths, data, metadata)
