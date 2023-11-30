@@ -242,7 +242,7 @@ def parse_ch_other(path, head):
 
     # Calculate retention times using the first and last times.
     f.seek(data_offsets['time_range'])
-    start_time, end_time = struct.unpack('>II', f.read(8))
+    start_time, end_time = struct.unpack('>ii', f.read(8))
     delta_time = (end_time - start_time) / (num_times - 1)
     times = np.arange(start_time, end_time + 1e-3, delta_time)
 
