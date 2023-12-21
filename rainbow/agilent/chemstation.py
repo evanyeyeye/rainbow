@@ -83,12 +83,13 @@ def parse_ch(path):
             Otherwise, None.
 
     """
-    head = read_string(open(path, 'rb'), offset=0, gap=1)
-    if head == '179':
-        return parse_ch_fid(path)
-    elif head == '130' or head == '30':
-        return parse_ch_other(path, head)
-    return None
+    with open(path, 'rb') as f:
+        head = read_string(f, offset=0, gap=1)
+        if head == '179':
+            return parse_ch_fid(path)
+        elif head == '130' or head == '30':
+            return parse_ch_other(path, head)
+        return None
 
 
 def parse_ch_fid(path):
