@@ -1,0 +1,176 @@
+
+ACE Experimental Record
+
+
+Inlet Method File: c:\masslynx\multipolaire.pro\acqudb\methode b a2b2_c2
+
+---------------------   Run method parameters   ----------------
+
+-- PUMP --
+
+Waters Acquity SDS
+ Run Time: 7.50 min
+ Comment:  
+ Solvent Selection A: A2 
+ Solvent Selection B: B2 
+ Low Pressure Limit: 0 psi
+ High Pressure Limit: 18000 psi
+ Solvent Name A: 50mM Ammonium formate in water 
+ Solvent Name B: Methanol 
+ Switch 1: No Change 
+ Switch 2: No Change 
+ Switch 3: No Change 
+ Seal Wash: 5.0 min
+ Chart Out 1: System Pressure 
+ Chart Out 2: %B 
+ System Pressure Data Channel: Yes 
+ Flow Rate Data Channel: No 
+ %A Data Channel: No 
+ %B Data Channel: Yes 
+ Primary A Pressure Data Channel: No 
+ Accumulator A Pressure Data Channel: No 
+ Primary B Pressure Data Channel: No 
+ Accumulator B Pressure Data Channel: No 
+ Degasser Pressure Data Channel: No 
+ [Gradient Table]
+  Time(min) Flow Rate %A %B Curve 
+ 1. Initial 0.500 10.0 90.0 Initial 
+ 2. 2.00 0.500 60.0 40.0 6 
+ 3. 5.50 0.500 60.0 40.0 6 
+ 4. 6.50 0.500 10.0 90.0 1 
+ 5. 7.50 0.500 10.0 90.0 1 
+ Run Events: Yes 
+ Gradient Start (Relative to Injection): -320 uL
+ 2D Repeat: No 
+
+-- END PUMP --
+
+-- DETECTOR -- 
+
+Waters Acquity CM
+
+ Target Column Temperature: 50.0 C
+ Temperature Alarm Band: Off 
+ Shutdown all columns: No 
+ Column Valve Position: Column 2 
+ Equilibration Time: 1.0 min
+ Active Preheater: Enabled 
+ External Valve 1: No Change 
+ External Valve 2: No Change 
+ External Valve 3: No Change 
+ Comment:  
+ Column Temperature Data Channel: No 
+ Preheater Temperature Data Channel: No 
+
+
+-- END DETECTOR -- 
+
+-- AUTOSAMPLER --
+
+Waters ACQUITY FTN AutoSampler 
+ Run Time: 7.50 min
+ Comment:  
+ Load Ahead: Disabled 
+ Loop Offline: Automatic min
+ Wash Solvent Name: 90/10 water/acetonitrile 
+ Pre-Inject Wash Time: 0.0 sec
+ Post-Inject Wash Time: 6.0 sec
+ Purge Solvent Name: 50/50 water/acetonitrile 
+ Dilution: Disabled 
+ Dilution Volume: 0 uL
+ Delay Time: 0 min
+ Dilution Needle Placement: 4 mm
+ Target Column Temperature: 50.0 C
+ Column Temperature Alarm Band: Disabled 
+ Target Sample Temperature: 15.0 C
+ Sample Temperature Alarm Band: Disabled 
+ Syringe Draw Rate: Automatic 
+ Needle Placement: Automatic 
+ Pre-Aspirate Air Gap: Automatic 
+ Post-Aspirate Air Gap: Automatic 
+ Column Temperature Data Channel: No 
+ Room Temperature Data Channel: No 
+ Sample Temperature Data Channel: No 
+ Sample Organizer Temperature Data Channel: No 
+ Sample Pressure Data Channel: No 
+ Preheater Temperature Data Channel: No 
+ Seal Force Data Channel: No 
+ No Injection Mode Enabled: No 
+ Autoaddition Mix Stroke Cycles: Automatic 
+ Autoaddition Mix Stroke Volume: Automatic uL
+ Active Preheater: Use Console Configuration 
+ Run Events: No 
+
+
+Sample Run Injection Parameter
+
+Injection Volume (ul)   -   10.00
+-- END AUTOSAMPLER --
+
+----------------------------  oOo  -----------------------------
+
+
+End of experimental record.
+
+
+
+------------------- Waters Acquity SDS Postrun Report  ---------------
+
+
+
+ IcsVersion: 1.67.2193 
+ FirmwareVersion: 1.71.387 (Feb 14 2018) 
+ Checksum: 0x1b6b9613 
+ SerialNumber: C19BSP206G 
+ Minimum System Pressure: 6604.6 
+ Maximum System Pressure: 9699.1 
+ Average System Pressure: 8612.8 
+ Minimum Degasser Pressure: 0.6 
+ Maximum Degasser Pressure: 0.6 
+ Average Degasser Pressure: 0.6 
+
+----------------------------  oOo  -----------------------------
+
+
+
+------------------- Waters ACQUITY FTN Postrun Report  ---------------
+
+
+
+ Software Version: 1.69.2261 
+ Firmware Version: 1.71.395 (Feb 14 2018) 
+ Checksum: 0x285858d7 
+ Serial Number: B19FNP011G 
+ Sample Syringe Size: 100.0 
+ Extension Loop Size: 0.0 
+ Needle Size: 15.0 
+ Minimum Sample Temperature: 10.3 C
+ Maximum Sample Temperature: 15.7 C
+ Average Sample Temperature: 13.2 C
+ Minimum Column Temperature: 0.0 C
+ Maximum Column Temperature: 0.0 C
+ Average Column Temperature: 0.0 C
+
+----------------------------  oOo  -----------------------------
+
+
+
+------------------- Waters Acquity CM Postrun Report  ---------------
+
+
+
+ Software Version: 1.69.2942 
+ Firmware Version: 1.69.154 (Feb 17 2017) 
+ Checksum: 0x17ac4a76 
+ Serial Number: F21CMP262G 
+ Valve Position: 2 
+ ColumnType: Torus™ DEA Column, 130Å, 1.7 µm 
+ Column Serial Number: 01103118615606 
+ Column Part Number: 186007614 
+ Total Injections on Column: 383 
+ Minimum Column Temperature: 50.0 C
+ Maximum Column Temperature: 50.0 C
+ Average Column Temperature: 50.0 C
+
+----------------------------  oOo  -----------------------------
+

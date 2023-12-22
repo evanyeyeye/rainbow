@@ -107,7 +107,7 @@ def parse_function(path, prec=0, polarity=None, calib=None):
     #     and _FUNC .DAT data format from the _FUNC .IDX file.
     # A "pair" refers to a data pair of mz-intensity or wavelength-absorbance.
     times, pair_counts, bytes_per_pair = parse_funcidx(path[:-3] + 'IDX')
-    if bytes_per_pair not in {2, 6, 8}:
+    if bytes_per_pair not in {2, 4, 6, 8}:
         raise Exception("The {bytes_per_pair}-bytes format is not supported.")
 
     # Extract the ylabels and data values from the _FUNC .DAT file. 
@@ -116,6 +116,8 @@ def parse_function(path, prec=0, polarity=None, calib=None):
         parse_funcdat = parse_funcdat6
     elif bytes_per_pair == 8:
         parse_funcdat = parse_funcdat8
+    elif bytes_per_pair == 4:
+        parse_funcdat = parse_funcdat4
     ylabels, data = parse_funcdat(path, pair_counts, prec, calib) 
     
     # Spectra without an assigned polarity always contain UV data.
@@ -200,6 +202,65 @@ def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     data = values.reshape((pair_counts.size, ylabels.size))
 
     return ylabels, data
+
+
+def parse_funcdat4(path, pair_counts, prec=0, calib=None):
+    """
+    Parses a Waters _FUNC .DAT file with the 4-bytes format.
+
+    This format may contain MS or UV data.
+
+    Learn more about this file format :ref:`here <funcdat6>`.
+
+    Args:
+        path (str): Path to the Waters _FUNC .DAT file.
+        pair_counts (np.ndarray):
+            1D array with the number of data pairs at each retention time.
+        prec (int, optional): Number of decimals to round ylabels.
+        calib (list, optional): Float calibration values of the spectrum.
+
+    Returns:
+        1D numpy array with ylabels. 2D numpy array with data values \
+            where the rows correspond to retention times and \
+            the columns correspond to ylabels.
+
+    """
+    # Extract the mz values from the _FUNCTNS.INF file.
+    # This code makes the assumption that in this format the
+    #     number of mz values is constant at each retention time.
+    inf_path = os.path.join(os.path.dirname(path), '_FUNCTNS.INF')
+    func_index = int(re.findall("\d+", os.path.basename(path))[0]) - 1
+    mzs = parse_funcinf(inf_path)[func_index]
+    ylabels = mzs[mzs != 0.0]
+
+    # Read most significant 4 bytes from each segment into `raw_values`.
+    with open(path, 'rb') as f:
+        raw_bytes = f.read()
+
+    # Calculate the `values` from each 4-byte segment.
+    num_datapairs = np.sum(pair_counts)
+    raw_values = np.ndarray(num_datapairs, '<I', raw_bytes)
+    
+    val_powers = raw_values >> 22             # get the first 10 bits (drop 22 on 32)
+    val_separator = (raw_values >> 21) & 0x1  # get bits at position 11
+    val_bases = raw_values & 0x1FFFFF         # keep the last 21 bits (11-32)
+    val_bases_float = val_bases / 0x400       # out of the 21 bits, the 11 first are the integer part and the 10 last are the "decimal" part
+                                              # bit at position 12 being always '1' it means that the float values
+                                              # is always between 1024 &nd 2048 (factor of 2)
+    min_val_bases = np.min(val_bases[val_bases > 0])
+    max_val_bases = np.max(val_bases)
+    val_base_ampl = max_val_bases  - 0xFFFFF
+
+    values  = val_bases_float * (2. ** np.subtract(val_powers,  10, dtype=np.int32))
+
+    # Note: We have not come across a sample with more than 1 mz value.
+    # This may need to be reshaped differently in the future.
+    data = values.reshape((pair_counts.size, ylabels.size))
+
+    del val_bases, val_powers, raw_values, raw_bytes
+
+    return ylabels, data
+
 
 def parse_funcinf(path):
     """
