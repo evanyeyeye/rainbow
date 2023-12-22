@@ -36,6 +36,14 @@ class TestWaters(tests.datatester.DataTester):
         """
         self._DataTester__test_data_directory("violet", "raw")
 
+    def test_white(self):
+        """
+        Tests a directory containing:
+            - 6 UV spectrum (4-byte format)
+            - 2 analog channels
+
+        """
+        self._DataTester__test_data_directory("white", "raw")
 
 if __name__ == '__main__':
     unittest.main()

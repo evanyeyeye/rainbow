@@ -53,6 +53,14 @@ class TestAgilent(tests.datatester.DataTester):
         """
         self._DataTester__test_data_directory("brown", "D")
 
+    def test_pink(self):
+        """
+        Tests a directory containing:
+            - UV spectrum (131 OL format)
+            - 6 MS channels (179 OL format)
+
+        """
+        self._DataTester__test_data_directory("pink", "D")
 
 if __name__ == '__main__':
     unittest.main()

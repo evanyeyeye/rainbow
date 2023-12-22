@@ -1,0 +1,69 @@
+$$ Version: 01.00
+$$ Acquired Name: 20210920 B-012
+$$ Acquired Date: 20-Sep-2021
+$$ Acquired Time: 18:09:55
+$$ Job Code: 210920 B
+$$ Task Code: 
+$$ User Name: 
+$$ Instrument: XEVO-TQXS#WBA0615
+$$ Conditions: 
+$$ Laboratory Name: 
+$$ Sample Description: 
+$$ Solvent Delay: 0.0000
+$$ Submitter: 
+$$ SampleID: blc
+$$ Bottle Number: 1:1
+$$ Plate Desc: 01TL,XY,SD,1: 6,2: 8,3:140.0,4:140.0,5:  0.0,6:  0.0,7:O,8:O,9:1280.0,10:860.0,11:320.0,12:120.0,13:150.0,14: 83.0
+$$ Cal MS1 Static: -2.507833516956857e-1,1.002370742735116e0,-5.615332617669991e-6,4.558796922122608e-9,-1.197707942128788e-12,T0
+$$ Cal MS2 Static: -1.868348897131098e-2,1.001148970605831e0,-2.181727527324430e-6,1.358755338004990e-9,-2.709098130422418e-13,T0
+$$ Associated Datafile: 
+$$ Cal MS1 Static Params: 27,2020,0.00,4.00,2.7,14.8,0.5,ESI Calibration TQ ResCal,STATMS1
+$$ Cal MS1 Dynamic Params: 2,2048,20.4600,-1.00,2.7,14.8,0.5,ESI Calibration TQ ResCal,SCNMS1
+$$ Cal MS1 Fast Params: 2,2048,1.2000,-1.00,2.7,14.8,0.5,ESI Calibration TQ ResCal,FASTMS1
+$$ Cal MS2 Static Params: 27,2020,0.00,4.00,2.7,15.0,0.7,ESI Calibration TQ ResCal,STATMS2
+$$ Cal MS2 Dynamic Params: 2,2048,20.4600,-1.00,2.7,15.0,0.7,ESI Calibration TQ ResCal,SCNMS2
+$$ Cal MS2 Fast Params: 2,2048,1.2000,-1.00,2.7,15.0,0.7,ESI Calibration TQ ResCal,FASTMS2
+$$ Cal Time: 11:04
+$$ Cal Date: 10/21/20
+$$ Analog Channel 1 Offset: 0.000
+$$ Analog Channel 2 Offset: 0.000
+$$ Analog Channel 3 Offset: 0.000
+$$ Analog Channel 4 Offset: 0.000
+$$ Mux Stream: 0
+$$ Cal Temperature: 0.0000000
+$$ Inlet Method: C:\MassLynx\MULTIPOLAIRE.PRO\ACQUDB\Methode B A2B2_C2
+$$ Inlet Prerun Method: 
+$$ Inlet Postrun Method: 
+$$ Inlet Switch Method: 
+$$ HPLC Method: 
+$$ MS Method: C:\MassLynx\MULTIPOLAIRE.PRO\ACQUDB\methB_Waters_20210401.EXP
+$$ Tune Method: C:\MassLynx\MULTIPOLAIRE.PRO\ACQUDB\Polar_Pesticides_Tune_21oct2020.IPR
+$$ FractionLynx Method: 
+$$ Spare1: 
+$$ Spare2: 
+$$ Spare3: 
+$$ Spare4: 
+$$ Spare5: 
+$$ Reinjections: 0
+$$ PIC MRM Function:  
+$$ PIC Scan Function: 0,0
+$$ ScanWave Func List: 
+$$ Calibration File: C:\MassLynx\IClassXevo TQ-XS_WBA615_Installation.PRO\ACQUDB\calibration_21OCT2020with29.cal
+$$ Cal Function 1: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Cal Function 2: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Cal Function 3: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Cal Function 4: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Cal Function 5: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Cal Function 6: 0.000000000000000e0,1.000000000000000e0,T0
+$$ Cal StdDev Function 1: 0.000000000000000e0
+$$ Cal StdDev Function 2: 0.000000000000000e0
+$$ Cal StdDev Function 3: 0.000000000000000e0
+$$ Cal StdDev Function 4: 0.000000000000000e0
+$$ Cal StdDev Function 5: 0.000000000000000e0
+$$ Cal StdDev Function 6: 0.000000000000000e0
+$$ Cal CoVar 1: 0.000000000000000e0,0.000000000000000e0,0.000000000000000e0
+$$ Cal CoVar 2: 0.000000000000000e0,0.000000000000000e0,0.000000000000000e0
+$$ Cal CoVar 3: 0.000000000000000e0,0.000000000000000e0,0.000000000000000e0
+$$ Cal CoVar 4: 0.000000000000000e0,0.000000000000000e0,0.000000000000000e0
+$$ Cal CoVar 5: 0.000000000000000e0,0.000000000000000e0,0.000000000000000e0
+$$ Cal CoVar 6: 0.000000000000000e0,0.000000000000000e0,0.000000000000000e0
