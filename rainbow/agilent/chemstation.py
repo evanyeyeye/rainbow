@@ -15,7 +15,7 @@ MAIN PARSING METHODS
 """
 
 
-def parse_allfiles(path, prec=0):
+def parse_allfiles(path, prec=0, requested_files=None):
     """
     Finds and parses Agilent Chemstation data files \
         with a .ch, .uv, or .ms extension from a .D directory.
@@ -23,6 +23,7 @@ def parse_allfiles(path, prec=0):
     Args:
         path (str): Path to the .D directory.
         prec (int, optional): Number of decimals to round mz values.
+        requested_files (list, optional): List of filenames to parse.
 
     Returns:
         List with a DataFile for each parsed data file. 
@@ -30,6 +31,8 @@ def parse_allfiles(path, prec=0):
     """
     datafiles = []
     for name in os.listdir(path):
+        if requested_files and name.lower() not in requested_files:
+            continue
         datafile = parse_file(os.path.join(path, name), prec)
         if datafile:
             datafiles.append(datafile)
