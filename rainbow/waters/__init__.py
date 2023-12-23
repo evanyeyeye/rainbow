@@ -35,7 +35,7 @@ def read_metadata(path):
         path (str): Path of the directory.
 
     Returns:
-        Dictionary representing metadata in the Waters .raw directory.
+        Dictionary containing a list of datafiles and the metadata.
     """
     datafiles = []
     metadata = masslynx.parse_metadata(path)

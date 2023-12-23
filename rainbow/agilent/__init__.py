@@ -40,7 +40,7 @@ def read_metadata(path):
         path (str): Path of the directory.
 
     Returns:
-        Dictionary representing metadata in the Agilent .D directory.
+        Dictionary containing a list of datafiles and the metadata.
 
     """
     datafiles = []

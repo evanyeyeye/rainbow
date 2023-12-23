@@ -64,7 +64,7 @@ def read_metadata(path):
         path (str): Path of the directory.
 
     Returns:
-        Dictionary representing the metadata of the directory.
+        Dictionary containing a list of datafiles and the metadata.
 
     """
     datadir = None
