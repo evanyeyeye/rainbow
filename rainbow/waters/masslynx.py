@@ -7,12 +7,13 @@ import re
 import numpy as np
 from rainbow.datafile import DataFile
 
-
 """
 SPECTRUM PARSING METHODS
 
 """
-def parse_spectrum(path, prec=0):
+
+
+def parse_spectrum(path, prec=0, requested_files=None):
     """
     Finds and parses Waters UV and MS spectra from a .raw directory.
 
@@ -22,7 +23,8 @@ def parse_spectrum(path, prec=0):
 
     Args:
         path (str): Path to the .raw directory. 
-        prec (int, optional): Number of decimals to round ylabels. 
+        prec (int, optional): Number of decimals to round ylabels.
+        requested_files (list, optional): List of filenames to parse.
     
     Returns:
         List with a DataFile for each parsed spectrum.  
@@ -63,24 +65,22 @@ def parse_spectrum(path, prec=0):
 
     # The raw spectrum data is stored in _FUNC .DAT files. 
     # Each MS spectrum has an assigned polarity, 
-    #     but may not have calibration values. 
-    funcdat_paths = sorted([os.path.join(path, fn) for fn in os.listdir(path)
-                            if re.match(r'^_FUNC\d{3}.DAT$', fn)])
-    funcdat_index = 0
-    assert(os.path.getsize(os.path.join(path, "_FUNCTNS.INF")) == 32 * 13 * len(funcdat_paths))
-    while funcdat_index < len(funcdat_paths):
+    #     but may not have calibration values.
+    funcdat_files = sorted(fn for fn in os.listdir(path) if re.match(r'^_FUNC\d{3}.DAT$', fn))
+    assert (os.path.getsize(os.path.join(path, "_FUNCTNS.INF")) == 32 * 13 * len(funcdat_files))
+    for funcdat_index, funcdat_file in enumerate(funcdat_files):
+        if requested_files and funcdat_file.lower() not in requested_files:
+            continue
         polarity = None
         calib = None
         if funcdat_index < len(polarities):
             polarity = polarities[funcdat_index]
             if funcdat_index < len(calib_nums):
                 calib = calib_nums[funcdat_index]
-        datafile = parse_function(
-            funcdat_paths[funcdat_index], prec, polarity, calib)
+        datafile = parse_function(os.path.join(path, funcdat_file), prec, polarity, calib)
         datafiles.append(datafile)
-        funcdat_index += 1
-
     return datafiles
+
 
 def parse_function(path, prec=0, polarity=None, calib=None):
     """
@@ -111,20 +111,21 @@ def parse_function(path, prec=0, polarity=None, calib=None):
         raise Exception("The {bytes_per_pair}-bytes format is not supported.")
 
     # Extract the ylabels and data values from the _FUNC .DAT file. 
-    parse_funcdat = parse_funcdat2 
+    parse_funcdat = parse_funcdat2
     if bytes_per_pair == 6:
         parse_funcdat = parse_funcdat6
     elif bytes_per_pair == 8:
         parse_funcdat = parse_funcdat8
     elif bytes_per_pair == 4:
         parse_funcdat = parse_funcdat4
-    ylabels, data = parse_funcdat(path, pair_counts, prec, calib) 
-    
+    ylabels, data = parse_funcdat(path, pair_counts, prec, calib)
+
     # Spectra without an assigned polarity always contain UV data.
     detector = 'MS' if polarity else 'UV'
     metadata = {'polarity': polarity} if polarity else {}
 
     return DataFile(path, detector, times, ylabels, data, metadata)
+
 
 def parse_funcidx(path):
     """ 
@@ -141,7 +142,7 @@ def parse_funcidx(path):
             the file format of the corresponding _FUNC .DAT file. 
 
     """
-    num_times = os.path.getsize(path) // 22 
+    num_times = os.path.getsize(path) // 22
 
     # Extract retention times and indexing info from the _FUNC .IDX file.
     with open(path, 'rb') as f:
@@ -158,6 +159,7 @@ def parse_funcidx(path):
     bytes_per_pair = (dat_size - final_offset) // final_paircount
 
     return times, pair_counts, bytes_per_pair
+
 
 def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     """
@@ -240,18 +242,18 @@ def parse_funcdat4(path, pair_counts, prec=0, calib=None):
     # Calculate the `values` from each 4-byte segment.
     num_datapairs = np.sum(pair_counts)
     raw_values = np.ndarray(num_datapairs, '<I', raw_bytes)
-    
-    val_powers = raw_values >> 22             # get the first 10 bits (drop 22 on 32)
+
+    val_powers = raw_values >> 22  # get the first 10 bits (drop 22 on 32)
     val_separator = (raw_values >> 21) & 0x1  # get bits at position 11
-    val_bases = raw_values & 0x1FFFFF         # keep the last 21 bits (11-32)
-    val_bases_float = val_bases / 0x400       # out of the 21 bits, the 11 first are the integer part and the 10 last are the "decimal" part
-                                              # bit at position 12 being always '1' it means that the float values
-                                              # is always between 1024 &nd 2048 (factor of 2)
+    val_bases = raw_values & 0x1FFFFF  # keep the last 21 bits (11-32)
+    val_bases_float = val_bases / 0x400  # out of the 21 bits, the 11 first are the integer part and the 10 last are the "decimal" part
+    # bit at position 12 being always '1' it means that the float values
+    # is always between 1024 &nd 2048 (factor of 2)
     min_val_bases = np.min(val_bases[val_bases > 0])
     max_val_bases = np.max(val_bases)
-    val_base_ampl = max_val_bases  - 0xFFFFF
+    val_base_ampl = max_val_bases - 0xFFFFF
 
-    values  = val_bases_float * (2. ** np.subtract(val_powers,  10, dtype=np.int32))
+    values = val_bases_float * (2. ** np.subtract(val_powers, 10, dtype=np.int32))
 
     # Note: We have not come across a sample with more than 1 mz value.
     # This may need to be reshaped differently in the future.
@@ -282,6 +284,7 @@ def parse_funcinf(path):
     num_funcs = os.path.getsize(path) // 416
     mzs = np.ndarray((num_funcs, 32), "<f", raw_bytes, 160, (416, 4))
     return mzs
+
 
 def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     """
@@ -324,7 +327,7 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     # If it is MS data, calibrate the masses. 
     if calib:
         keys = calibrate(keys, calib)
-    
+
     # Then round the keys to the nearest whole number. 
     keys = np.round(keys, prec)
 
@@ -345,13 +348,14 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     for i in range(num_times):
         stop_index = cur_index + pair_counts[i]
         np.add.at(
-            data[i], 
-            key_indices[cur_index:stop_index], 
+            data[i],
+            key_indices[cur_index:stop_index],
             values[cur_index:stop_index])
         cur_index = stop_index
     del key_indices, keys, values, pair_counts
 
     return ylabels, data
+
 
 def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     """
@@ -384,18 +388,18 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     # The data is stored as key-value pairs. 
     # For example, in MS data these are mz-intensity pairs. 
     # Split each segment into `key_bits` and `val_bits`.
-    key_bits = raw_values >> 28 
+    key_bits = raw_values >> 28
     val_bits = raw_values & 0xFFFFFFF
     del raw_values, raw_bytes
 
     # Split `key_bits` into integer and fractional components.
-    num_keyint_bits = key_bits >> 31  
+    num_keyint_bits = key_bits >> 31
     keyint_masks = pow(2, num_keyint_bits) - 1
-    num_keyfrac_bits = 31 - num_keyint_bits 
+    num_keyfrac_bits = 31 - num_keyint_bits
     keyfrac_masks = pow(2, num_keyfrac_bits) - 1
-    keyints = (key_bits >> num_keyfrac_bits) & keyint_masks 
+    keyints = (key_bits >> num_keyfrac_bits) & keyint_masks
     keyfracs = calc_frac(key_bits & keyfrac_masks, num_keyfrac_bits)
-    del num_keyint_bits, num_keyfrac_bits, key_bits 
+    del num_keyint_bits, num_keyfrac_bits, key_bits
     del keyint_masks, keyfrac_masks
 
     # Get the `keys` by adding the components. 
@@ -403,7 +407,7 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     keys = keyints + keyfracs
     if calib:
         keys = calibrate(keys, calib)
-    del keyints, keyfracs 
+    del keyints, keyfracs
 
     # Round the keys to the nearest whole number. 
     keys = np.round(keys, prec)
@@ -412,14 +416,14 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     # This is based on the number of bits allocated for each integer.
     num_valint_bits = val_bits >> 22
     num_shifted = np.zeros(num_datapairs, np.uint8)
-    shift_cond = num_valint_bits > 21 
-    num_shifted[shift_cond] = num_valint_bits[shift_cond] - 21 
-    num_valint_bits[shift_cond] = 21 
+    shift_cond = num_valint_bits > 21
+    num_shifted[shift_cond] = num_valint_bits[shift_cond] - 21
+    num_valint_bits[shift_cond] = 21
     del shift_cond
 
     # Split `val_bits` into integer and fractional components.
     valint_masks = pow(2, num_valint_bits) - 1
-    num_valfrac_bits = 21 - num_valint_bits 
+    num_valfrac_bits = 21 - num_valint_bits
     valfrac_masks = pow(2, num_valfrac_bits) - 1
     valints = ((val_bits >> num_valfrac_bits) & valint_masks) << num_shifted
     valfracs = calc_frac(val_bits & valfrac_masks, num_valfrac_bits)
@@ -429,7 +433,7 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     # Get the `values` by adding the components. 
     values = valints + valfracs
     del valints, valfracs
-   
+
     # Make the array of `ylabels` with keys. 
     ylabels = np.unique(keys)
     ylabels.sort()
@@ -441,13 +445,14 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     for i in range(num_times):
         stop_index = cur_index + pair_counts[i]
         np.add.at(
-            data[i], 
-            key_indices[cur_index:stop_index], 
+            data[i],
+            key_indices[cur_index:stop_index],
             values[cur_index:stop_index])
         cur_index = stop_index
     del key_indices, keys, values, pair_counts
 
     return ylabels, data
+
 
 def calibrate(mzs, calib_nums):
     """
@@ -469,8 +474,9 @@ def calibrate(mzs, calib_nums):
     for coeff in calib_nums:
         calib_mzs += coeff * var
         var *= mzs
-    del var 
+    del var
     return calib_mzs
+
 
 def calc_frac(keyfrac_bits, num_bits):
     """ 
@@ -491,7 +497,7 @@ def calc_frac(keyfrac_bits, num_bits):
         1D numpy array with fractional values. 
 
     """
-    exponent = np.uint64(0x3FF << 52) 
+    exponent = np.uint64(0x3FF << 52)
     num_shifted = 52 - num_bits
     base = keyfrac_bits << num_shifted
     fracs = (exponent | base).view(np.float64)
@@ -504,12 +510,15 @@ def calc_frac(keyfrac_bits, num_bits):
 ANALOG PARSING METHODS
 
 """
-def parse_analog(path):
+
+
+def parse_analog(path, requested_files=None):
     """
     Finds and parses analog data from a Waters .raw directory.
 
     Args:
-        path (str): Path to the .raw directory. 
+        path (str): Path to the .raw directory.
+        requested_files (list, optional): List of filenames to parse.
     
     Returns:
         List of DataFiles that contain analog data. 
@@ -518,15 +527,18 @@ def parse_analog(path):
     datafiles = []
 
     if '_CHROMS.INF' not in os.listdir(path):
-        return datafiles 
+        return datafiles
 
     analog_info = parse_chroinf(os.path.join(path, '_CHROMS.INF'))
     for i in range(len(analog_info)):
-        fn = os.path.join(path, f"_CHRO{i+1:0>3}.DAT")
-        datafile = parse_chrodat(fn, *analog_info[i])
+        fn = f"_CHRO{i + 1:0>3}.DAT"
+        if requested_files and fn.lower() not in requested_files:
+            continue
+        datafile = parse_chrodat(os.path.join(path, fn), *analog_info[i])
         if datafile:
             datafiles.append(datafile)
     return datafiles
+
 
 def parse_chroinf(path):
     """
@@ -543,18 +555,19 @@ def parse_chroinf(path):
 
     """
     f = open(path, 'r')
-    f.seek(0x84) # start offset 
+    f.seek(0x84)  # start offset
     analog_info = []
     while f.tell() < os.path.getsize(path):
         line = re.sub(r'[\0-\x04]|\$CC\$|\([0-9]*\)', '', f.read(0x55)).strip()
         split = line.split(',')
         info = []
-        info.append(split[0]) # name
+        info.append(split[0])  # name
         if len(split) == 6:
-            info.append(split[5]) # unit
+            info.append(split[5])  # unit
         analog_info.append(info)
     f.close()
     return analog_info
+
 
 def parse_chrodat(path, name, units=None):
     """
@@ -587,7 +600,7 @@ def parse_chrodat(path, name, units=None):
     with open(path, 'rb') as f:
         raw_bytes = f.read()
     times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 8)
-    vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start+4, 8)
+    vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start + 4, 8)
 
     # The arrays are copied so that they are mutable. 
     # This is just for user convenience. 
@@ -606,8 +619,8 @@ def parse_chrodat(path, name, units=None):
 
     ylabels = np.array([''])
     metadata = {'signal': name}
-    if units: 
-        metadata['unit'] = units 
+    if units:
+        metadata['unit'] = units
 
     return DataFile(path, detector, times, ylabels, vals, metadata)
 
@@ -616,6 +629,7 @@ def parse_chrodat(path, name, units=None):
 METADATA PARSING METHOD
 
 """
+
 
 def parse_metadata(path):
     """
@@ -649,4 +663,4 @@ def parse_metadata(path):
             value = line.split(': ')[1]
             if not value.isspace():
                 metadata['vialpos'] = value
-    return metadata 
+    return metadata

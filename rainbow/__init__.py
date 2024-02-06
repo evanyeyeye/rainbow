@@ -1,10 +1,10 @@
-import os 
+import os
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 from rainbow import agilent, waters
 
 
-def read(path, prec=0, hrms=False):
+def read(path, prec=0, hrms=False, requested_files=None):
     """
     Reads a chromatogram data directory. Main method of the package. 
 
@@ -22,7 +22,8 @@ def read(path, prec=0, hrms=False):
     Args:
         path (str): Path of the directory.
         prec (int, optional): Number of decimals to round ylabels.
-        hrms (bool, optional): Flag for Agilent HRMS parsing. 
+        hrms (bool, optional): Flag for Agilent HRMS parsing.
+        requested_files (list, optional): List of filenames to parse.
 
     Returns:
         DataDirectory representing the directory. 
@@ -32,21 +33,28 @@ def read(path, prec=0, hrms=False):
         raise Exception(f"{path} is not a directory.")
 
     if not isinstance(prec, int) or prec < 0:
-        raise Exception(f"Invalid precision: {prec}.") 
+        raise Exception(f"Invalid precision: {prec}.")
 
     if not isinstance(hrms, bool):
         raise Exception(f"The hrms flag must be a boolean.")
 
+    if requested_files is not None and not isinstance(requested_files, list):
+        raise Exception(f"The requested_files argument must be a list.")
+
+    if requested_files:
+        requested_files = list(map(str.lower, requested_files))
+
     datadir = None
     ext = os.path.splitext(path)[1]
     if ext.upper() == '.D':
-        datadir = agilent.read(path, prec, hrms)
+        datadir = agilent.read(path, prec, hrms, requested_files)
     elif ext.lower() == '.raw':
-        datadir = waters.read(path, prec)
-    
+        datadir = waters.read(path, prec, requested_files)
+
     if datadir is None:
         raise Exception(f"Rainbow cannot read {path}.")
     return datadir
+
 
 def read_metadata(path):
     """
@@ -56,7 +64,7 @@ def read_metadata(path):
         path (str): Path of the directory.
 
     Returns:
-        Dictionary representing the metadata of the directory.
+        Dictionary containing a list of datafiles and the metadata.
 
     """
     datadir = None
