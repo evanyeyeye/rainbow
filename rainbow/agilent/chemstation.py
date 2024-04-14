@@ -88,14 +88,14 @@ def parse_ch(path):
     """
     with open(path, 'rb') as f:
         head = read_string(f, offset=0, gap=1)
-        if head == '179':
-            return parse_ch_fid(path)
-        elif head == '130' or head == '30':
+        if head in ['179', '181']:
+            return parse_ch_fid(path, head)
+        elif head in ['130', '30']:
             return parse_ch_other(path, head)
         return None
 
 
-def parse_ch_fid(path):
+def parse_ch_fid(path, head):
     """
     Parses an Agilent .ch file with FID channel data. 
     
@@ -110,21 +110,43 @@ def parse_ch_fid(path):
         DataFile with FID data, if the file can be parsed. Otherwise, None.
 
     """
-    data_offsets = {
-        'num_times': 0x116,
-        'scaling_factor': 0x127C,
-        'data_start': 0x1800
-    }
+    if head == '181':
+        data_offsets = {
+            'num_times': 0x116,
+            'scaling_factor': 0x127C,
+            'data_start': 0x1800
+        }
+        metadata_offsets = {
+            'notebook': 0x35A,
+            'date': 0x957,
+            'method': 0xA0E,
+            'instrument': 0xC11,
+            'unit': 0x104C,
+        }
+        gap = 2
+    elif head == '179':
+        data_offsets = {
+            'num_times': 0x116,
+            'scaling_factor': 0x127C,
+            'data_start': 0x1800
+        }
+        metadata_offsets = {
+            'notebook': 0x35A,
+            'date': 0x957,
+            'method': 0xA0E,
+            'instrument': 0xC11,
+            'unit': 0x104C,
+            'signal': 0x1075
+        }
 
     f = open(path, 'rb')
     raw_bytes = f.read()
+    file_size = f.tell()
 
     # Extract the number of retention times.
-    f.seek(data_offsets['num_times'])
-    num_times = struct.unpack(">I", f.read(4))[0]
-    if num_times == 0:
-        return None
+    num_times = (file_size - data_offsets['data_start']) // 8
 
+    f.seek(data_offsets['num_times'] + 4)
     # Compute retention times using the first and last times. 
     start_time = struct.unpack(">f", f.read(4))[0]
     end_time = struct.unpack(">f", f.read(4))[0]
@@ -132,8 +154,10 @@ def parse_ch_fid(path):
     times = np.arange(start_time, end_time + 1e-3, delta_time)
 
     # Extract the raw data values.
-    data = np.ndarray(
-        num_times, '<d', raw_bytes, data_offsets['data_start'], 8)
+    if head == '181':
+        data = np.array(decode_double_delta(f, data_offsets['data_start']), dtype=np.float64)
+    else:
+        data = np.ndarray(num_times, '<d', raw_bytes, data_offsets['data_start'], 8)
     data = data.copy().reshape(-1, 1)
 
     # Convert times into minutes.
@@ -148,14 +172,6 @@ def parse_ch_fid(path):
     ylabels = np.array([''])
 
     # Extract metadata from file header.
-    metadata_offsets = {
-        'notebook': 0x35A,
-        'date': 0x957,
-        'method': 0xA0E,
-        'instrument': 0xC11,
-        'unit': 0x104C,
-        'signal': 0x1075
-    }
     metadata = read_header(f, metadata_offsets)
     f.close()
 
@@ -218,31 +234,10 @@ def parse_ch_other(path, head):
     int_unpack = struct.Struct('>i').unpack
 
     # Extract the raw data values.
-    # Count the total number of retention times. 
-    f.seek(data_offsets['data_start'])
-    absorbances = []
-    absorb_accum = 0
-    while True:
-        # If the segment header is invalid, stop reading.  
-        head = byte_unpack(f.read(1))[0]
-        if head != 0x10:
-            break
-        num_times_seg = byte_unpack(f.read(1))[0]
-
-        # If the next short is equal to -0x8000
-        #     then the next absorbance value is the next integer. 
-        # Otherwise, the short is a delta from the last absorbance value.
-        for _ in range(num_times_seg):
-            check_int = short_unpack(f.read(2))[0]
-            if check_int == -0x8000:
-                absorb_accum = int_unpack(f.read(4))[0]
-            else:
-                absorb_accum += check_int
-            absorbances.append(absorb_accum)
-
+    # Count the total number of retention times.
     # Process the extracted values.
-    # If no values are extracted, this file is invalid. 
-    data = np.array(absorbances)
+    # If no values are extracted, this file is invalid.
+    data = np.array(decode_delta(f, data_offsets['data_start']))
     num_times = data.size
     if num_times == 0:
         return None
@@ -279,6 +274,57 @@ def parse_ch_other(path, head):
 
     return DataFile(path, detector, times, ylabels, data, metadata)
 
+def decode_delta(f, offset):
+    byte_unpack = struct.Struct('>B').unpack
+    short_unpack = struct.Struct('>h').unpack
+    int_unpack = struct.Struct('>i').unpack
+    # Extract the raw data values.
+    # Count the total number of retention times.
+    f.seek(offset)
+    absorbances = []
+    absorb_accum = 0
+    while True:
+        # If the segment header is invalid, stop reading.
+        head = byte_unpack(f.read(1))[0]
+        if head != 0x10:
+            break
+        num_times_seg = byte_unpack(f.read(1))[0]
+
+        # If the next short is equal to -0x8000
+        #     then the next absorbance value is the next integer.
+        # Otherwise, the short is a delta from the last absorbance value.
+        for _ in range(num_times_seg):
+            check_int = short_unpack(f.read(2))[0]
+            if check_int == -0x8000:
+                absorb_accum = int_unpack(f.read(4))[0]
+            else:
+                absorb_accum += check_int
+            absorbances.append(absorb_accum)
+
+    return absorbances
+
+def decode_double_delta(f, offset):
+    byte_unpack = struct.Struct('>B').unpack
+    short_unpack = struct.Struct('>h').unpack
+    int_unpack = struct.Struct('>i').unpack
+    f.seek(0, 2)
+    file_size = f.tell()
+    f.seek(offset)
+    signals = []
+    count = 1
+    buffer = [0, 0, 0]
+
+    while f.tell() < file_size:
+        buffer[2] = short_unpack(f.read(2))[0]
+        if buffer[2] == 0x7fff:
+            buffer[0] = short_unpack(f.read(2))[0] << 32 | int_unpack(f.read(4))[0]
+            buffer[1] = 0
+        else:
+            buffer[1] += buffer[2]
+            buffer[0] += buffer[1]
+        signals.append(buffer[0])
+
+    return signals
 
 """
 .uv PARSING METHODS
