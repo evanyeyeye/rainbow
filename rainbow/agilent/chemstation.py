@@ -118,13 +118,12 @@ def parse_ch_fid(path):
 
     f = open(path, 'rb')
     raw_bytes = f.read()
+    file_size = f.tell()
 
     # Extract the number of retention times.
-    f.seek(data_offsets['num_times'])
-    num_times = struct.unpack(">I", f.read(4))[0]
-    if num_times == 0:
-        return None
+    num_times = (file_size - data_offsets['data_start']) // 8
 
+    f.seek(data_offsets['num_times'] + 4)
     # Compute retention times using the first and last times. 
     start_time = struct.unpack(">f", f.read(4))[0]
     end_time = struct.unpack(">f", f.read(4))[0]
