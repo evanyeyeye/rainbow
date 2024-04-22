@@ -6,6 +6,7 @@ import os
 import re
 import numpy as np
 from rainbow.datafile import DataFile
+import pandas as pd
 
 """
 SPECTRUM PARSING METHODS
@@ -664,3 +665,27 @@ def parse_metadata(path):
             if not value.isspace():
                 metadata['vialpos'] = value
     return metadata
+
+
+
+def parse_compound_names(path):
+    with open(os.path.join(path, "_FUNC001.CMP"), "rb") as f:
+        data = f.read().decode("ascii", "ignore")
+        data = data[7:]
+        data = data.split("\x00")
+        data = list(filter(lambda x: x != "", data))
+        # loop through the da{}ta and remove the byte sequences x18 
+        data = [re.sub(r'\x18', '', x) for x in data]
+    data
+
+    compounds = []
+    transition = []
+    for i in range(0, len(data), 3):
+        compounds.append(data[i])
+        transition.append(data[i+1])
+    df = pd.DataFrame({"compounds": compounds, "transition": transition})
+
+    df["index"] =  [i for i in range(1, len(transition)+1)]
+    df["measurments"] = df["compounds"] + df["index"].astype(str)
+
+    return  df
