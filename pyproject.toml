@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rainbow-api"
-version = "1.0.8"
+version = "1.0.9"
 description = "Read chromatography and mass spectrometry binary files"
 readme = "README.md"
 license = {text = "COPYING"}
@@ -18,7 +18,8 @@ classifiers = [
 dependencies = [
     "numpy",
     "matplotlib",
-    "lxml"
+    "lxml",
+    "pandas"
 ]
 
 [project.urls]
