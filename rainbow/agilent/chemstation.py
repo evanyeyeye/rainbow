@@ -605,7 +605,7 @@ def parse_ms(path, prec=0):
         num_times = int_unpack(f.read(4))[0]
     else:
         f.seek(data_offsets['gc_num_times'])
-        num_times = struct.unpack('<I', f.read(4))[0]
+        num_times = struct.unpack('<H', f.read(2))[0]
 
     # Go to the data start offset.
     f.seek(data_offsets['data_start'])
