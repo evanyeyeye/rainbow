@@ -1,7 +1,7 @@
 # rainbow
 [![PyPI](https://img.shields.io/pypi/v/rainbow-api)](https://pypi.org/project/rainbow-api)
 [![Documentation Status](https://readthedocs.org/projects/rainbow-api/badge/?version=latest)](https://rainbow-api.readthedocs.io/en/latest/?badge=latest)
-[![PyPI - Downloads](https://img.shields.io/pypi/dm/rainbow-api)](https://pypi.org/project/rainbow-api)
+[![PyPI - Downloads](https://static.pepy.tech/badge/rainbow-api)](https://pypi.org/project/rainbow-api)
 
 *rainbow* provides programmatic access to the raw data encoded in chromatography and mass spectrometry binary files. This library supports the following vendors and detectors:
 
