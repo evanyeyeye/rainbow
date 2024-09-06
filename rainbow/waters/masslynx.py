@@ -232,7 +232,7 @@ def parse_funcdat4(path, pair_counts, prec=0, calib=None):
     # This code makes the assumption that in this format the
     #     number of mz values is constant at each retention time.
     inf_path = os.path.join(os.path.dirname(path), '_FUNCTNS.INF')
-    func_index = int(re.findall("\d+", os.path.basename(path))[0]) - 1
+    func_index = int(re.findall(r"\d+", os.path.basename(path))[0]) - 1
     mzs = parse_funcinf(inf_path)[func_index]
     ylabels = mzs[mzs != 0.0]
 
