@@ -651,7 +651,7 @@ def parse_ms(path, prec=0):
     data = np.zeros((num_times, ylabels.size), dtype=np.uint32)
     cur_index = 0
     for i in range(num_times):
-        stop_index = cur_index + pair_counts[i]
+        stop_index = cur_index + int(pair_counts[i])
         np.add.at(
             data[i],
             mz_indices[cur_index:stop_index],
