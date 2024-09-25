@@ -689,3 +689,25 @@ def parse_compound_names(path):
     df["measurments"] = df["compounds"] + df["index"].astype(str)
 
     return  df
+
+
+def parse_funcinf_q3(path):
+    """
+    Parses a Waters _FUNCTNS.INF file for Q3 transitions
+
+    This file contains mz values for the 2-byte format. 
+
+    Learn more about this file format :ref:`here <funcdat2>`.
+
+    Args:
+        path (str): Path to the _FUNCTNS.INF file. 
+
+    Returns:
+        2D numpy array of mz values where the rows correspond to functions.
+
+    """
+    with open(path, 'rb') as f:
+        raw_bytes = f.read()
+    num_funcs = os.path.getsize(path) // 416
+    mzs = np.ndarray((num_funcs, 32), "<f", raw_bytes, 288, (416, 4))
+    return mzs
