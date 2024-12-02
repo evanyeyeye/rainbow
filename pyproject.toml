@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rainbow-api"
-version = "1.0.9"
+version = "1.0.10"
 description = "Read chromatography and mass spectrometry binary files"
 readme = "README.md"
-license = {text = "COPYING"}
+license = {text = "COPYING.LESSER"}
 authors = [
     {name = "Evan Shi and Eugene Kwan"},
     {email = "evanyshi@cmu.edu"}
 ]
 classifiers = [
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
 ]
 dependencies = [
     "numpy",
