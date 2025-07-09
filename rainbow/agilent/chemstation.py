@@ -5,6 +5,7 @@ Methods for parsing Agilent Chemstation files.
 
 import os
 import struct
+from collections import Counter
 import numpy as np
 from lxml import etree
 from rainbow.datafile import DataFile
@@ -847,13 +848,16 @@ def parse_metadata(path, datafiles):
     metadata['vendor'] = "Agilent"
 
     # Scan each DataFile for the date and vial position.
-    # These may be stored in multiple files but the values are constant. 
-    # In MS files, the time may be saved in a different format. 
-    for datafile in datafiles:
-        if 'date' not in metadata and 'date' in datafile.metadata:
-            metadata['date'] = datafile.metadata['date']
-        if 'vialpos' not in metadata and 'vialpos' in datafile.metadata:
-            metadata['vialpos'] = datafile.metadata['vialpos']
+    # These may be stored in multiple files but the values are constant.
+    # In MS files, the time may be saved in a different format.
+    # Get the most common values if they differ across files
+    dates = Counter(datafile.metadata['date'] for datafile in datafiles if 'date' in datafile.metadata)
+    vialposs = Counter(datafile.metadata['vialpos'] for datafile in datafiles if 'vialpos' in datafile.metadata)
+    if dates:
+        metadata['date'] = dates.most_common(1)[0][0]
+    if vialposs:
+        metadata['vialpos'] = vialposs.most_common(1)[0][0]
+
     if 'date' in metadata and 'vialpos' in metadata:
         return metadata
 
