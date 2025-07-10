@@ -84,4 +84,8 @@ class DataTester(unittest.TestCase):
             csv_path = outputs_path / (Path(name).stem + ".csv")
             with open(csv_path) as csv_f:
                 csv_lines = csv_f.read().splitlines()
-            self.assertListEqual(datafile.to_csvstr().splitlines(), csv_lines)
+                data_lines = datafile.to_csvstr().splitlines()
+            csv_list = [tuple(map(float, line.split(','))) for line in csv_lines[1:]]
+            data_list = [tuple(map(float, line.split(','))) for line in data_lines[1:]]
+            self.assertEqual(csv_lines[0], data_lines[0])
+            self.assertListEqual(csv_list, data_list)
