@@ -1,5 +1,5 @@
 [build-system]
-requires      = ["setuptools>=63.0.0", "wheel"]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,13 +7,11 @@ name = "rainbow-api"
 version = "1.0.10"
 description = "Read chromatography and mass spectrometry binary files"
 readme = "README.md"
-license = {text = "COPYING.LESSER"}
+license = "LGPL-3.0-or-later"
+license-files = ["COPYING.LESSER", "COPYING"]
 authors = [
-    {name = "Evan Shi and Eugene Kwan"},
-    {email = "evanyshi@cmu.edu"}
-]
-classifiers = [
-    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
+    { name = "Evan Shi", email = "evanyshi@cmu.edu" },
+    { name = "Eugene Kwan" }
 ]
 dependencies = [
     "numpy",
