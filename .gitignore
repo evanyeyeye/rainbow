@@ -2,4 +2,6 @@ __pycache__/
 docs/_build/*
 docs/_autosummary/*
 
+*.egg-info
+
 .DS_STORE
