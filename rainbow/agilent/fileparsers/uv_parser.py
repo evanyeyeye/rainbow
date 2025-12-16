@@ -1,12 +1,18 @@
+import io
+import struct
+from pathlib import Path
+from typing import BinaryIO
+
 import numpy as np
 
 from rainbow.datafile import DataFile
 from rainbow.agilent.fileparsers.common import *
 
+# --- Public API ---
 
-def parse_uv(path):
+def parse_uv(path: str | Path):
     """
-    Parses an Agilent .uv file.
+    Parses an Agilent .uv file from a filepath.
 
     These files contain UV spectra. 
 
@@ -19,13 +25,91 @@ def parse_uv(path):
         DataFile with UV data, if the file can be parsed. Otherwise, None.
 
     """
+    with open(path, "rb") as f:
+        return _parse_uv_core(f, path)
 
-    f = open(path, 'rb')
-    uint_unpack = struct.Struct('<I').unpack
-    int_unpack = struct.Struct('<i').unpack
-    short_unpack = struct.Struct('<h').unpack
+def parse_uv_fileobj(f: BinaryIO, 
+                     path: str | Path = "UNSPECIFIED"):
+    """
+    Parses an Agilent .uv file from a BinaryIO object (useful if you've already
+    opened the file).
 
-    # Validate file header.
+    These files contain UV spectra. 
+
+    Learn more about this file format :ref:`here <uv>`.
+
+    Args:
+        f (BinaryIO): An open binary stream for an Agilent .uv file.
+        path (str, optional): Optional filepath (used for the DataFile output).
+    
+    Returns:
+        DataFile with UV data, if the file can be parsed. Otherwise, None.
+
+    """
+
+    # Ensure binary stream (e.g. opened with 'rb' not 'r')
+    if isinstance(f, io.TextIOBase):
+        raise TypeError(
+            "Expected a binary file-like object (opened in 'rb' mode), "
+            "but got a text file object (opened in 'r' mode).")
+    
+    # Ensure stream is positioned at start (safe even if already at 0)
+    try:
+        f.seek(0)
+    except Exception as e:
+        raise IOError("Expected a seekable binary stream.") from e
+    return _parse_uv_core(f, path)
+
+def parse_uv_partial(path: str | Path):
+    """
+    Parses a partial Agilent .uv file from a filepath. 
+
+    Learn more about this file format :ref:`here <uv>`.
+
+    Args:
+        path (str): Path to the partial .uv file. 
+    
+    Returns:
+        DataFile with UV data, if the file can be parsed. Otherwise, None.
+
+    """
+    
+    with open(path, "rb") as f:
+        return _parse_uv_partial_core(f, path)
+
+def parse_uv_partial_from_fileobj(f: BinaryIO, 
+                                  path: str | Path = "UNSPECIFIED"):
+    """
+    Parses a partial Agilent .uv file from a BinaryIO object (useful if you've 
+    already opened the file). 
+
+    Learn more about this file format :ref:`here <uv>`.
+
+    Args:
+        f (BinaryIO): An open binary stream for an Agilent .uv file.
+        path (str, optional): Optional filepath (used for the DataFile output).
+    
+    Returns:
+        DataFile with UV data, if the file can be parsed. Otherwise, None.
+
+    """
+    
+    if isinstance(f, io.TextIOBase):
+        raise TypeError(
+            "Expected a binary file-like object (opened in 'rb' mode), "
+            "but received a text file object (opened in 'r' mode). "
+            "Open the file in binary mode, e.g., open(path, 'rb')."
+        )
+    try:
+        f.seek(0)
+    except Exception as e:
+        raise IOError("Expected a seekable binary stream.") from e
+    return _parse_uv_partial_core(f, path)
+
+# --- Internal cores ---
+
+def _parse_uv_core(f: BinaryIO, path: str | Path = None):
+    """Common parsing function based on filestreams."""
     head = read_string(f, 0, gap=1)
 
     if head == '131':
@@ -65,16 +149,15 @@ def parse_uv(path):
         decode = decode_uv_delta
         gap = 1
     else:
-        f.close()
         return None
 
     # Extract the number of retention times.
     f.seek(data_offsets["num_times"])
     num_times = struct.unpack(">I", f.read(4))[0]
-    # If there are none, the file may be a partial. 
+
+    # If there are none, the file may be a partial.
     if num_times == 0:
-        f.close()
-        return parse_uv_partial(path)
+        return _parse_uv_partial_core(f, path)
 
     # Compute the wavelengths by taking the range from 
     #     the header of the first data segment
@@ -98,38 +181,22 @@ def parse_uv(path):
     # Read file metadata.
 
     metadata = read_header(f, metadata_offsets, gap=gap)
-    f.close()
 
     return DataFile(path, 'UV', times, wavelengths, data, metadata)
 
-
-def parse_uv_partial(path):
-    """
-    Parses a partial Agilent .uv file. 
-
-    Learn more about this file format :ref:`here <uv>`.
-
-    Args:
-        path (str): Path to the partial .uv file. 
-    
-    Returns:
-        DataFile with UV data, if the file can be parsed. Otherwise, None.
-
-    """
+def _parse_uv_partial_core(f: BinaryIO, path: str | Path = None):
+    """Common parsing function for 'partial' files."""
     data_offsets = {
         'num_times': 0x116,
         'scaling_factor': 0xC0D,
         'data_start': 0x1000
     }
 
-    f = open(path, 'rb')
     uint_unpack = struct.Struct('<I').unpack
     int_unpack = struct.Struct('<i').unpack
     short_unpack = struct.Struct('<h').unpack
 
-    # Compute the wavelengths by taking the range from 
-    #     the header of the first data segment.
-    # If this process fails, then the file is not a partial. 
+    # Compute wavelengths from first data segment header
     f.seek(data_offsets["data_start"] + 0x8)
     try:
         start_wlen, end_wlen, delta_wlen = \
@@ -138,7 +205,7 @@ def parse_uv_partial(path):
     except Exception:
         return None
 
-    # Extract the retention times and absorbances from each data segment.
+    # Extract times and absorbances
     f.seek(data_offsets['data_start'])
     times = []
     absorbances = []
@@ -162,16 +229,15 @@ def parse_uv_partial(path):
         except Exception:
             break
 
-    # Process the extracted values.
     times = np.array(times) / 60000
     data = np.array(absorbances).reshape((times.size, wavelengths.size))
 
-    # Scale the absorbances. 
+    # Scale the absorbances
     f.seek(data_offsets['scaling_factor'])
     scaling_factor = struct.unpack('>d', f.read(8))[0]
     data = data * scaling_factor
 
-    # Read file metadata.
+    # Read metadata
     metadata_offsets = {
         "notebook": 0x35A,
         "date": 0x957,
@@ -181,9 +247,10 @@ def parse_uv_partial(path):
         "vialpos": 0xFD7
     }
     metadata = read_header(f, metadata_offsets)
-    f.close()
 
     return DataFile(path, 'UV', times, wavelengths, data, metadata)
+
+# --- Decoders ---
 
 def decode_uv_delta(f, data_offsets, num_times, num_wavelengths):
     uint_unpack = struct.Struct('<I').unpack

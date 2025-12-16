@@ -1,8 +1,12 @@
 import os
 
-from rainbow.agilent import chemstation
+from rainbow.agilent import chemstation, openlab_cds
 from rainbow.datadirectory import DataDirectory
 
+AGILENT_EXTENSIONS = [
+    ".D",
+    ".DX",
+]
 
 def read(path, prec=0, hrms=False, requested_files=None):
     """
@@ -19,15 +23,22 @@ def read(path, prec=0, hrms=False, requested_files=None):
 
     """
     datafiles = []
-    datafiles.extend(chemstation.parse_allfiles(path, prec, requested_files))
+    ext = os.path.splitext(path)[1]
+    if ext.upper() == ".D":
+        datafiles.extend(chemstation.parse_allfiles(path, prec, requested_files))
+        metadata = chemstation.parse_metadata(path, datafiles)
+    elif ext.upper() == ".DX":
+        datafiles.extend(openlab_cds.parse_dx_file(path, prec, requested_files))
+        metadata = openlab_cds.parse_metadata(path, datafiles)
+    else:
+        metadata = {}
+        
     if hrms:
         try:
             from rainbow.agilent import masshunter
             datafiles.extend(masshunter.parse_allfiles(path))
         except ModuleNotFoundError:
             raise ModuleNotFoundError("You must install python-lzf to parse masshunter files.")
-
-    metadata = chemstation.parse_metadata(path, datafiles)
 
     return DataDirectory(path, datafiles, metadata)
 

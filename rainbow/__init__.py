@@ -29,9 +29,12 @@ def read(path, prec=0, hrms=False, requested_files=None):
         DataDirectory representing the directory. 
 
     """
-    if not isinstance(path, str) or not os.path.isdir(path):
-        raise Exception(f"{path} is not a directory.")
-
+    if not isinstance(path, str) or not os.path.exists(path):
+        raise Exception(f"{path} cannot be found.")
+    
+    if not os.path.isdir(path) and not path.lower().endswith('.dx'):
+        raise Exception(f"{path} is not a directory or a .dx file.")
+    
     if not isinstance(prec, int) or prec < 0:
         raise Exception(f"Invalid precision: {prec}.")
 
@@ -46,9 +49,9 @@ def read(path, prec=0, hrms=False, requested_files=None):
 
     datadir = None
     ext = os.path.splitext(path)[1]
-    if ext.upper() == '.D':
+    if ext.upper() in agilent.AGILENT_EXTENSIONS:
         datadir = agilent.read(path, prec, hrms, requested_files)
-    elif ext.lower() == '.raw':
+    elif ext.upper() in waters.WATERS_EXTENSIONS:
         datadir = waters.read(path, prec, requested_files)
 
     if datadir is None:

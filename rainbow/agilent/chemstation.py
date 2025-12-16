@@ -4,12 +4,9 @@ Methods for parsing Agilent Chemstation files.
 """
 
 import os
-import struct
 from collections import Counter
-import numpy as np
 from lxml import etree
 
-from rainbow.datafile import DataFile
 from rainbow.agilent.fileparsers import parse_file
 
 """
@@ -67,6 +64,7 @@ def parse_metadata(path, datafiles):
     """
     metadata = {}
     metadata['vendor'] = "Agilent"
+    metadata['format'] = "Chemstation"
 
     # Scan each DataFile for the date and vial position.
     # These may be stored in multiple files but the values are constant.

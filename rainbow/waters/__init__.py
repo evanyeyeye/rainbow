@@ -4,6 +4,9 @@ import re
 from rainbow.waters import masslynx
 from rainbow.datadirectory import DataDirectory
 
+WATERS_EXTENSIONS = [
+    ".RAW",
+]
 
 def read(path, prec=0, requested_files=None):
     """
