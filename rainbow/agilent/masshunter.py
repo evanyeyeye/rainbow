@@ -235,7 +235,7 @@ def parse_msdata(path, prec=0):
             if b == '1' and coeff_idx < len(coefficients):
                 poly_coeffs[j] = coefficients[coeff_idx]
                 coeff_idx += 1
-        calib_values = sum(c * (np.clip(t_list, left, right)**i) for i, c in enumerate(poly_coeffs))
+        calib_values = sum(c * (np.clip(t_list, left, right)**ord) for ord, c in enumerate(poly_coeffs))
         calib_mzs = mzs - calib_values
 
         mz_list.extend(calib_mzs.tolist())   
@@ -243,7 +243,7 @@ def parse_msdata(path, prec=0):
 
     # Process the extracted data values. 
     mz_arr = np.round(np.array(mz_list), prec)
-    intensities = np.round(np.array(inten_list), prec)
+    intensities = np.array(inten_list)
 
     # Make the array of ylabels containing mz values. 
     mz_ylabels = np.unique(mz_arr)
@@ -352,15 +352,15 @@ def decompress_inten_list(comp_view, endian="<", total_len=None):
             if low_bit2 == 0b11:
                 offset += cur_size
                 cur_size = 1    # 1 byte   # Represents 1-127 (The upper 1 bit is a flag, the remaining 7 bits can represent up to 127. Does not represent 0?)
-                cur_format = "b"
+                cur_format = "B"
             elif low_bit2 == 0b10:
                 offset += cur_size
                 cur_size = 2    # 2 bytes   # Represents 128-32767 (The upper 1 bit is a flag, the remaining 15 bits can represent up to 32767.)
-                cur_format = "h"
+                cur_format = "H"
             elif low_bit2 == 0b01:
                 offset += cur_size
                 cur_size = 4    # 4 bytes   # Represents 32768-2147483648 (The upper 1 bit is a flag, the remaining 31 bits can represent up to 2147483648.)
-                cur_format = "i"
+                cur_format = "I"
             else:
                 raise Exception(f"error: {low_bit2}")
             # If all bits except the upper 1 bit and lower 2 bits are 1 -> byte length switch flag only -> continue
@@ -373,5 +373,5 @@ def decompress_inten_list(comp_view, endian="<", total_len=None):
                 inten_list_byte_arr += bytes(len_zero)
                 format_string += f"{len_zero}b"
                 continue
-    inten_list = struct.unpack(f"{endian}{format_string}", inten_list_byte_arr)
-    return np.array(inten_list + tuple(0 for i in range(total_len - len(inten_list))))
+    inten_tuple = struct.unpack(f"{endian}{format_string}", inten_list_byte_arr)
+    return np.array(inten_tuple + tuple(0 for i in range(total_len - len(inten_tuple))), dtype=np.uint32)
