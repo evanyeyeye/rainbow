@@ -243,7 +243,7 @@ def parse_msdata(path, prec=0):
 
     # Process the extracted data values. 
     mz_arr = np.round(np.array(mz_list), prec)
-    intensities = np.array(inten_list)
+    intensities = np.array(inten_list, dtype=np.uint32)
 
     # Make the array of ylabels containing mz values. 
     mz_ylabels = np.unique(mz_arr)
