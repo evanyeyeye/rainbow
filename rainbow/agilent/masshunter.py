@@ -64,7 +64,8 @@ def parse_msdata(path, prec=0):
     The following files are used (in order of listing): 
         - MSTS.xml -> Number of retention times.
         - MSScan.xsd -> File structure of MSScan.bin.
-        - MSScan.bin -> Offsets and compression info for MSProfile.bin.
+        - MSScan.bin -> Offsets, compression info, and calibration ID for MSProfile.bin.
+        - DefaultMassCal.xml -> Calibration method and ID.
         - MSMassCal.bin -> Calibration info for masses.
         - MSProfile.bin -> Actual data values.
 
@@ -125,17 +126,70 @@ def parse_msdata(path, prec=0):
             spectrum_info['PointCount'],
             spectrum_info['SpectrumOffset'], 
             spectrum_info['ByteCount'], 
-            spectrum_info['UncompressedByteCount']
+            spectrum_info['UncompressedByteCount'],
+            scan_info['CalibrationID']
         )
     f.close()
 
+    # DefaultMassCal.xml: Extract calibration methods.
+    # Information needed (ValueUseFlags) is located here:
+    # <DefaultMassCalibration>
+    #     <DefaultCalibrations>
+    #         <DefaultCalibration ...>
+    #            <Step Number="2">
+    #                <ValueUseFlags>XX</ValueUseFlags>
+    # Usually there are two DefaultCalibration entries, one for positive and the other for negative ion mode.
+    tree = etree.parse(os.path.join(path, "DefaultMassCal.xml"))
+    root = tree.getroot()
+    default_calib = {}
+    for calib in root.findall("./DefaultCalibrations/DefaultCalibration"):
+        calib_id = calib.get("DefaultCalibrationID")
+        # Number="1" is for coeff and base, which we do not collect here because they varies per scan.
+        # Get info for Step Number="2", which holds the polynomial calibration coefficients shared for all scans.
+        step2 = calib.find("./Step[@Number='2']")
+        if step2 is not None:
+            assert (tech := step2.findtext("CalibrationTechnique")) == "ExternalReference", f"ID {calib_id}: Technique mismatch ({tech})"
+            assert (formula := step2.findtext("CalibrationFormula")) == "Polynomial", f"ID {calib_id}: Formula mismatch ({formula})"
+            flags = format(int(step2.findtext("ValueUseFlags")), '08b')[::-1]
+            values = [float(v.text) for v in step2.findall("./Values/Value")]
+            default_calib[int(calib_id)] = {
+                "ValueUseFlags": flags,
+                "Values": values
+            }
+
     # MSMassCal.bin: Extract calibration values for masses. 
-    # There seem to be 10 doubles stored for each retention time. But this
-    #     method only uses the first 2. Future work could determine what the
-    #     other 8 doubles are used for.
+    # There seem to be 10 doubles stored for each retention time. The first two
+    #     are coeff and base, which vary per scan. The other 8 are usually the
+    #     same as those in DefaultMassCal.xml, but we read them per scan just in case.
+    # The structure is:
+    #   - coeff (double)
+    #   - base (double)
+    #   - left (double)
+    #   - right (double)
+    #   - a2 (double)
+    #   - b2 (double)
+    #   - c2 (double)
+    #   - d2 (double)
+    #   - e2 (double)
+    #   - f2 (double)
+    # We also need flag from DefaultMassCal.xml to know which of a2-f2 to use.
+    #   - If the flag in int is 86, for example, its binary representation is 1010110 -> 0110101 (reversed)
+    #   - The position of “1” indicates the degree of the polynomial.
+    #   - This means
+    #     """
+    #     flag:  0  1  1  0  1  0  1  0
+    #     order: 0  1  2  3  4  5  6  7
+    #     coeff: NA a2 b2 NA c2 NA d2 NA
+    #     """ 
+    #     - a2, b2, c2, and d2 are used (because the "1" appears in positions 1, 3, 5, and 7)
+    #     - They are assigned as coefficients of t^1, t^2, t^4, and t^6 respectively (according to the positions of "1"s).
+    #     - e2 and f2 are not used (usually their values are 0.0)
+    #     - Then the calibrated m/z is calculated as:
+    #         m/z = (coeff * (t - base))**2 - (a2*t**1 + b2*t**2 + c2*t**4 + d2*t**6)
+    #         where t is the time of flight of ions before the calibration.
     f = open(os.path.join(path, "MSMassCal.bin"), 'rb')
     f.seek(0x4c) # start offset
-    calib_vals = np.ndarray((num_times, 2), '<d', f.read(), 0, (84, 8))
+    calib_vals = np.ndarray((num_times, 10), '<d', f.read(), 0, (84, 8))
     f.close()
 
     # MSProfile.bin: Extract the data values. 
@@ -149,33 +203,47 @@ def parse_msdata(path, prec=0):
     times = np.empty(num_times)
     num_mz_per_time = np.empty(num_times)
     mz_list = []
-    intensity_bytearr = bytearray()
+    inten_list = []
     for i in range(num_times):
-        time, num_mz, offset, comp_len, decomp_len = data_info[i]
+        time, num_mz, offset, comp_len, decomp_len, calib_id = data_info[i]
         times[i] = time
         num_mz_per_time[i] = num_mz
 
         # Decompress the bytes for the current retention time. 
         f.seek(offset)
         comp_bytes = f.read(comp_len)
-        decomp_bytes = lzf.decompress(comp_bytes, decomp_len)
-        decomp_view = memoryview(decomp_bytes)
-
-        # Calculate the calibrated mz values. 
-        start_mz, delta_mz = twodoubles_unpack(decomp_view[:16])
-        mzs = np.arange(
-            start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
-        coeff, base = calib_vals[i]
-        mzs -= base
+        # Decompress intensity values.
+        if decomp_len > 0:
+            mem_view = memoryview(lzf.decompress(comp_bytes, decomp_len))
+            inten = np.ndarray(num_mz, '<I', bytes(mem_view[16:]))
+        else:   # sometimes decomp_len is not provided, using different compression method
+            mem_view = memoryview(comp_bytes)
+            inten = decompress_inten_list(mem_view[16:], endian="<", total_len=num_mz)
+        # Calculate the primary calibration of mz values. 
+        start_mz, delta_mz = twodoubles_unpack(mem_view[:16])
+        t_list = np.arange(start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
+        # Calculate the polynomial calibration of mz values.
+        coeff, base, left, right, a2, b2, c2, d2, e2, f2 = calib_vals[i]
+        flag = default_calib[calib_id]["ValueUseFlags"]     # e.g., '1010110'
+        mzs = t_list - base
         mzs *= coeff
         mzs **= 2
+        coefficients = (a2, b2, c2, d2, e2, f2)
+        coeff_idx = 0
+        poly_coeffs = [0.0] * 8
+        for j, b in enumerate(flag):
+            if b == '1' and coeff_idx < len(coefficients):
+                poly_coeffs[j] = coefficients[coeff_idx]
+                coeff_idx += 1
+        calib_values = sum(c * (np.clip(t_list, left, right)**i) for i, c in enumerate(poly_coeffs))
+        calib_mzs = mzs - calib_values
 
-        mz_list.extend(mzs.tolist())   
-        intensity_bytearr.extend(decomp_view[16:])
+        mz_list.extend(calib_mzs.tolist())   
+        inten_list.extend(inten.tolist())
 
     # Process the extracted data values. 
     mz_arr = np.round(np.array(mz_list), prec)
-    intensities = np.ndarray(mz_arr.size, '<I', bytes(intensity_bytearr))
+    intensities = np.round(np.array(inten_list), prec)
 
     # Make the array of ylabels containing mz values. 
     mz_ylabels = np.unique(mz_arr)
@@ -248,4 +316,62 @@ def read_type(f, complextype_dict, name):
         return struct.unpack('<f', f.read(4))[0]
     elif name == 'xs:double':
         return struct.unpack('<d', f.read(8))[0]
-    return read_complextype(f, complextype_dict, name)
+    else:
+        return read_complextype(f, complextype_dict, name.split(":")[1])
+
+def decompress_inten_list(comp_view, endian="<", total_len=None):
+    assert total_len is not None
+    # Initialization
+    assert comp_view[0] == 0                                            # First byte is 0
+    assert " ".join(f"{b:02X}" for b in comp_view[1:4]) == "5A 0D 90"   # The next 3 bytes are mysterious. Are they registering the previous 0 as a repeat?
+    init_zero_repeat = ~comp_view[4] & 0b11111111                       # The bit-inverted value is the repeat count minus 1. Is it minus 1 because the first byte is reflected as data?
+    assert all(b == 0b11111111 for b in comp_view[5:12])                # Padding?
+
+    # Initial values
+    cur_size = 1
+    cur_format = "b"
+    format_string = f"{init_zero_repeat + 1}{cur_format}"
+    inten_list_byte_arr = bytes(init_zero_repeat + 1)
+    # main decompression process
+    offset = 12
+    while offset < len(comp_view):
+        cur_bit = int.from_bytes(comp_view[offset:offset+cur_size], 'little')
+        high_bit1 = cur_bit >> 7 + (cur_size - 1) * 8
+        # The flag of the upper 1 bit is 0 -> non-continuous data
+        if high_bit1 == 0:
+            inten_list_byte_arr += comp_view[offset:offset+cur_size]    # The slice operation remains a view (indexing converts memoryview to int)
+            format_string += cur_format
+            offset += cur_size
+            continue
+        # The flag of the upper 1 bit is 1 -> continuous data or byte length switch flag
+        else:
+            bit_mask = (1 << cur_size * 8 - 3) - 1
+            middle_bit = (cur_bit >> 2) & bit_mask # Excluding the upper 1 bit and lower 2 bits
+            low_bit2 = cur_bit & 0b11              # Lower 2 bits
+            # Byte length switch flag
+            if low_bit2 == 0b11:
+                offset += cur_size
+                cur_size = 1    # 1 byte   # Represents 1-127 (The upper 1 bit is a flag, the remaining 7 bits can represent up to 127. Does not represent 0?)
+                cur_format = "b"
+            elif low_bit2 == 0b10:
+                offset += cur_size
+                cur_size = 2    # 2 bytes   # Represents 128-32767 (The upper 1 bit is a flag, the remaining 15 bits can represent up to 32767.)
+                cur_format = "h"
+            elif low_bit2 == 0b01:
+                offset += cur_size
+                cur_size = 4    # 4 bytes   # Represents 32768-2147483648 (The upper 1 bit is a flag, the remaining 31 bits can represent up to 2147483648.)
+                cur_format = "i"
+            else:
+                raise Exception(f"error: {low_bit2}")
+            # If all bits except the upper 1 bit and lower 2 bits are 1 -> byte length switch flag only -> continue
+            if middle_bit == bit_mask:
+                continue
+            # If any bit except the upper 1 bit and lower 2 bits is not 1 -> represents the count of consecutive zeros
+            else:
+                # All digits
+                len_zero = ~middle_bit & bit_mask           # Bit inversion
+                inten_list_byte_arr += bytes(len_zero)
+                format_string += f"{len_zero}b"
+                continue
+    inten_list = struct.unpack(f"{endian}{format_string}", inten_list_byte_arr)
+    return np.array(inten_list + tuple(0 for i in range(total_len - len(inten_list))))
