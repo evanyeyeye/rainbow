@@ -329,6 +329,60 @@ def decompress_inten_list(comp_view, endian="<", total_len=None):
         assert total_len == first_24, f"{total_len} != {first_24}"
     else:
         total_len = first_24
+    # 4th byte seems to be fixed to \x90 ...?
+    assert comp_view[3] == 144, comp_view[3]
+
+    # Initial values
+    init_zero_repeat, size_switch_flag = struct.unpack(f'{endian}ii', comp_view[4:12])
+    init_zero_repeat *= -1
+    size_switch_flag *= -1
+    assert init_zero_repeat >= 0, init_zero_repeat
+    assert size_switch_flag in (1,2,3,4), size_switch_flag
+
+    ##########
+    inten_list = [0] * total_len    # initialize the list with zeros because the length of consecutive zeros at the end of the data is not included.
+    UNPACKERS = {
+        1: struct.Struct(f'{endian}b').unpack,
+        2: struct.Struct(f'{endian}h').unpack,
+        3: struct.Struct(f'{endian}i').unpack,
+        4: struct.Struct(f'{endian}q').unpack,
+    }
+    SIZES = {1:1, 2:2, 3:4, 4:8}
+    inten_list[0:init_zero_repeat] = [0] * init_zero_repeat
+    cur_idx = init_zero_repeat
+    cur_size = SIZES[size_switch_flag]
+    cur_unpacker = UNPACKERS[size_switch_flag]
+    offset = 12
+    while offset < len(comp_view):
+        cur_bytes = cur_unpacker(comp_view[offset:offset+cur_size])[0]
+        # print(f"offset: {offset}, cur_idx: {cur_idx}, total_len: {total_len}, cur_bytes: {cur_bytes}", end='\r')
+        offset += cur_size
+        # if positive, direct data
+        if cur_bytes >= 0:
+            # print(cur_bytes, cur_idx, offset, len(comp_view), total_len)
+            inten_list[cur_idx] = cur_bytes
+            cur_idx += 1
+        # if negative, zero run-length or size switch
+        else:
+            cur_bytes *= -1
+            # zero-filling
+            len_zero, size_switch_flag = divmod(cur_bytes, 4)
+            inten_list[cur_idx:cur_idx+len_zero] = [0] * len_zero
+            cur_idx += len_zero
+            # size switch
+            cur_size = SIZES[size_switch_flag]
+            cur_unpacker = UNPACKERS[size_switch_flag]
+    return np.array(inten_list, dtype=np.uint32)
+
+# "Zero-specific implementation of Run-Length Encoding
+def decompress_inten_list_legacy(comp_view, endian="<", total_len=None):
+    assert total_len is not None
+    # The lower 24 bits of the first 4 bytes represent the data length
+    first_24 = struct.unpack(f'{endian}I', comp_view[0:4])[0] & 0x00FFFFFF
+    if total_len is not None:
+        assert total_len == first_24, f"{total_len} != {first_24}"
+    else:
+        total_len = first_24
     # 4th byte seems to be fixed to \x90
     assert comp_view[3] == 144, comp_view[3]
 
