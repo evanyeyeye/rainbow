@@ -205,6 +205,7 @@ def parse_msdata(path, prec=0):
     mz_list = []
     inten_list = []
     for i in range(num_times):
+        print(f"Parsing retention time {i+1}/{num_times}", end='\r')
         time, num_mz, offset, comp_len, decomp_len, calib_id = data_info[i]
         times[i] = time
         num_mz_per_time[i] = num_mz
@@ -319,19 +320,26 @@ def read_type(f, complextype_dict, name):
     else:
         return read_complextype(f, complextype_dict, name.split(":")[1])
 
+# "Zero-specific implementation of Run-Length Encoding
 def decompress_inten_list(comp_view, endian="<", total_len=None):
     assert total_len is not None
-    # Initialization
-    assert comp_view[0] == 0                                            # First byte is 0
-    assert " ".join(f"{b:02X}" for b in comp_view[1:4]) == "5A 0D 90"   # The next 3 bytes are mysterious. Are they registering the previous 0 as a repeat?
-    init_zero_repeat = ~comp_view[4] & 0b11111111                       # The bit-inverted value is the repeat count minus 1. Is it minus 1 because the first byte is reflected as data?
-    assert all(b == 0b11111111 for b in comp_view[5:12])                # Padding?
+    # The lower 24 bits of the first 4 bytes represent the data length
+    first_24 = struct.unpack(f'{endian}I', comp_view[0:4])[0] & 0x00FFFFFF
+    if total_len is not None:
+        assert total_len == first_24, f"{total_len} != {first_24}"
+    else:
+        total_len = first_24
+    # 4th byte seems to be fixed to \x90
+    assert comp_view[3] == 144, comp_view[3]
 
     # Initial values
-    cur_size = 1
-    cur_format = "b"
-    format_string = f"{init_zero_repeat + 1}{cur_format}"
-    inten_list_byte_arr = bytes(init_zero_repeat + 1)
+    init_zero_repeat, cur_size = struct.unpack(f'{endian}ii', comp_view[4:12])
+    init_zero_repeat, cur_size = -init_zero_repeat, -cur_size
+    assert init_zero_repeat >= 0, init_zero_repeat
+    assert cur_size in (1,2,3,4), cur_size
+    cur_format = {1:"b", 2:"h", 4:"i"}[cur_size]
+    format_string = f"{init_zero_repeat}b"
+    inten_list_byte_arr = bytes(init_zero_repeat)
     # main decompression process
     offset = 12
     while offset < len(comp_view):
@@ -349,20 +357,21 @@ def decompress_inten_list(comp_view, endian="<", total_len=None):
             middle_bit = (cur_bit >> 2) & bit_mask # Excluding the upper 1 bit and lower 2 bits
             low_bit2 = cur_bit & 0b11              # Lower 2 bits
             # Byte length switch flag
-            if low_bit2 == 0b11:
+            if low_bit2 == 0b11:    # -1
                 offset += cur_size
                 cur_size = 1    # 1 byte   # Represents 1-127 (The upper 1 bit is a flag, the remaining 7 bits can represent up to 127. Does not represent 0?)
-                cur_format = "B"
-            elif low_bit2 == 0b10:
+                cur_format = "b"
+            elif low_bit2 == 0b10:  # -2
                 offset += cur_size
                 cur_size = 2    # 2 bytes   # Represents 128-32767 (The upper 1 bit is a flag, the remaining 15 bits can represent up to 32767.)
-                cur_format = "H"
-            elif low_bit2 == 0b01:
+                cur_format = "h"
+            elif low_bit2 == 0b01:  # -3
                 offset += cur_size
                 cur_size = 4    # 4 bytes   # Represents 32768-2147483648 (The upper 1 bit is a flag, the remaining 31 bits can represent up to 2147483648.)
-                cur_format = "I"
+                cur_format = "i"
             else:
                 raise Exception(f"error: {low_bit2}")
+            ###### ###### ###### ###### ###### ######
             # If all bits except the upper 1 bit and lower 2 bits are 1 -> byte length switch flag only -> continue
             if middle_bit == bit_mask:
                 continue
