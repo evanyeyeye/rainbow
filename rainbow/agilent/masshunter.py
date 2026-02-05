@@ -114,12 +114,25 @@ def parse_msdata(path, prec=0):
     # Future work could determine if the data blocks for each retention time 
     #     are always contiguous. If that is the case, the offset is unneeded. 
     f = open(os.path.join(path, "MSScan.bin"), 'rb')
+    f.seek(0x4c)
+    SpectrumParamsType_repeat = struct.unpack('<I', f.read(4))[0]   # somehow this value is stored here
     f.seek(0x58) # start offset
     f.seek(struct.unpack('<I', f.read(4))[0])
     data_info = np.empty(num_times, dtype=object)
     for i in range(num_times):
         # "ScanRecordType" is always the name of the root "complex" type.
         scan_info = read_complextype(f, complextypes_dict, "ScanRecordType")
+        """
+        Sometimes multiple spectrum params are recorded per scan, e.g., profile and centroid.
+        You need to replace the SpectrumParamValues in scan_info in such a case
+        if you want to extract spectra other than the initial one.
+        """
+        _target_spectrum_params_type = 0
+        for j in range(1, SpectrumParamsType_repeat):
+            # you have to read "f" anyway to move the file pointer forward
+            spectrum_info = read_complextype(f, complextypes_dict, "SpectrumParamsType")
+            if j == _target_spectrum_params_type:
+                scan_info['SpectrumParamValues'] = spectrum_info
         spectrum_info = scan_info['SpectrumParamValues']
         data_info[i] = (
             scan_info['ScanTime'], 
@@ -374,67 +387,3 @@ def decompress_inten_list(comp_view, endian="<", total_len=None):
             cur_unpacker = UNPACKERS[size_switch_flag]
     return np.array(inten_list, dtype=np.uint32)
 
-# "Zero-specific implementation of Run-Length Encoding
-def decompress_inten_list_legacy(comp_view, endian="<", total_len=None):
-    assert total_len is not None
-    # The lower 24 bits of the first 4 bytes represent the data length
-    first_24 = struct.unpack(f'{endian}I', comp_view[0:4])[0] & 0x00FFFFFF
-    if total_len is not None:
-        assert total_len == first_24, f"{total_len} != {first_24}"
-    else:
-        total_len = first_24
-    # 4th byte seems to be fixed to \x90
-    assert comp_view[3] == 144, comp_view[3]
-
-    # Initial values
-    init_zero_repeat, cur_size = struct.unpack(f'{endian}ii', comp_view[4:12])
-    init_zero_repeat, cur_size = -init_zero_repeat, -cur_size
-    assert init_zero_repeat >= 0, init_zero_repeat
-    assert cur_size in (1,2,3,4), cur_size
-    cur_format = {1:"b", 2:"h", 4:"i"}[cur_size]
-    format_string = f"{init_zero_repeat}b"
-    inten_list_byte_arr = bytes(init_zero_repeat)
-    # main decompression process
-    offset = 12
-    while offset < len(comp_view):
-        cur_bit = int.from_bytes(comp_view[offset:offset+cur_size], 'little')
-        high_bit1 = cur_bit >> 7 + (cur_size - 1) * 8
-        # The flag of the upper 1 bit is 0 -> non-continuous data
-        if high_bit1 == 0:
-            inten_list_byte_arr += comp_view[offset:offset+cur_size]    # The slice operation remains a view (indexing converts memoryview to int)
-            format_string += cur_format
-            offset += cur_size
-            continue
-        # The flag of the upper 1 bit is 1 -> continuous data or byte length switch flag
-        else:
-            bit_mask = (1 << cur_size * 8 - 3) - 1
-            middle_bit = (cur_bit >> 2) & bit_mask # Excluding the upper 1 bit and lower 2 bits
-            low_bit2 = cur_bit & 0b11              # Lower 2 bits
-            # Byte length switch flag
-            if low_bit2 == 0b11:    # -1
-                offset += cur_size
-                cur_size = 1    # 1 byte   # Represents 1-127 (The upper 1 bit is a flag, the remaining 7 bits can represent up to 127. Does not represent 0?)
-                cur_format = "b"
-            elif low_bit2 == 0b10:  # -2
-                offset += cur_size
-                cur_size = 2    # 2 bytes   # Represents 128-32767 (The upper 1 bit is a flag, the remaining 15 bits can represent up to 32767.)
-                cur_format = "h"
-            elif low_bit2 == 0b01:  # -3
-                offset += cur_size
-                cur_size = 4    # 4 bytes   # Represents 32768-2147483648 (The upper 1 bit is a flag, the remaining 31 bits can represent up to 2147483648.)
-                cur_format = "i"
-            else:
-                raise Exception(f"error: {low_bit2}")
-            ###### ###### ###### ###### ###### ######
-            # If all bits except the upper 1 bit and lower 2 bits are 1 -> byte length switch flag only -> continue
-            if middle_bit == bit_mask:
-                continue
-            # If any bit except the upper 1 bit and lower 2 bits is not 1 -> represents the count of consecutive zeros
-            else:
-                # All digits
-                len_zero = ~middle_bit & bit_mask           # Bit inversion
-                inten_list_byte_arr += bytes(len_zero)
-                format_string += f"{len_zero}b"
-                continue
-    inten_tuple = struct.unpack(f"{endian}{format_string}", inten_list_byte_arr)
-    return np.array(inten_tuple + tuple(0 for i in range(total_len - len(inten_tuple))), dtype=np.uint32)
