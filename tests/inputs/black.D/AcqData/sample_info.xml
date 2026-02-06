@@ -1,0 +1,292 @@
+<SampleInfo>
+  <Version>1.0</Version>
+  <Field>
+    <Name>Sample ID</Name>
+    <DisplayName>Sample ID</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Sample Name</Name>
+    <DisplayName>Sample Name</DisplayName>
+    <Value>Sample1</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Sample Position</Name>
+    <DisplayName>Sample Position</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Method</Name>
+    <DisplayName>Method</DisplayName>
+    <Value>D:\Projects\BaskinLab\Data\Masaaki\20260203_dummy_data\dummy_RP_02min_method_neg.m</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Override DA Method</Name>
+    <DisplayName>Override DA Method</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Data File</Name>
+    <DisplayName>Data File</DisplayName>
+    <Value>D:\Projects\BaskinLab\Data\Masaaki\20260203_dummy_data\dummy_RP_02min_neg.d</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Sample Type</Name>
+    <DisplayName>Sample Type</DisplayName>
+    <Value>Sample</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Method Type</Name>
+    <DisplayName>Method part to run:</DisplayName>
+    <Value>Acquisition Only</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Balance Override</Name>
+    <DisplayName>Balance Override</DisplayName>
+    <Value>No Override</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Inj Vol (µl)</Name>
+    <DisplayName>Inj Vol (µl)</DisplayName>
+    <Value>5</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Equilib Time (min)</Name>
+    <DisplayName>Equilib Time (min)</DisplayName>
+    <Value>0</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Dilution</Name>
+    <DisplayName>Dilution</DisplayName>
+    <Value>1</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Wt/Vol</Name>
+    <DisplayName>Wt/Vol</DisplayName>
+    <Value>0</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Comment</Name>
+    <DisplayName>Comment</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Barcode</Name>
+    <DisplayName>Barcode</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>Level Name</Name>
+    <DisplayName>Level Name</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>SampleGroup</Name>
+    <DisplayName>Sample Group</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>SampleInformation</Name>
+    <DisplayName>Info.</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SYSTEM</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>StreamInfo</Name>
+    <DisplayName>Stream Name</DisplayName>
+    <Value>LC 1</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>OperatorName</Name>
+    <DisplayName>Operator Name</DisplayName>
+    <Value>SYSTEM (SYSTEM)</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>InstrumentName</Name>
+    <DisplayName>Instrument Name</DisplayName>
+    <Value>LCQTOF</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>AcqTime</Name>
+    <DisplayName>Acquisition Time</DisplayName>
+    <Value>2026-02-03T14:29:18.3823691-05:00</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>SampleLockedRunMode</Name>
+    <DisplayName>Locked Run</DisplayName>
+    <Value>0</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>RunCompletedFlag</Name>
+    <DisplayName>Run Completed</DisplayName>
+    <Value>-1</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>MethodVersion</Name>
+    <DisplayName>Method Version</DisplayName>
+    <Value>NA</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>OverrideDAMethodVersion</Name>
+    <DisplayName>Override DA Method Version</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>DataFileVersion</Name>
+    <DisplayName>Data File Version</DisplayName>
+    <Value>NA</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+  <Field>
+    <Name>AcqWorkstationName</Name>
+    <DisplayName>Acquisition Workstation</DisplayName>
+    <Value>BASKINLAB-LCMS</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+    <FieldType>SystemDefined</FieldType>
+    <Overridden>False</Overridden>
+  </Field>
+</SampleInfo>

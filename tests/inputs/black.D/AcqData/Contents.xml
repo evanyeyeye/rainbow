@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Contents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="X:\assembly\bin\Contents.xsd">
+  <Version>4</Version>
+  <!-- Acquisition Time should be of the US format YYYY-MM-DDTHH:MM:SSZ-->
+  <!-- example "2005-09-20T21:53:39Z" and "2005-11-20T5:53:39Z" - universal sortable datetime pattern-->
+  <AcquiredTime>2026-02-03T14:29:18.3823691-05:00</AcquiredTime>
+  <!--AcqStatus (0 = Init / 1 = Start / 2 = End)-->
+  <AcqStatus>2</AcqStatus>
+  <!--Name of the instrument-->
+  <InstrumentName>LCQTOF</InstrumentName>
+  <!--LockedMode (0 = False / -1 = True)-->
+  <LockedMode>0</LockedMode>
+  <!--MeasurementType 0 - Unknown / 1- Infusion / 2 - Chromatographic -->
+  <MeasurementType>0</MeasurementType>
+  <!--SeparationTechnique - type of separation used. Unspecified   = 0, None = 1, GC  = 2, LC = 3, CE = 4 -->
+  <SeparationTechnique>3</SeparationTechnique>
+  <!--MedicalDevice (0 = False / 1 = True)-->
+  <MedicalDevice>0</MedicalDevice>
+  <!--TotalRunDuration - Total time taken for acquisition in seconds -->
+  <TotalRunDuration>50.5</TotalRunDuration>
+  <!--AcqSoftwareVersion - Acquisition software version information like "11.0.133.0" -->
+  <AcqSoftwareVersion>6200 series TOF/6500 series Q-TOF (11.0.230.2)</AcqSoftwareVersion>
+</Contents>

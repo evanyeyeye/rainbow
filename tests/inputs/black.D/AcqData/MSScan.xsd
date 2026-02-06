@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns="http://tempuri.org/XMLSchema.xsd" xmlns:mstns="http://tempuri.org/XMLSchema.xsd" elementFormDefault="qualified" targetNamespace="http://tempuri.org/XMLSchema.xsd" version="2.0" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="MSScanBin">
+    <xs:annotation>
+      <xs:documentation>MSScan binary file index record details</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element minOccurs="0" maxOccurs="unbounded" name="ScanRecord" type="mstns:ScanRecordType" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:complexType name="ScanRecordType">
+    <xs:sequence>
+      <xs:element name="ScanID" type="xs:int" />
+      <xs:element name="ScanMethodID" type="xs:int" />
+      <xs:element name="TimeSegmentID" type="xs:int" />
+      <xs:element name="ScanTime" type="xs:double" />
+      <xs:element name="MSLevel" type="xs:short" />
+      <xs:element name="ScanType" type="xs:int" />
+      <xs:element name="TIC" type="xs:double" />
+      <xs:element name="BasePeakMZ" type="xs:double" />
+      <xs:element name="BasePeakValue" type="xs:double" />
+      <xs:element minOccurs="0" name="CalibrationID" type="xs:short" />
+      <xs:element minOccurs="0" name="CycleNumber" type="xs:int" />
+      <xs:element minOccurs="0" name="IonMode" type="xs:int" />
+      <xs:element minOccurs="0" name="IonPolarity" type="xs:short" />
+      <xs:element minOccurs="0" name="Fragmentor" type="xs:float" />
+      <xs:element minOccurs="0" name="CollisionEnergy" type="xs:float" />
+      <xs:element minOccurs="0" name="MzOfInterest" type="xs:double" />
+      <xs:element minOccurs="0" name="MzIsolationWidth" type="xs:float" />
+      <xs:element minOccurs="0" name="AbundanceLimit" type="xs:double" />
+      <xs:element minOccurs="0" name="SamplingPeriod" type="xs:double" />
+      <xs:element minOccurs="0" name="Threshold" type="xs:double" />
+      <xs:element minOccurs="0" name="ChargeState" type="xs:short" />
+      <xs:element minOccurs="0" name="ChromScaleFactor" type="xs:float" />
+      <xs:element minOccurs="0" name="MassCalOffset" type="xs:long" />
+      <xs:element minOccurs="0" name="ActualsOffset" type="xs:long" />
+      <xs:element minOccurs="0" name="NumOfActualsPerScan" type="xs:short" />
+      <xs:element minOccurs="0" name="DataDependentScanParamType" type="mstns:DataDependentScanParamType" />
+      <xs:element maxOccurs="unbounded" name="SpectrumParamValues" type="mstns:SpectrumParamsType" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="SpectrumParamsType">
+    <xs:sequence>
+      <xs:element name="SpectrumFormatID" type="xs:short" />
+      <xs:element name="SpectrumOffset" type="xs:long" />
+      <xs:element name="ByteCount" type="xs:int" />
+      <xs:element name="PointCount" type="xs:int" />
+      <xs:element minOccurs="0" name="UncompressedByteCount" type="xs:int" />
+      <xs:element name="MinX" type="xs:double" />
+      <xs:element name="MaxX" type="xs:double" />
+      <xs:element name="MinY" type="xs:double" />
+      <xs:element name="MaxY" type="xs:double" />
+      <xs:element minOccurs="0" name="MeasuredNoise" type="xs:double" />
+      <xs:element minOccurs="0" name="OneDataRangeDeltaYOffset" type="xs:int" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="DataDependentScanParamType">
+    <xs:sequence>
+      <xs:element name="DDScanID" type="xs:int" />
+      <xs:element name="DDScanID2" type="xs:int" />
+      <xs:element name="DDScanID3" type="xs:int" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="XSpecificParamType">
+    <xs:sequence>
+      <xs:element name="Offset" type="xs:long" />
+      <xs:element name="ByteCount" type="xs:int" />
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

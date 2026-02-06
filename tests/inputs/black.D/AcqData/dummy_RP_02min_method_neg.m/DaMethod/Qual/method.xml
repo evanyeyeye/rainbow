@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<MethodInfo>
+  <!--If this version is updated, ensure version number for m_AutomationMethodVersion in MethodDAQualRW -->
+  <Version>3.0</Version>
+  <!--Information for Data Analysis method information-->
+  <AutomationOption>
+  </AutomationOption>
+  <MethodOption>Copy</MethodOption>
+  <ChangeToMethod>
+  </ChangeToMethod>
+  <MethodMessage>D:\Data\QTOF\SG12202401_BurnIn\Methods\6530_Accuracy_ms.m</MethodMessage>
+  <MethodCopiedAt>
+  </MethodCopiedAt>
+</MethodInfo>

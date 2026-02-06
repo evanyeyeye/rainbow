@@ -1,0 +1,111 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<InstrConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Version="2.0">
+  <instrDevice>
+    <VoyModuleList>
+      <VoyModule>
+        <DevID>MSQTOF_1</DevID>
+        <DevName>MSQTOF</DevName>
+        <DisplayName>Q-TOF</DisplayName>
+        <OrdinalNumber>1</OrdinalNumber>
+        <ModelNumber>G6546A</ModelNumber>
+        <DisplayModelNumber>G6546A</DisplayModelNumber>
+        <SerialNumber>SG2429E201</SerialNumber>
+        <FirmwareVersion>27.852</FirmwareVersion>
+        <ConfigXML>&lt;?xml version="1.0" encoding="utf-16"?&gt;&lt;QTOFConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" schemaVersion="1.0.2"&gt;&lt;DisplayName&gt;MS QTOF&lt;/DisplayName&gt;&lt;SerialNumber&gt;DE91608998&lt;/SerialNumber&gt;&lt;ModuleType&gt;442&lt;/ModuleType&gt;&lt;ModuleDisplayType&gt;442&lt;/ModuleDisplayType&gt;&lt;/QTOFConfig&gt;</ConfigXML>
+        <ClusterDeviceID />
+        <isRCDevice>false</isRCDevice>
+        <ClusterParentID />
+        <ParentCombinedContainerAutoConfig />
+        <ParentCombinedContainerDevID />
+        <DriverVersion>11.0.230.2</DriverVersion>
+      </VoyModule>
+      <VoyModule>
+        <DevID>ALS_1</DevID>
+        <DevName>ALS</DevName>
+        <DisplayName>Sampler</DisplayName>
+        <OrdinalNumber>1</OrdinalNumber>
+        <ModelNumber>G7129A</ModelNumber>
+        <DisplayModelNumber>G7129A</DisplayModelNumber>
+        <SerialNumber>DEAEQ03893</SerialNumber>
+        <FirmwareVersion>D.07.39 [0003]</FirmwareVersion>
+        <ConfigXML>&lt;VialSamplerConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xsdName="VialSamplerConfig.xsd" schemaVersion="1.0.0" schemaSI="2"&gt;&lt;DisplayName&gt;Sampler&lt;/DisplayName&gt;&lt;SerialNumber&gt;DEAEQ03893&lt;/SerialNumber&gt;&lt;ModuleType&gt;G7129A&lt;/ModuleType&gt;&lt;ModuleDisplayType&gt;G7129A&lt;/ModuleDisplayType&gt;&lt;ConnectionInfo&gt;&lt;ConnectionType&gt;ConnectionType_IPAddress&lt;/ConnectionType&gt;&lt;IPAddress&gt;192.168.254.11&lt;/IPAddress&gt;&lt;/ConnectionInfo&gt;&lt;LANConfig&gt;IsCAP&lt;/LANConfig&gt;&lt;FirmwareRevision&gt;D.07.39 [0003]&lt;/FirmwareRevision&gt;&lt;IsCoolerInstalled&gt;false&lt;/IsCoolerInstalled&gt;&lt;IsExternalTrayInstalled&gt;false&lt;/IsExternalTrayInstalled&gt;&lt;Syringe&gt;&lt;ID&gt;G7129-60082&lt;/ID&gt;&lt;DisplayName&gt;100 µL Analytical Head&lt;/DisplayName&gt;&lt;InjectionVolume&gt;100&lt;/InjectionVolume&gt;&lt;Diameter&gt;3.175&lt;/Diameter&gt;&lt;/Syringe&gt;&lt;SeatCapillary&gt;&lt;ID&gt;G7129-87017&lt;/ID&gt;&lt;DisplayName&gt;Seat assembly PEEK 0.17 mm&lt;/DisplayName&gt;&lt;InjectionVolume&gt;0&lt;/InjectionVolume&gt;&lt;PhysicalVolume&gt;2.7&lt;/PhysicalVolume&gt;&lt;/SeatCapillary&gt;&lt;LoopCapillary&gt;&lt;ID&gt;G7129-60500&lt;/ID&gt;&lt;DisplayName&gt;Sample Loop 100 µL&lt;/DisplayName&gt;&lt;InjectionVolume&gt;100&lt;/InjectionVolume&gt;&lt;PhysicalVolume&gt;200&lt;/PhysicalVolume&gt;&lt;/LoopCapillary&gt;&lt;/VialSamplerConfig&gt;</ConfigXML>
+        <ClusterDeviceID>0</ClusterDeviceID>
+        <isRCDevice>true</isRCDevice>
+        <ClusterParentID>AGILENT_1100_1200_1</ClusterParentID>
+        <ParentCombinedContainerAutoConfig />
+        <ParentCombinedContainerDevID />
+      </VoyModule>
+      <VoyModule>
+        <DevID>BinPump_1</DevID>
+        <DevName>BinPump</DevName>
+        <DisplayName>Binary Pump</DisplayName>
+        <OrdinalNumber>1</OrdinalNumber>
+        <ModelNumber>G1312B</ModelNumber>
+        <DisplayModelNumber>G1312B</DisplayModelNumber>
+        <SerialNumber>DEACB10852</SerialNumber>
+        <FirmwareVersion>A.07.01 [001]</FirmwareVersion>
+        <ConfigXML>&lt;PumpConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xsdName="PumpConfig.xsd" schemaVersion="1.0.3" schemaSI="0"&gt;&lt;DisplayName&gt;Binary Pump&lt;/DisplayName&gt;&lt;SerialNumber&gt;DEACB10852&lt;/SerialNumber&gt;&lt;ModuleType&gt;G1312B&lt;/ModuleType&gt;&lt;ModuleDisplayType&gt;G1312B&lt;/ModuleDisplayType&gt;&lt;ConnectionInfo&gt;&lt;ConnectionType&gt;ConnectionType_IPAddress&lt;/ConnectionType&gt;&lt;IPAddress&gt;192.168.254.11&lt;/IPAddress&gt;&lt;/ConnectionInfo&gt;&lt;FirmwareRevision&gt;A.07.01 [001]&lt;/FirmwareRevision&gt;&lt;IsExternalContactsBoardInstalled&gt;false&lt;/IsExternalContactsBoardInstalled&gt;&lt;IsSealWashInstalled&gt;false&lt;/IsSealWashInstalled&gt;&lt;IsSolventSelectionValveInstalled&gt;false&lt;/IsSolventSelectionValveInstalled&gt;&lt;IsFlowSensorInstalled&gt;false&lt;/IsFlowSensorInstalled&gt;&lt;FlowSensorVersion&gt;FS1_20microl&lt;/FlowSensorVersion&gt;&lt;PressureUnit&gt;Unit_Bar&lt;/PressureUnit&gt;&lt;/PumpConfig&gt;</ConfigXML>
+        <ClusterDeviceID>1</ClusterDeviceID>
+        <isRCDevice>true</isRCDevice>
+        <ClusterParentID>AGILENT_1100_1200_1</ClusterParentID>
+        <ParentCombinedContainerAutoConfig />
+        <ParentCombinedContainerDevID />
+      </VoyModule>
+      <VoyModule>
+        <DevID>TCC_1</DevID>
+        <DevName>TCC</DevName>
+        <DisplayName>Column Comp.</DisplayName>
+        <OrdinalNumber>1</OrdinalNumber>
+        <ModelNumber>G1316A</ModelNumber>
+        <DisplayModelNumber>G1316A</DisplayModelNumber>
+        <SerialNumber>DEAES40648</SerialNumber>
+        <FirmwareVersion>A.07.02 [001]</FirmwareVersion>
+        <ConfigXML>&lt;ColumnCompConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xsdName="SamplerConfig.xsd" schemaVersion="1.0.2" schemaSI="4"&gt;&lt;DisplayName&gt;Column Comp.&lt;/DisplayName&gt;&lt;SerialNumber&gt;DEAES40648&lt;/SerialNumber&gt;&lt;ModuleType&gt;G1316A&lt;/ModuleType&gt;&lt;ModuleDisplayType&gt;G1316A&lt;/ModuleDisplayType&gt;&lt;ConnectionInfo&gt;&lt;ConnectionType&gt;ConnectionType_IPAddress&lt;/ConnectionType&gt;&lt;IPAddress&gt;192.168.254.11&lt;/IPAddress&gt;&lt;/ConnectionInfo&gt;&lt;FirmwareRevision&gt;A.07.02 [001]&lt;/FirmwareRevision&gt;&lt;IsColumnSwitchingValveInstalled&gt;true&lt;/IsColumnSwitchingValveInstalled&gt;&lt;ColumnValveVersion&gt;6Port2Positions&lt;/ColumnValveVersion&gt;&lt;RealHeadId&gt;5067-4137&lt;/RealHeadId&gt;&lt;RealMaxPressure&gt;600&lt;/RealMaxPressure&gt;&lt;/ColumnCompConfig&gt;</ConfigXML>
+        <ClusterDeviceID>2</ClusterDeviceID>
+        <isRCDevice>true</isRCDevice>
+        <ClusterParentID>AGILENT_1100_1200_1</ClusterParentID>
+        <ParentCombinedContainerAutoConfig />
+        <ParentCombinedContainerDevID />
+      </VoyModule>
+    </VoyModuleList>
+  </instrDevice>
+  <instrumentInfo>
+    <DevConfigs>
+      <VoyInstrDevice>
+        <DevID>MSQTOF_1</DevID>
+        <DevName>MSQTOF</DevName>
+        <TypeID>442</TypeID>
+        <Configured>true</Configured>
+        <ConnectionInfo>192.168.254.12</ConnectionInfo>
+        <ConnectionMode>TCPIP</ConnectionMode>
+        <OrdinalNumber>1</OrdinalNumber>
+        <isClusterController>false</isClusterController>
+        <StreamId>1</StreamId>
+        <StreamName>LC 1</StreamName>
+        <isAPGConnected>false</isAPGConnected>
+        <IsDefaultStream>true</IsDefaultStream>
+      </VoyInstrDevice>
+      <VoyInstrDevice>
+        <DevID>AGILENT_1100_1200_1</DevID>
+        <DevName>AGILENT_1100_1200</DevName>
+        <TypeID>407</TypeID>
+        <Configured>true</Configured>
+        <ConnectionInfo>192.168.254.11</ConnectionInfo>
+        <ConnectionMode>TCPIP</ConnectionMode>
+        <OrdinalNumber>1</OrdinalNumber>
+        <isClusterController>true</isClusterController>
+        <StreamId>1</StreamId>
+        <StreamName>LC 1</StreamName>
+        <isAPGConnected>false</isAPGConnected>
+        <IsDefaultStream>true</IsDefaultStream>
+      </VoyInstrDevice>
+    </DevConfigs>
+    <IsAPGSync>true</IsAPGSync>
+    <isVirtual>false</isVirtual>
+    <ConfiguredBy>SYSTEM (SYSTEM)</ConfiguredBy>
+    <ConfiguredTime>2024-11-01 14:42:44-04:00</ConfiguredTime>
+    <InstrName>LCQTOF</InstrName>
+    <InstrID>LCMS</InstrID>
+    <StreamSelectionValve />
+  </instrumentInfo>
+</InstrConfig>

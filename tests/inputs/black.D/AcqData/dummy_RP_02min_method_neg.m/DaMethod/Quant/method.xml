@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<MethodInfo>
+  <Version>2.0</Version>
+  <!--Information for Data Analysis automation-->
+  <WorklistAutomation>0</WorklistAutomation>
+  <MethodOption>Link</MethodOption>
+  <ChangeToMethod>
+  </ChangeToMethod>
+  <MethodMessage>Select a method</MethodMessage>
+  <MethodCopiedAt>
+  </MethodCopiedAt>
+  <GenerateReport>0</GenerateReport>
+  <TemplateFile>
+  </TemplateFile>
+  <Print>0</Print>
+  <Publish>0</Publish>
+  <PublishOption>CSV</PublishOption>
+</MethodInfo>

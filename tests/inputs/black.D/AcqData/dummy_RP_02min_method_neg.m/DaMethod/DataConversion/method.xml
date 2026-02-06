@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<MethodInfo>
+  <Version>3.0</Version>
+  <!--Information for Data Analysis automation-->
+  <SureMassConversion>False</SureMassConversion>
+  <MolecularFeatureExtractorConversion>False</MolecularFeatureExtractorConversion>
+  <DeleteProfile>False</DeleteProfile>
+</MethodInfo>

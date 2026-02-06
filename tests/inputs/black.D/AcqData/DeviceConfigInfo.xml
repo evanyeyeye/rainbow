@@ -1,0 +1,130 @@
+<DeviceConfigInformation>
+  <Device>
+    <DeviceID>TCC_1</DeviceID>
+    <DisplayName>Column Comp.</DisplayName>
+  </Device>
+  <Device>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <DisplayName>Q-TOF</DisplayName>
+  </Device>
+  <Parameter>
+    <DeviceID>TCC_1</DeviceID>
+    <ResourceName>ExtendedRunInformation</ResourceName>
+    <ResourceID>RunStart_ValvePosition_Description</ResourceID>
+    <Value>Position 1 (Port 1 -&gt; 2)</Value>
+    <Units />
+    <DisplayName>Run Start Valve Pos. Desc.</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>TCC_1</DeviceID>
+    <ResourceName>ExtendedRunInformation</ResourceName>
+    <ResourceID>RunStart_ValvePosition_Number</ResourceID>
+    <Value>0</Value>
+    <Units />
+    <DisplayName>Run Start Valve Pos. No.</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[BASEADCINTERVAL]</ResourceID>
+    <Value>10</Value>
+    <Units />
+    <DisplayName>Base ADC Interval</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[DDEMODE]</ResourceID>
+    <Value>0</Value>
+    <Units />
+    <DisplayName>DDE Mode</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[DDEVERSION]</ResourceID>
+    <Value>0.00</Value>
+    <Units />
+    <DisplayName>DDE Version</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[DUALGAINRATIO]</ResourceID>
+    <Value>12</Value>
+    <Units />
+    <DisplayName>Dual Gain Ratio</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[MSPROCESSINGMODE]</ResourceID>
+    <Value>4</Value>
+    <Units />
+    <DisplayName>MS Processing Mode</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[NOMINALMASSRESOLUTION]</ResourceID>
+    <Value>70000</Value>
+    <Units />
+    <DisplayName>Nominal Mass Resolution</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[PREAMPOFFSETHIGAIN]</ResourceID>
+    <Value>-0.170000001788139</Value>
+    <Units />
+    <DisplayName>Preamp Offset High Gain</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[PREAMPOFFSETLOWGAIN]</ResourceID>
+    <Value>962</Value>
+    <Units />
+    <DisplayName>Preamp Offset Low Gain</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[TUNEFILE]</ResourceID>
+    <Value>TOFMassCalibration-1700mzRange.tun</Value>
+    <Units />
+    <DisplayName>Tune File Name</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[TUNEMASSRANGEMAX]</ResourceID>
+    <Value>1700</Value>
+    <Units>m/z</Units>
+    <DisplayName>Tune Mass Range Max.</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>MSQTOF_1</DeviceID>
+    <ResourceName>config</ResourceName>
+    <ResourceID>REG[ACTUAL].OBJ[1].NDR[TUNEMASSRANGEMIN]</ResourceID>
+    <Value>50</Value>
+    <Units>m/z</Units>
+    <DisplayName>Tune Mass Range Min.</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>TCC_1</DeviceID>
+    <ResourceName>ExtendedRunInformation</ResourceName>
+    <ResourceID>RunStop_ValvePosition_Description</ResourceID>
+    <Value>Position 1 (Port 1 -&gt; 2)</Value>
+    <Units />
+    <DisplayName>Run Stop Valve Pos. Desc.</DisplayName>
+  </Parameter>
+  <Parameter>
+    <DeviceID>TCC_1</DeviceID>
+    <ResourceName>ExtendedRunInformation</ResourceName>
+    <ResourceID>RunStop_ValvePosition_Number</ResourceID>
+    <Value>0</Value>
+    <Units />
+    <DisplayName>Run Stop Valve Pos. No.</DisplayName>
+  </Parameter>
+</DeviceConfigInformation>

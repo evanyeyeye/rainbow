@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AutomationInfo>
+  <Version>2.0</Version>
+  <!--Information for Data Analysis automation-->
+  <WorklistAutomation>0</WorklistAutomation>
+  <ProgramExecutions>
+    <ProgramExecution>
+      <!-- Registry will search under HKEY_LOCAL_MACHINE -->
+      <ProgramRegistryKey>SOFTWARE\Agilent\MassHunter\Workstation\Acq\Home</ProgramRegistryKey>
+      <!-- If Program path is not absolute, then it will combine base path found from above mentioned registry -->
+      <ProgramPath>bin\2dlc\Agilent.MassSpectrometry.LCMSAcquisition.2DLCFileSplitterProcess.exe</ProgramPath>
+      <!-- Parameters passed to program -->
+      <ProgramParameters>/DataFilePath="{DataFilePath}"</ProgramParameters>
+      <!-- Timeout value is in seconds; 0 means default timeout -->
+      <TimeOut>10000</TimeOut>
+      <ExecutionOrder>200</ExecutionOrder>
+    </ProgramExecution>
+    <!-- Can have multiple  ProgramExecution nodes-->
+  </ProgramExecutions>
+</AutomationInfo>

@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Devices>
+  <Version>1</Version>
+  <Device DeviceID="1">
+    <Name>QTOF</Name>
+    <DriverVersion>11.00.00</DriverVersion>
+    <FirmwareVersion>27.852</FirmwareVersion>
+    <ModelNumber>G6546A</ModelNumber>
+    <OrdinalNumber>1</OrdinalNumber>
+    <SerialNumber>SG2429E201</SerialNumber>
+    <Type>6</Type>
+    <StoredDataType>8</StoredDataType>
+    <Delay>0</Delay>
+    <Vendor>1</Vendor>
+  </Device>
+  <Device DeviceID="1011">
+    <Name>BinPump</Name>
+    <ModelNumber>G1312B</ModelNumber>
+    <OrdinalNumber>1</OrdinalNumber>
+    <SerialNumber>DEACB10852</SerialNumber>
+    <Type>31</Type>
+    <StoredDataType>2</StoredDataType>
+    <Delay>0</Delay>
+    <Vendor>1</Vendor>
+  </Device>
+  <Device DeviceID="1012">
+    <Name>TCC</Name>
+    <ModelNumber>G1316A</ModelNumber>
+    <OrdinalNumber>1</OrdinalNumber>
+    <SerialNumber>DEAES40648</SerialNumber>
+    <Type>40</Type>
+    <StoredDataType>2</StoredDataType>
+    <Delay>0</Delay>
+    <Vendor>1</Vendor>
+  </Device>
+</Devices>

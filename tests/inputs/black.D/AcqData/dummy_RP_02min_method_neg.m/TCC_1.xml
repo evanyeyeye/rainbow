@@ -1,0 +1,32 @@
+<ColumnCompMethod xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" ModuleType="G1316A" xsdName="ColumnCompMethod.xsd" schemaVersion="1.0.4" schemaSI="1" ModuleOptions="">
+  <ConfigurationXml>&lt;ColumnCompConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xsdName="SamplerConfig.xsd" schemaVersion="1.0.2" schemaSI="4"&gt;&lt;DisplayName&gt;Column Comp.&lt;/DisplayName&gt;&lt;SerialNumber&gt;DEAES40648&lt;/SerialNumber&gt;&lt;ModuleType&gt;G1316A&lt;/ModuleType&gt;&lt;ModuleDisplayType&gt;G1316A&lt;/ModuleDisplayType&gt;&lt;ConnectionInfo&gt;&lt;ConnectionType&gt;ConnectionType_IPAddress&lt;/ConnectionType&gt;&lt;IPAddress&gt;192.168.254.11&lt;/IPAddress&gt;&lt;/ConnectionInfo&gt;&lt;FirmwareRevision&gt;A.07.02 [001]&lt;/FirmwareRevision&gt;&lt;IsColumnSwitchingValveInstalled&gt;true&lt;/IsColumnSwitchingValveInstalled&gt;&lt;ColumnValveVersion&gt;6Port2Positions&lt;/ColumnValveVersion&gt;&lt;RealHeadId&gt;5067-4137&lt;/RealHeadId&gt;&lt;RealMaxPressure&gt;600&lt;/RealMaxPressure&gt;&lt;/ColumnCompConfig&gt;</ConfigurationXml>
+  <Timetable />
+  <StopTime>
+    <StopTimeMode>StopTime_NoLimit</StopTimeMode>
+  </StopTime>
+  <PostTime>
+    <PostTimeMode>PostTime_Off</PostTimeMode>
+  </PostTime>
+  <ColumnValvePosition>ValvePos_1_2</ColumnValvePosition>
+  <TemperatureCorrection>
+    <Linear>0</Linear>
+    <Offset>0</Offset>
+  </TemperatureCorrection>
+  <LeftTemperatureControl>
+    <TemperatureControlMode>TemperatureSet</TemperatureControlMode>
+    <Temperature>30</Temperature>
+    <NotReadyLimit>
+      <NotReadyLimitOn>true</NotReadyLimitOn>
+      <NotReadyLimitValue>0.8</NotReadyLimitValue>
+    </NotReadyLimit>
+    <TemperatureControlMode2>TemperatureSet</TemperatureControlMode2>
+  </LeftTemperatureControl>
+  <RightTemperatureControl>
+    <TemperatureControlMode>Combined</TemperatureControlMode>
+    <NotReadyLimit>
+      <NotReadyLimitOn>true</NotReadyLimitOn>
+      <NotReadyLimitValue>0.8</NotReadyLimitValue>
+    </NotReadyLimit>
+    <TemperatureControlMode2>Combined</TemperatureControlMode2>
+  </RightTemperatureControl>
+</ColumnCompMethod>

@@ -186,7 +186,7 @@ def parse_msdata(path, prec=0):
     #   - e2 (double)
     #   - f2 (double)
     # We also need flag from DefaultMassCal.xml to know which of a2-f2 to use.
-    #   - If the flag in int is 86, for example, its binary representation is 1010110 -> 0110101 (reversed)
+    #   - If the flag in int is 86, for example, its binary representation is 01010110 -> 01101010 (bit order reversed)
     #   - The position of “1” indicates the degree of the polynomial.
     #   - This means
     #     """
@@ -194,7 +194,7 @@ def parse_msdata(path, prec=0):
     #     order: 0  1  2  3  4  5  6  7
     #     coeff: NA a2 b2 NA c2 NA d2 NA
     #     """ 
-    #     - a2, b2, c2, and d2 are used (because the "1" appears in positions 1, 3, 5, and 7)
+    #     - a2, b2, c2, and d2 are used (because the "1" appears in positions 1, 2, 4, and 6)
     #     - They are assigned as coefficients of t^1, t^2, t^4, and t^6 respectively (according to the positions of "1"s).
     #     - e2 and f2 are not used (usually their values are 0.0)
     #     - Then the calibrated m/z is calculated as:
@@ -235,7 +235,7 @@ def parse_msdata(path, prec=0):
             inten = decompress_inten_list(mem_view[16:], endian="<", total_len=num_mz)
         # Calculate the primary calibration of mz values. 
         start_mz, delta_mz = twodoubles_unpack(mem_view[:16])
-        t_list = np.arange(start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
+        t_list = np.linspace(start_mz, start_mz + delta_mz * (num_mz - 1), num_mz)  # more accurate to use linspace than arange here
         # Calculate the polynomial calibration of mz values.
         coeff, base, left, right, a2, b2, c2, d2, e2, f2 = calib_vals[i]
         flag = default_calib[calib_id]["ValueUseFlags"]     # e.g., '1010110'
@@ -331,7 +331,7 @@ def read_type(f, complextype_dict, name):
     elif name == 'xs:double':
         return struct.unpack('<d', f.read(8))[0]
     else:
-        return read_complextype(f, complextype_dict, name.split(":")[1])
+        return read_complextype(f, complextype_dict, name.split(":")[-1])   # works with regardless of namespace prefix
 
 # "Zero-specific implementation of Run-Length Encoding
 def decompress_inten_list(comp_view, endian="<", total_len=None):

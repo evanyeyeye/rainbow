@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!--Voyager Method XML file-->
+<Properties>
+  <Version>8.0</Version>
+  <PreRunScript>
+    <ProjectName>
+    </ProjectName>
+    <ProcedureName>
+    </ProcedureName>
+    <InParameter>
+    </InParameter>
+    <DisplayString>
+    </DisplayString>
+  </PreRunScript>
+  <PostRunScript>
+    <ProjectName>
+    </ProjectName>
+    <ProcedureName>
+    </ProcedureName>
+    <InParameter>
+    </InParameter>
+    <DisplayString>
+    </DisplayString>
+  </PostRunScript>
+  <Description>4GHz high res mass, 1700m/z max, NP RxSIL silica column, positive mode, A=CHCl3, B=MeOH</Description>
+  <EstimatedRunTime>1.7</EstimatedRunTime>
+  <AppVersion>2026-0203-1928-17994</AppVersion>
+  <CreatedBy>SYSTEM (SYSTEM)</CreatedBy>
+  <LastModifiedBy>SYSTEM (SYSTEM)</LastModifiedBy>
+  <CreationDate>2026-02-03 14:28:09-05:00</CreationDate>
+  <LastModificationDate>2026-02-03 14:28:17-05:00</LastModificationDate>
+</Properties>
