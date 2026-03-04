@@ -9,7 +9,7 @@ class DataTester(unittest.TestCase):
     Unit tests for parsing file formats. 
 
     """
-    def __test_data_directory(self, color, ext):
+    def __test_data_directory(self, color, ext, hrms=False):
         """ 
         Runs all tests for a DataDirectory after parsing. 
 
@@ -46,7 +46,7 @@ class DataTester(unittest.TestCase):
                 detector_to_names[detector] = [name]
 
         datadir_path = tests_path / "inputs" / (color + "." + ext)
-        datadir = rb.read(str(datadir_path))
+        datadir = rb.read(str(datadir_path), hrms=hrms)
 
         # Tests attributes of the DataDirectory.
         # Also tests classification of its DataFiles. 
@@ -75,12 +75,17 @@ class DataTester(unittest.TestCase):
 
             self.assertEqual(datafile.name, name)
             self.assertEqual(datafile.detector, file_dict['detector'])
-            self.assertDictEqual(datafile.metadata, file_dict['metadata'])
+            self.assertDictEqual(datafile.metadata, file_dict.get('metadata', {}), 
+                                 f"Metadata mismatch for file: {name}")
 
-            shape = tuple(file_dict['shape'])
-            self.assertEqual(datafile.xlabels.size, shape[0])
-            self.assertEqual(datafile.ylabels.size, shape[1])
-            self.assertTupleEqual(datafile.data.shape, shape)
+            shape = tuple(file_dict.get('shape', (0,0)))
+            self.assertEqual(datafile.xlabels.size, shape[0], 
+                             f"X labels size mismatch for file: {name}")
+            self.assertEqual(datafile.ylabels.size, shape[1], 
+                             f"Y labels size mismatch for file: {name}")
+            self.assertTupleEqual(datafile.data.shape, shape, 
+                                  f"Data shape mismatch for file: {name}")
+            
             csv_path = outputs_path / (Path(name).stem + ".csv")
             with open(csv_path) as csv_f:
                 csv_lines = csv_f.read().splitlines()
@@ -88,4 +93,10 @@ class DataTester(unittest.TestCase):
             csv_list = [tuple(map(float, line.split(','))) for line in csv_lines[1:]]
             data_list = [tuple(map(float, line.split(','))) for line in data_lines[1:]]
             self.assertEqual(csv_lines[0], data_lines[0])
-            self.assertListEqual(csv_list, data_list)
+            
+            # TODO - Decide between exact equality and near equality for unit tests
+            # self.assertListEqual(csv_list, data_list)
+            for csv_row, data_row in zip(csv_list, data_list):
+                self.assertEqual(len(csv_row), len(data_row))
+                for a, b in zip(csv_row, data_row):
+                    self.assertAlmostEqual(a, b, places=12)

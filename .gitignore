@@ -2,4 +2,11 @@ __pycache__/
 docs/_build/*
 docs/_autosummary/*
 
-.DS_STORE
+# Virtual environment
+.venv/
+
+# Egg files
+*.egg-info/
+
+# MacOS
+.DS_Store

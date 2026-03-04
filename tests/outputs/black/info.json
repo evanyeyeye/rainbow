@@ -1,0 +1,10 @@
+{
+  "metadata": {
+    "vendor": "Agilent"
+  },
+  "datafiles": {
+    "MSProfile.bin": {
+      "detector": "MS"
+    }
+  }
+}

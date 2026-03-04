@@ -62,5 +62,12 @@ class TestAgilent(tests.datatester.DataTester):
         """
         self._DataTester__test_data_directory("pink", "D")
 
+    def test_black(self):
+        """
+        Test description TBD
+
+        """
+        self._DataTester__test_data_directory("black", "D", hrms=True)
+
 if __name__ == '__main__':
     unittest.main()

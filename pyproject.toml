@@ -19,7 +19,8 @@ dependencies = [
     "numpy",
     "matplotlib",
     "lxml",
-    "pandas"
+    "pandas",
+    "python-lzf>=0.2.6",
 ]
 
 [project.urls]
