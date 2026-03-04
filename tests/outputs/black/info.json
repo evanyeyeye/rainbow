@@ -4,7 +4,9 @@
   },
   "datafiles": {
     "MSProfile.bin": {
-      "detector": "MS"
+      "detector": "MS",
+      "shape": [10, 1600],
+      "metadata": {}
     }
   }
 }
