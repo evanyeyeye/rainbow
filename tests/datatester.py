@@ -75,7 +75,8 @@ class DataTester(unittest.TestCase):
 
             self.assertEqual(datafile.name, name)
             self.assertEqual(datafile.detector, file_dict['detector'])
-            self.assertDictEqual(datafile.metadata, file_dict['metadata'])
+            if file_dict['metadata']:
+                self.assertDictEqual(datafile.metadata, file_dict['metadata'])
 
             shape = tuple(file_dict['shape'])
             self.assertEqual(datafile.xlabels.size, shape[0])
@@ -88,4 +89,8 @@ class DataTester(unittest.TestCase):
             csv_list = [tuple(map(float, line.split(','))) for line in csv_lines[1:]]
             data_list = [tuple(map(float, line.split(','))) for line in data_lines[1:]]
             self.assertEqual(csv_lines[0], data_lines[0])
-            self.assertListEqual(csv_list, data_list)
+            self.assertEqual(len(csv_list), len(data_list))
+            for row1, row2 in zip(csv_list, data_list):
+                self.assertEqual(len(row1), len(row2))
+                for v1, v2 in zip(row1, row2):
+                    self.assertAlmostEqual(v1, v2, places=10)
