@@ -16,7 +16,6 @@ Run with:
     python -m unittest discover -s tests           (from project root)
 """
 
-import io
 import os
 import struct
 import tempfile
@@ -24,6 +23,7 @@ import unittest
 import warnings
 
 import numpy as np
+from lxml import etree
 
 from rainbow import DataFile
 from rainbow.agilent.masshunter import (
@@ -31,9 +31,6 @@ from rainbow.agilent.masshunter import (
     parse_mspeak_data,
     _parse_msscan_bin,
     _parse_mspeak_bin,
-    _MSPEAK_RECORD_FORMAT,
-    _MSPEAK_RECORD_SIZE,
-    _MSPEAK_FIELD_NAMES,
 )
 
 
@@ -41,7 +38,7 @@ from rainbow.agilent.masshunter import (
 # Fixture helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
-_HEADER_OFFSET = 0x58  # data starts here in MSScan.bin
+_POINTER_OFFSET = 0x58   # pointer lives here
 
 
 def _make_scan_record(
@@ -49,41 +46,90 @@ def _make_scan_record(
     spectrum_offset, byte_count, point_count,
     ms_level=1, scan_type=1, ion_mode=2, ion_polarity=0,
 ):
-    """Pack one 184-byte MSScan.bin record from the given values."""
+    """
+    Pack one MSScan.bin record matching the XSD field order.
+    read_complextype() reads fields sequentially in XSD definition order:
+
+    ScanRecordType:
+      ScanID(i) ScanMethodID(i) TimeSegmentID(i) ScanTime(d)
+      MSLevel(i) ScanType(i) TIC(d) BasePeakMZ(d) BasePeakValue(d)
+      CycleNumber(i) Status(i) IonMode(i) IonPolarity(i)
+      Fragmentor(d) CollisionEnergy(d) MzOfInterest(d)
+      SamplingPeriod(d) MeasuredMassRangeMin(d) MeasuredMassRangeMax(d)
+      Threshold(d) IsFragmentorDynamic(i) IsCollisionEnergyDynamic(i)
+      SpectrumParamValues (SpectrumParamsType):
+        SpectrumFormatID(i) SpectrumOffset(l) ByteCount(i) PointCount(i)
+        MinY(d) MaxY(d) MinX(d) MaxX(d)
+    """
     return struct.pack(
-        _MSPEAK_RECORD_FORMAT,
-        # preamble unknowns ×5
-        0, 0, 0, 0, 0,
-        # spectrum params
-        2,                   # SpectrumFormatID
-        spectrum_offset,     # SpectrumOffset  (int64)
-        byte_count,          # ByteCount
-        point_count,         # PointCount
-        # MinY MaxY MinX MaxX
-        0.0, float(base_peak_value), 50.0, 650.0,
-        # XSD ScanRecord
-        scan_id, 1, 1,       # ScanID, ScanMethodID, TimeSegmentID
-        scan_time,           # ScanTime (double)
-        ms_level, scan_type, # MSLevel, ScanType
-        tic, base_peak_mz, base_peak_value,   # TIC, BasePeakMZ, BasePeakValue
-        0, 0, ion_mode, ion_polarity,          # CycleNumber, Status, IonMode, IonPolarity
-        0.0, 0.0, 0.0, 0.0, 50.0,             # Fragmentor…MeasuredMassRangeMin
-        0,                   # trailing int32
+        '<'
+        # ScanRecordType fields
+        'i'      # ScanID
+        'i'      # ScanMethodID
+        'i'      # TimeSegmentID
+        'd'      # ScanTime
+        'i'      # MSLevel
+        'i'      # ScanType
+        'd'      # TIC
+        'd'      # BasePeakMZ
+        'd'      # BasePeakValue
+        'i'      # CycleNumber
+        'i'      # Status
+        'i'      # IonMode
+        'i'      # IonPolarity
+        'd'      # Fragmentor
+        'd'      # CollisionEnergy
+        'd'      # MzOfInterest
+        'd'      # SamplingPeriod
+        'd'      # MeasuredMassRangeMin
+        'd'      # MeasuredMassRangeMax
+        'd'      # Threshold
+        'i'      # IsFragmentorDynamic
+        'i'      # IsCollisionEnergyDynamic
+        # SpectrumParamValues (SpectrumParamsType)
+        'i'      # SpectrumFormatID
+        'Q'      # SpectrumOffset  (xs:long = uint64)
+        'i'      # ByteCount
+        'i'      # PointCount
+        'd'      # MinY
+        'd'      # MaxY
+        'd'      # MinX
+        'd'      # MaxX
+        ,
+        # ScanRecordType values
+        scan_id, 1, 1,          # ScanID, ScanMethodID, TimeSegmentID
+        scan_time,              # ScanTime
+        ms_level, scan_type,    # MSLevel, ScanType
+        tic,                    # TIC
+        base_peak_mz,           # BasePeakMZ
+        base_peak_value,        # BasePeakValue
+        0, 0,                   # CycleNumber, Status
+        ion_mode, ion_polarity, # IonMode, IonPolarity
+        0.0, 0.0, 0.0, 0.0,    # Fragmentor, CollisionEnergy, MzOfInterest, SamplingPeriod
+        0.0, 0.0, 0.0,          # MeasuredMassRangeMin, MeasuredMassRangeMax, Threshold
+        0, 0,                   # IsFragmentorDynamic, IsCollisionEnergyDynamic
+        # SpectrumParamValues values
+        2,                      # SpectrumFormatID
+        spectrum_offset,        # SpectrumOffset
+        byte_count,             # ByteCount
+        point_count,            # PointCount
+        0.0,                    # MinY
+        float(base_peak_value), # MaxY
+        0.0,                    # MinX
+        0.0,                    # MaxX
     )
 
 
 def _make_msscan_bin(scan_specs):
     """
     Build a synthetic MSScan.bin byte string.
-
-    Args:
-        scan_specs: list of dicts with keys:
-            scan_id, scan_time, tic, base_peak_mz, base_peak_value,
-            spectrum_offset, byte_count, point_count
+    Writes a uint32 pointer at 0x58 pointing to where records start,
+    matching the real file format and parse_msdata() / _parse_msscan_bin()
+    framing.
     """
-    # _parse_msscan_bin seeks directly to _MSPEAK_HEADER_OFFSET (0x58)
-    # and reads records from there — just pad with zeros, no pointer needed.
-    buf = bytearray(_HEADER_OFFSET)
+    records_start = _POINTER_OFFSET + 4   # records start at byte 92
+    buf = bytearray(_POINTER_OFFSET)      # pad to 0x58
+    buf += struct.pack('<I', records_start)
     for s in scan_specs:
         buf += _make_scan_record(**s)
     return bytes(buf)
@@ -286,23 +332,45 @@ def _make_standard_fixture(tmpdir, n_scans=3, bpp=16):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestRecordFormat(unittest.TestCase):
-    """Sanity checks on the binary record layout constants."""
+    """Sanity checks on the XSD-driven record parsing."""
 
-    def test_record_size_is_184(self):
-        self.assertEqual(_MSPEAK_RECORD_SIZE, 184)
+    def setUp(self):
+        acq           = _write_acqdata(tempfile.mkdtemp(), [], b'')
+        xsd_path      = os.path.join(acq, "MSScan.xsd")
+        tree          = etree.parse(xsd_path)
+        root          = tree.getroot()
+        namespace     = tree.xpath('namespace-uri(.)')
+        self.names    = [ct.get('name') for ct in
+                         root.findall(f"{{{namespace}}}complexType")]
+        self.all_names = {el.get('name')
+                          for el in root.iter()
+                          if el.get('name') and el.get('type')}
 
-    def test_field_count_matches_format(self):
-        dummy  = struct.unpack(_MSPEAK_RECORD_FORMAT, b'\x00' * 184)
-        self.assertEqual(len(dummy), len(_MSPEAK_FIELD_NAMES))
+    def test_xsd_contains_required_types(self):
+        """MSScan.xsd must define ScanRecordType and SpectrumParamsType."""
+        self.assertIn('ScanRecordType',     self.names)
+        self.assertIn('SpectrumParamsType', self.names)
 
-    def test_field_names_contain_required_keys(self):
+    def test_xsd_scanrecord_contains_required_fields(self):
+        """ScanRecordType must define the fields we rely on."""
         required = {
-            'spectrum_offset', 'byte_count', 'point_count',
-            'scan_time', 'tic', 'base_peak_mz', 'base_peak_value',
-            'ms_level', 'ion_mode', 'ion_polarity',
+            'ScanTime', 'TIC', 'BasePeakMZ', 'BasePeakValue',
+            'MSLevel', 'IonMode', 'IonPolarity',
+            'SpectrumOffset', 'ByteCount', 'PointCount',
         }
-        self.assertTrue(required.issubset(set(_MSPEAK_FIELD_NAMES)))
+        self.assertTrue(required.issubset(self.all_names),
+                        f"Missing fields: {required - self.all_names}")
 
+    def test_xsd_spectrumparams_contains_required_fields(self):
+        """SpectrumParamsType must define the spectrum pointer fields."""
+        required = {
+            'SpectrumFormatID', 'SpectrumOffset',
+            'ByteCount', 'PointCount',
+            'MinY', 'MaxY', 'MinX', 'MaxX',
+        }
+        self.assertTrue(required.issubset(self.all_names),
+                        f"Missing fields: {required - self.all_names}")
+                    
 
 class TestParseMsscanBin(unittest.TestCase):
     """Tests for _parse_msscan_bin."""
@@ -311,10 +379,18 @@ class TestParseMsscanBin(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
 
     def _write_scan_bin(self, scan_specs):
-        path = os.path.join(self.tmpdir, "MSScan.bin")
-        with open(path, 'wb') as f:
-            f.write(_make_msscan_bin(scan_specs))
-        return path
+        """Write a full AcqData directory and return the MSScan.bin path."""
+        # _write_acqdata writes MSScan.bin + MSScan.xsd — both needed now
+        acq = _write_acqdata(self.tmpdir, scan_specs, b'')
+        return acq   # return acqdata path, not just MSScan.bin
+
+    def _parse(self, acq_path, n):
+        """Helper: parse MSScan.bin using XSD from the same AcqData folder."""
+        return _parse_msscan_bin(
+            os.path.join(acq_path, "MSScan.bin"),
+            n,
+            os.path.join(acq_path, "MSScan.xsd"),
+        )
 
     def test_correct_number_of_records(self):
         specs = [
@@ -323,8 +399,8 @@ class TestParseMsscanBin(unittest.TestCase):
                  spectrum_offset=0, byte_count=0, point_count=0)
             for i in range(5)
         ]
-        path    = self._write_scan_bin(specs)
-        records = _parse_msscan_bin(path, 5)
+        acq     = self._write_scan_bin(specs)
+        records = self._parse(acq, 5)
         self.assertEqual(len(records), 5)
 
     def test_scan_time_values(self):
@@ -335,8 +411,8 @@ class TestParseMsscanBin(unittest.TestCase):
                  spectrum_offset=0, byte_count=0, point_count=0)
             for i, t in enumerate(times)
         ]
-        path    = self._write_scan_bin(specs)
-        records = _parse_msscan_bin(path, 3)
+        acq     = self._write_scan_bin(specs)
+        records = self._parse(acq, 3)
         for rec, expected_t in zip(records, times):
             self.assertAlmostEqual(rec['scan_time'], expected_t, places=6)
 
@@ -348,8 +424,8 @@ class TestParseMsscanBin(unittest.TestCase):
                  spectrum_offset=0, byte_count=0, point_count=0)
             for i, t in enumerate(tics)
         ]
-        path    = self._write_scan_bin(specs)
-        records = _parse_msscan_bin(path, 3)
+        acq     = self._write_scan_bin(specs)
+        records = self._parse(acq, 3)
         for rec, expected_tic in zip(records, tics):
             self.assertAlmostEqual(rec['tic'], expected_tic, places=3)
 
@@ -357,8 +433,8 @@ class TestParseMsscanBin(unittest.TestCase):
         spec = dict(scan_id=1, scan_time=1.0, tic=500.0,
                     base_peak_mz=135.0, base_peak_value=400.0,
                     spectrum_offset=6404, byte_count=64, point_count=4)
-        path    = self._write_scan_bin([spec])
-        records = _parse_msscan_bin(path, 1)
+        acq     = self._write_scan_bin([spec])
+        records = self._parse(acq, 1)
         self.assertEqual(records[0]['spectrum_offset'], 6404)
         self.assertEqual(records[0]['byte_count'],      64)
         self.assertEqual(records[0]['point_count'],     4)
@@ -367,8 +443,8 @@ class TestParseMsscanBin(unittest.TestCase):
         spec = dict(scan_id=1, scan_time=1.0, tic=500.0,
                     base_peak_mz=135.0, base_peak_value=400.0,
                     spectrum_offset=0, byte_count=0, point_count=0)
-        path    = self._write_scan_bin([spec])
-        records = _parse_msscan_bin(path, 1)
+        acq     = self._write_scan_bin([spec])
+        records = self._parse(acq, 1)
         self.assertAlmostEqual(records[0]['base_peak_mz'],    135.0, places=4)
         self.assertAlmostEqual(records[0]['base_peak_value'], 400.0, places=4)
 
@@ -377,9 +453,8 @@ class TestParseMsscanBin(unittest.TestCase):
         spec = dict(scan_id=1, scan_time=1.0, tic=0.0,
                     base_peak_mz=0.0, base_peak_value=0.0,
                     spectrum_offset=0, byte_count=0, point_count=0)
-        path    = self._write_scan_bin([spec])
-        # Ask for 5 but only 1 record exists
-        records = _parse_msscan_bin(path, 5)
+        acq     = self._write_scan_bin([spec])
+        records = self._parse(acq, 5)  # ask for 5, only 1 exists
         self.assertEqual(len(records), 1)
 
 
@@ -708,7 +783,7 @@ class TestParseAllfiles(unittest.TestCase):
         with open(os.path.join(acq, "MSScan.xsd"), 'w') as f:
             f.write(MSSCAN_XSD)
         with open(os.path.join(acq, "MSScan.bin"), 'wb') as f:
-            f.write(b'\x00' * _HEADER_OFFSET)
+            f.write(b'\x00' * _POINTER_OFFSET)
         self.assertEqual(parse_allfiles(self.tmpdir), [])
 
     def test_mspeak_preferred_over_nothing(self):

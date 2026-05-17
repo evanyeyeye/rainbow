@@ -24,7 +24,21 @@ def read(path, prec=0, hrms=False, requested_files=None):
     Returns:
         DataDirectory representing the Agilent .D directory.
 
+    Raises:
+        ImportError: If ``hrms=True`` and ``python-lzf`` is not installed.
+        FileNotFoundError: If ``path`` does not exist.
+        NotADirectoryError: If ``path`` is not a directory.
     """
+    # ── Validate path ──────────────────────────────────────────────────────
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Directory not found: {path}"
+        )
+    if not os.path.isdir(path):
+        raise NotADirectoryError(
+            f"Path is not a directory: {path}"
+        )
+
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(path, prec, requested_files))
 
@@ -32,25 +46,38 @@ def read(path, prec=0, hrms=False, requested_files=None):
     if os.path.isdir(acqdata):
         acqdata_files = set(os.listdir(acqdata))
 
-        if {"MSTS.xml", "MSScan.xsd", "MSScan.bin"} <= acqdata_files:
+        required = {"MSTS.xml", "MSScan.xsd", "MSScan.bin"}
+        if required <= acqdata_files:
 
             if "MSPeak.bin" in acqdata_files:
-                # Centroided data — no extra dependency, always attempt.
+                # Centroided data — no extra dependency, always parse.
                 from rainbow.agilent import masshunter
-                datafiles.extend(masshunter.parse_allfiles(path, prec))
+                try:
+                    datafiles.extend(masshunter.parse_allfiles(path, prec))
+                except Exception as e:
+                    import warnings
+                    warnings.warn(
+                        f"Failed to parse MSPeak.bin in {path}: {e}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
 
             elif "MSProfile.bin" in acqdata_files and hrms:
                 # HRMS profile data — requires python-lzf.
+                from rainbow.agilent import masshunter
                 try:
-                    from rainbow.agilent import masshunter
                     datafiles.extend(masshunter.parse_allfiles(path, prec))
-                except ModuleNotFoundError:
-                    raise ModuleNotFoundError(
-                        "You must install python-lzf to parse MSProfile.bin "
-                        "files.\nRun: pip install python-lzf\n"
-                        "If you have MSPeak.bin data, no extra packages are "
-                        "needed — it is parsed automatically."
-                    )
+                except ImportError as e:
+                    if 'lzf' in str(e).lower():
+                        raise ImportError(
+                            "You must install python-lzf to parse "
+                            "MSProfile.bin files.\n"
+                            "Run: pip install python-lzf\n"
+                            "If you have MSPeak.bin data, no extra "
+                            "packages are needed — it is parsed "
+                            "automatically."
+                        ) from e
+                    raise  # re-raise any other ImportError unchanged
 
     metadata = chemstation.parse_metadata(path, datafiles)
     return DataDirectory(path, datafiles, metadata)

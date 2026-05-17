@@ -9,6 +9,7 @@ The format is auto-detected from the files present in AcqData/.
 """
 import os
 import struct
+import warnings
 import numpy as np
 try:
     import lzf as _lzf
@@ -20,85 +21,22 @@ from lxml import etree
 from rainbow import DataFile
 
 
-# ── Record layout for MSScan.bin (MSPeak.bin variant) ─────────────────────────
+# ── MSScan.bin record layout ───────────────────────────────────────────────────
 #
-# Each record is 184 bytes, structured as two blocks:
+# Records are read generically using the field definitions in MSScan.xsd,
+# via read_complextype() / read_type(). This handles layout differences
+# across instrument types and MassHunter versions without hardcoded offsets.
 #
-#   PREAMBLE (bytes 0–71) — spectrum pointer block, not defined in MSScan.xsd:
-#     +000  4×5  unknown header fields     (5 × int32)
-#     +020  4    SpectrumFormatID          (int32)
-#     +024  8    SpectrumOffset            (int64)  byte offset into MSPeak.bin
-#     +032  4    ByteCount                 (int32)  total bytes for this scan's peaks
-#     +036  4    PointCount                (int32)  number of peaks
-#     +040  8    MinY                      (double) DBL_MAX sentinel = unset
-#     +048  8    MaxY                      (double) max intensity in scan
-#     +056  8    MinX                      (double)
-#     +064  8    MaxX                      (double)
-#
-#   XSD SCANRECORD (bytes 72–183) — matches MSScan.xsd ScanRecordType:
-#     +072  4    ScanID                    (int32)
-#     +076  4    ScanMethodID              (int32)
-#     +080  4    TimeSegmentID             (int32)
-#     +084  8    ScanTime                  (double) retention time in minutes
-#     +092  4    MSLevel                   (int32)
-#     +096  4    ScanType                  (int32)
-#     +100  8    TIC                       (double)
-#     +108  8    BasePeakMZ                (double)
-#     +116  8    BasePeakValue             (double)
-#     +124  4    CycleNumber               (int32)
-#     +128  4    Status                    (int32)
-#     +132  4    IonMode                   (int32)
-#     +136  4    IonPolarity               (int32)
-#     +140  8    Fragmentor                (double)
-#     +148  8    CollisionEnergy           (double)
-#     +156  8    MzOfInterest              (double)
-#     +164  8    SamplingPeriod            (double)
-#     +172  8    MeasuredMassRangeMin      (double)
-#     +180  4    (trailing field)          (int32)
+# Records start at the address stored as uint32 at file offset 0x58
+# (same convention as parse_msdata). The record size and field order
+# are determined by the ScanRecordType and SpectrumParamsType complex
+# types defined in MSScan.xsd.
 #
 # MSPeak.bin peak encoding is determined by ByteCount / PointCount:
-#   8  bytes/peak → float32 mz + float32 intensity  (low-res single quad)
-#   12 bytes/peak → float64 mz + float32 intensity  (some QTOF)
-#   16 bytes/peak → float64 mz + float64 intensity  (high-res, confirmed)
-
-_MSPEAK_RECORD_FORMAT = (
-    '<'
-    'iiiii'   # +000 unknown ×5
-    'i'       # +020 SpectrumFormatID
-    'q'       # +024 SpectrumOffset
-    'i'       # +032 ByteCount
-    'i'       # +036 PointCount
-    'dddd'    # +040 MinY, MaxY, MinX, MaxX
-    'iii'     # +072 ScanID, ScanMethodID, TimeSegmentID
-    'd'       # +084 ScanTime
-    'ii'      # +092 MSLevel, ScanType
-    'ddd'     # +100 TIC, BasePeakMZ, BasePeakValue
-    'iiii'    # +124 CycleNumber, Status, IonMode, IonPolarity
-    'ddddd'   # +140 Fragmentor, CollisionEnergy, MzOfInterest,
-              #      SamplingPeriod, MeasuredMassRangeMin
-    'i'       # +180 trailing int32
-)
-_MSPEAK_RECORD_SIZE   = struct.calcsize(_MSPEAK_RECORD_FORMAT)
-_MSPEAK_HEADER_OFFSET = 0x58
-
-assert _MSPEAK_RECORD_SIZE == 184, (
-    f"MSPeak record size mismatch: expected 184, got {_MSPEAK_RECORD_SIZE}"
-)
-
-# Field names matching the format string above
-_MSPEAK_FIELD_NAMES = [
-    'unk0', 'unk1', 'unk2', 'unk3', 'unk4',
-    'spectrum_format_id', 'spectrum_offset', 'byte_count', 'point_count',
-    'min_y', 'max_y', 'min_x', 'max_x',
-    'scan_id', 'scan_method_id', 'time_segment_id',
-    'scan_time',
-    'ms_level', 'scan_type',
-    'tic', 'base_peak_mz', 'base_peak_value',
-    'cycle_number', 'status', 'ion_mode', 'ion_polarity',
-    'fragmentor', 'collision_energy', 'mz_of_interest',
-    'sampling_period', 'measured_mz_min',
-    'unk_last',
-]
+#   8  bytes/peak → float32 mz + float32 intensity  (interleaved pairs)
+#   12 bytes/peak → float64 mz + float32 intensity  (interleaved pairs)
+#   16 bytes/peak → split-block: first half = n × float64 nominal m/z,
+#                                second half = n × float64 intensity
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -350,8 +288,12 @@ def parse_mspeak_data(path, prec=0):
     )
 
     # ── Step 2: parse MSScan.bin — one 184-byte record per scan ────────────
-    scan_records = _parse_msscan_bin(os.path.join(path, "MSScan.bin"),
-                                     num_scans)
+    xsd_path     = os.path.join(path, "MSScan.xsd")
+    scan_records = _parse_msscan_bin(
+        os.path.join(path, "MSScan.bin"),
+        num_scans,
+        xsd_path,
+    )
 
     # ── Step 3: read peak data from MSPeak.bin ─────────────────────────────
     spectra = _parse_mspeak_bin(os.path.join(path, "MSPeak.bin"),
@@ -408,23 +350,65 @@ def parse_mspeak_data(path, prec=0):
 # Private helpers for MSPeak.bin parsing
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _parse_msscan_bin(filepath, num_scans):
+def _parse_msscan_bin(filepath, num_scans, xsd_path):
     """
     Reads MSScan.bin and returns a list of dicts, one per scan.
 
-    Each dict contains the fields listed in _MSPEAK_FIELD_NAMES, giving
-    the scan's retention time, TIC, base peak, and a pointer
-    (spectrum_offset, byte_count, point_count) into MSPeak.bin.
+    Uses the XSD-driven read_complextype/read_type helpers to parse
+    records generically from MSScan.xsd, avoiding hardcoded field
+    offsets. This correctly handles different record layouts across
+    instrument types and MassHunter versions.
+
+    Mirrors the framing used by parse_msdata(): seeks to 0x58,
+    reads the uint32 pointer stored there, then seeks to that
+    address before reading records.
+
+    Each returned dict contains:
+        scan_time, tic, base_peak_mz, base_peak_value,
+        ms_level, scan_type, ion_mode, ion_polarity,
+        spectrum_offset, byte_count, point_count
     """
+
+    # ── Parse XSD to get field layout ──────────────────────────────────────
+    tree      = etree.parse(xsd_path)
+    root      = tree.getroot()
+    namespace = tree.xpath('namespace-uri(.)')
+
+    complextypes = {}
+    for ct in root.findall(f"{{{namespace}}}complexType"):
+        fields = []
+        for el in ct[0].findall(f"{{{namespace}}}element"):
+            fields.append((el.get('name'), el.get('type')))
+        complextypes[ct.get('name')] = fields
+
+    # ── Read records ───────────────────────────────────────────────────────
     records = []
     with open(filepath, 'rb') as f:
-        f.seek(_MSPEAK_HEADER_OFFSET)
+        f.seek(0x58)
+        start = struct.unpack('<I', f.read(4))[0]
+        f.seek(start)
+
         for _ in range(num_scans):
-            raw = f.read(_MSPEAK_RECORD_SIZE)
-            if len(raw) < _MSPEAK_RECORD_SIZE:
+            try:
+                scan = read_complextype(f, complextypes, "ScanRecordType")
+            except Exception:
                 break
-            fields = struct.unpack(_MSPEAK_RECORD_FORMAT, raw)
-            records.append(dict(zip(_MSPEAK_FIELD_NAMES, fields)))
+
+            sp = scan.get('SpectrumParamValues', {})
+            records.append({
+                'scan_time':       scan.get('ScanTime',       0.0),
+                'tic':             scan.get('TIC',            0.0),
+                'base_peak_mz':    scan.get('BasePeakMZ',     0.0),
+                'base_peak_value': scan.get('BasePeakValue',  0.0),
+                'ms_level':        scan.get('MSLevel',        0),
+                'scan_type':       scan.get('ScanType',       0),
+                'ion_mode':        scan.get('IonMode',        0),
+                'ion_polarity':    scan.get('IonPolarity',    0),
+                'spectrum_offset': sp.get('SpectrumOffset',   0),
+                'byte_count':      sp.get('ByteCount',        0),
+                'point_count':     sp.get('PointCount',       0),
+            })
+
     return records
 
 
@@ -437,7 +421,7 @@ def _parse_mspeak_bin(filepath, scan_records):
     The bytes-per-peak (bpp) is derived from ByteCount / PointCount:
       bpp == 8  → float32 mz  + float32 intensity
       bpp == 12 → float64 mz  + float32 intensity
-      bpp == 16 → float64 mz  + float64 intensity  (this instrument)
+      bpp == 16 → split-block float64 mz + float64 intensity
     """
     spectra = []
     with open(filepath, 'rb') as f:
@@ -452,6 +436,17 @@ def _parse_mspeak_bin(filepath, scan_records):
                                 np.array([], dtype=np.float64)))
                 continue
 
+            if b_cnt % n_pts != 0:
+                warnings.warn(
+                    f"ByteCount={b_cnt} is not evenly divisible by "
+                    f"PointCount={n_pts} at RT={rec['scan_time']:.3f}. "
+                    f"Skipping scan.",
+                    RuntimeWarning
+                )
+                spectra.append((rec['scan_time'],
+                                np.array([], dtype=np.float64),
+                                np.array([], dtype=np.float64)))
+                continue
             bpp = b_cnt // n_pts
 
             f.seek(offset)
@@ -488,7 +483,6 @@ def _parse_mspeak_bin(filepath, scan_records):
 
             else:
                 # Unknown format — emit empty and warn
-                import warnings
                 warnings.warn(
                     f"Unknown bytes-per-peak={bpp} at "
                     f"RT={rec['scan_time']:.3f} min. Skipping scan.",
@@ -533,18 +527,18 @@ def read_complextype(f, complextypes_dict, name):
 
 def read_type(f, complextype_dict, name):
     """
-    Reads a type from :obj:`f`. Used only for MSScan.bin. 
-
-    Used only for MSProfile.bin parsing via MSScan.xsd.
-    Mutually recurs with :obj:`read_complextype`.
+    Reads a type from :obj:`f`. Used only for MSScan.bin.
+    Mutually recurs with :obj:`read_complextype`.   
 
     Args:
         f (_io.BufferedReader): File opened in 'rb' mode.
-        complextypes_dict (dict): Dictionary defining all "complex" types.
+        complextype_dict (dict): Dictionary defining all "complex" types.
         name (str): Name of the type to parse. 
 
     Returns:
-        A numeric value for simple types, or a dict for complex types.
+        If the type is "simple", a number value. \
+        If the type is "complex", a dictionary mapping names to values. 
+
     """
     if name == 'xs:byte':
         return struct.unpack('c', f.read(1))[0]

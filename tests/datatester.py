@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from pathlib import Path
 import rainbow as rb 
@@ -75,8 +76,47 @@ class DataTester(unittest.TestCase):
 
             self.assertEqual(datafile.name, name)
             self.assertEqual(datafile.detector, file_dict['detector'])
-            if file_dict['metadata']:
-                self.assertDictEqual(datafile.metadata, file_dict['metadata'])
+            
+            fixture_meta = file_dict['metadata']
+            actual_meta  = datafile.metadata
+
+            # Check scalar metadata (strings, dates, methods)
+            scalar_keys = {k: v for k, v in fixture_meta.items()
+                        if not k.endswith(('_first', '_last'))}
+            for key, expected in scalar_keys.items():
+                self.assertIn(key, actual_meta,
+                            f"Missing metadata key: {key}")
+                actual = actual_meta[key]
+                # Compare numpy scalars and Python scalars uniformly
+                if hasattr(actual, 'item'):
+                    actual = actual.item()
+                self.assertEqual(actual, expected)
+
+            # Check array metadata stored as first/last sentinels
+            array_keys = set()
+            for k in fixture_meta:
+                m = re.match(r'^(.+)_(first|last)$', k)
+                if m:
+                    array_keys.add(m.group(1))
+
+            for key in array_keys:
+                self.assertIn(key, actual_meta,
+                            f"Missing array metadata key: {key}")
+                arr = actual_meta[key]
+                if f'{key}_first' in fixture_meta:
+                    self.assertAlmostEqual(
+                        float(arr[0]),
+                        float(fixture_meta[f'{key}_first']),
+                        places=2,
+                        msg=f"{key}[0] mismatch"
+                    )
+                if f'{key}_last' in fixture_meta:
+                    self.assertAlmostEqual(
+                        float(arr[-1]),
+                        float(fixture_meta[f'{key}_last']),
+                        places=2,
+                        msg=f"{key}[-1] mismatch"
+                    )
 
             shape = tuple(file_dict['shape'])
             self.assertEqual(datafile.xlabels.size, shape[0])

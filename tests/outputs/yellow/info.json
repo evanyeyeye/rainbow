@@ -9,10 +9,10 @@
             "detector": "FID",
             "shape": [10197, 1],
             "metadata": {
-                "date": "17 Dec 19  10:04 am", 
-                "method": "HP-5MS_HTAchiral_da_100-300_simscan.M", 
-                "instrument": "Mustang ChemStation", 
-                "unit": "pA", 
+                "date": "17 Dec 19  10:04 am",
+                "method": "HP-5MS_HTAchiral_da_100-300_simscan.M",
+                "instrument": "Mustang ChemStation",
+                "unit": "pA",
                 "signal": "Front Signal"
             }
         },
@@ -20,7 +20,7 @@
             "detector": "MS",
             "shape": [1307, 199],
             "metadata": {
-                "date": "17 Dec 19  10:04 am", 
+                "date": "17 Dec 19  10:04 am",
                 "method": "HP-5MS_HTAchiral_da"
             }
         },
@@ -28,14 +28,29 @@
             "detector": "MS",
             "shape": [1309, 2],
             "metadata": {
-                "date": "17 Dec 19  10:04 am", 
+                "date": "17 Dec 19  10:04 am",
                 "method": "HP-5MS_HTAchiral_da"
             }
         },
         "MSPeak.bin": {
             "detector": "MS",
             "shape": [2616, 199],
-            "metadata": {}
+            "metadata": {
+                "tic_first":               11398.0,
+                "tic_last":                4558.0,
+                "base_peak_mz_first":      131.0,
+                "base_peak_mz_last":       131.0,
+                "base_peak_value_first":   10242.0,
+                "base_peak_value_last":    3951.0,
+                "ms_level_first":          1,
+                "ms_level_last":           1,
+                "scan_type_first":         2,
+                "scan_type_last":          2,
+                "ion_mode_first":          2,
+                "ion_mode_last":           2,
+                "ion_polarity_first":      0,
+                "ion_polarity_last":       0
+            }
         }
     }
 }
