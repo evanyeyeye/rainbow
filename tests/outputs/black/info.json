@@ -1,12 +1,17 @@
 {
   "metadata": {
-    "vendor": "Agilent"
+    "vendor": "Agilent",
+    "date": "2026-02-03T14:29:18.3823691-05:00"
   },
   "datafiles": {
     "MSProfile.bin": {
       "detector": "MS",
       "shape": [10, 1600],
-      "metadata": {}
+      "metadata": {
+        "date": "2026-02-03T14:29:18.3823691-05:00",
+        "method": "dummy_RP_02min_method_neg.m",
+        "instrument": "LCQTOF"
+      }
     }
   }
 }

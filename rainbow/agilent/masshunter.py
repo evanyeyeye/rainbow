@@ -3,9 +3,9 @@ Methods for parsing Agilent Masshunter files.
  
 """
 import os
+import ntpath
 import struct
 import numpy as np
-import lzf
 from lxml import etree
 from rainbow import DataFile
 
@@ -49,6 +49,92 @@ def parse_allfiles(path, prec=0):
     return datafiles
 
 
+def parse_metadata(path):
+    """
+    Parses Agilent MassHunter metadata at the directory level.
+
+    Args:
+        path (str): Path to the Agilent .D directory.
+
+    Returns:
+        Dictionary containing directory metadata.
+
+    """
+    acqdata_path = os.path.join(path, "AcqData")
+    if not os.path.isdir(acqdata_path):
+        return {}
+
+    file_metadata = parse_acqdata_metadata(acqdata_path)
+    metadata = {
+        key: file_metadata[key] for key in ("date", "vialpos")
+        if key in file_metadata
+    }
+    if metadata:
+        metadata["vendor"] = "Agilent"
+    return metadata
+
+
+def parse_acqdata_metadata(path):
+    """
+    Parses minimal MassHunter metadata from the AcqData directory.
+
+    Args:
+        path (str): Path to the AcqData subdirectory.
+
+    Returns:
+        Dictionary containing metadata.
+
+    """
+    metadata = {}
+    sample_info_path = os.path.join(path, "sample_info.xml")
+    if os.path.exists(sample_info_path):
+        sample_fields = read_sample_info(sample_info_path)
+        if "AcqTime" in sample_fields:
+            metadata["date"] = sample_fields["AcqTime"]
+        if "Sample Position" in sample_fields:
+            metadata["vialpos"] = sample_fields["Sample Position"]
+        if "Method" in sample_fields:
+            metadata["method"] = ntpath.basename(sample_fields["Method"])
+        if "InstrumentName" in sample_fields:
+            metadata["instrument"] = sample_fields["InstrumentName"]
+
+    contents_path = os.path.join(path, "Contents.xml")
+    if "date" not in metadata and os.path.exists(contents_path):
+        tree = etree.parse(contents_path)
+        acquired_time = clean_text(tree.getroot().findtext("AcquiredTime"))
+        if acquired_time:
+            metadata["date"] = acquired_time
+
+    return metadata
+
+
+def read_sample_info(path):
+    """
+    Reads a MassHunter sample_info.xml file as a name-value dictionary.
+
+    """
+    tree = etree.parse(path)
+    root = tree.getroot()
+    fields = {}
+    for field in root.findall("Field"):
+        name = clean_text(field.findtext("Name"))
+        value = clean_text(field.findtext("Value"))
+        if name and value:
+            fields[name] = value
+    return fields
+
+
+def clean_text(text):
+    """
+    Returns stripped text or None for empty XML text.
+
+    """
+    if text is None:
+        return None
+    text = text.strip()
+    return text or None
+
+
 """
 MS PARSING METHODS 
 
@@ -79,6 +165,10 @@ def parse_msdata(path, prec=0):
         DataFile containing Masshunter MS data.
 
     """
+    import lzf
+
+    metadata = parse_acqdata_metadata(path)
+
     # MSTS.xml: Extract number of retention times. 
     # In future work, this step could potentially be skipped by reading 
     #    MSScan.bin until EOF and counting the offsets. 
@@ -122,16 +212,13 @@ def parse_msdata(path, prec=0):
     for i in range(num_times):
         # "ScanRecordType" is always the name of the root "complex" type.
         scan_info = read_complextype(f, complextypes_dict, "ScanRecordType")
-        """
-        Sometimes multiple spectrum params are recorded per scan, e.g., profile and centroid.
-        You need to replace the SpectrumParamValues in scan_info in such a case
-        if you want to extract spectra other than the initial one.
-        """
-        _target_spectrum_params_type = 0
+        # Sometimes multiple spectrum params are recorded per scan, e.g., profile and centroid.
+        # In observed files, SpectrumFormatID 1 is profile data in MSProfile.bin, but this is not known to be guaranteed.
+        # SpectrumFormatID 2 was centroid data in the current test data; this parser only supports profile data.
         for j in range(1, SpectrumParamsType_repeat):
             # you have to read "f" anyway to move the file pointer forward
             spectrum_info = read_complextype(f, complextypes_dict, "SpectrumParamsType")
-            if j == _target_spectrum_params_type:
+            if spectrum_info["SpectrumFormatID"] == 1:
                 scan_info['SpectrumParamValues'] = spectrum_info
         spectrum_info = scan_info['SpectrumParamValues']
         data_info[i] = (
@@ -152,23 +239,30 @@ def parse_msdata(path, prec=0):
     #            <Step Number="2">
     #                <ValueUseFlags>XX</ValueUseFlags>
     # Usually there are two DefaultCalibration entries, one for positive and the other for negative ion mode.
-    tree = etree.parse(os.path.join(path, "DefaultMassCal.xml"))
-    root = tree.getroot()
     default_calib = {}
-    for calib in root.findall("./DefaultCalibrations/DefaultCalibration"):
-        calib_id = calib.get("DefaultCalibrationID")
-        # Number="1" is for coeff and base, which we do not collect here because they varies per scan.
-        # Get info for Step Number="2", which holds the polynomial calibration coefficients shared for all scans.
-        step2 = calib.find("./Step[@Number='2']")
-        if step2 is not None:
-            assert (tech := step2.findtext("CalibrationTechnique")) == "ExternalReference", f"ID {calib_id}: Technique mismatch ({tech})"
-            assert (formula := step2.findtext("CalibrationFormula")) == "Polynomial", f"ID {calib_id}: Formula mismatch ({formula})"
+    default_mass_cal_path = os.path.join(path, "DefaultMassCal.xml")
+    if os.path.exists(default_mass_cal_path):
+        tree = etree.parse(default_mass_cal_path)
+        root = tree.getroot()
+        for calib in root.findall("./DefaultCalibrations/DefaultCalibration"):
+            calib_id = calib.get("DefaultCalibrationID")
+            # Number="1" is for coeff and base, which we do not collect here because they varies per scan.
+            # Get info for Step Number="2", which holds the polynomial calibration coefficients shared for all scans.
+            step2 = calib.find("./Step[@Number='2']")
+            if step2 is None:
+                continue
+            tech = step2.findtext("CalibrationTechnique")
+            formula = step2.findtext("CalibrationFormula")
+            if tech != "ExternalReference" or formula != "Polynomial":
+                continue
             flags = format(int(step2.findtext("ValueUseFlags")), '08b')[::-1]
             values = [float(v.text) for v in step2.findall("./Values/Value")]
             default_calib[int(calib_id)] = {
                 "ValueUseFlags": flags,
                 "Values": values
             }
+    for _, _, _, _, _, calib_id in data_info:
+        default_calib.setdefault(calib_id, {"ValueUseFlags": "00000000", "Values": []})
 
     # MSMassCal.bin: Extract calibration values for masses. 
     # There seem to be 10 doubles stored for each retention time. The first two
@@ -218,7 +312,6 @@ def parse_msdata(path, prec=0):
     mz_list = []
     inten_list = []
     for i in range(num_times):
-        print(f"Parsing retention time {i+1}/{num_times}", end='\r')
         time, num_mz, offset, comp_len, decomp_len, calib_id = data_info[i]
         times[i] = time
         num_mz_per_time[i] = num_mz
@@ -278,7 +371,7 @@ def parse_msdata(path, prec=0):
     
     f.close()
     
-    return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
+    return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, dict(metadata))
    
 def read_complextype(f, complextypes_dict, name):
     """ 
@@ -335,22 +428,26 @@ def read_type(f, complextype_dict, name):
 
 # "Zero-specific implementation of Run-Length Encoding
 def decompress_inten_list(comp_view, endian="<", total_len=None):
-    assert total_len is not None
+    if total_len is None:
+        raise ValueError("total_len is required to decompress RLE intensity data.")
     # The lower 24 bits of the first 4 bytes represent the data length
     first_24 = struct.unpack(f'{endian}I', comp_view[0:4])[0] & 0x00FFFFFF
-    if total_len is not None:
-        assert total_len == first_24, f"{total_len} != {first_24}"
-    else:
-        total_len = first_24
+    if total_len != first_24:
+        raise ValueError(
+            f"RLE data length mismatch: expected {total_len}, found {first_24}.")
     # 4th byte seems to be fixed to \x90 ...?
-    assert comp_view[3] == 144, comp_view[3]
+    if comp_view[3] != 144:
+        raise ValueError(
+            f"Unexpected RLE marker byte: expected 144, found {comp_view[3]}.")
 
     # Initial values
     init_zero_repeat, size_switch_flag = struct.unpack(f'{endian}ii', comp_view[4:12])
     init_zero_repeat *= -1
     size_switch_flag *= -1
-    assert init_zero_repeat >= 0, init_zero_repeat
-    assert size_switch_flag in (1,2,3,4), size_switch_flag
+    if init_zero_repeat < 0:
+        raise ValueError(f"Invalid initial zero repeat count: {init_zero_repeat}.")
+    if size_switch_flag not in (1,2,3,4):
+        raise ValueError(f"Invalid RLE size switch flag: {size_switch_flag}.")
 
     ##########
     inten_list = [0] * total_len    # initialize the list with zeros because the length of consecutive zeros at the end of the data is not included.
@@ -368,11 +465,9 @@ def decompress_inten_list(comp_view, endian="<", total_len=None):
     offset = 12
     while offset < len(comp_view):
         cur_bytes = cur_unpacker(comp_view[offset:offset+cur_size])[0]
-        # print(f"offset: {offset}, cur_idx: {cur_idx}, total_len: {total_len}, cur_bytes: {cur_bytes}", end='\r')
         offset += cur_size
         # if positive, direct data
         if cur_bytes >= 0:
-            # print(cur_bytes, cur_idx, offset, len(comp_view), total_len)
             inten_list[cur_idx] = cur_bytes
             cur_idx += 1
         # if negative, zero run-length or size switch
@@ -386,4 +481,3 @@ def decompress_inten_list(comp_view, endian="<", total_len=None):
             cur_size = SIZES[size_switch_flag]
             cur_unpacker = UNPACKERS[size_switch_flag]
     return np.array(inten_list, dtype=np.uint32)
-
