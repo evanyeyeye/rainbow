@@ -1,0 +1,39 @@
+8 Injection
+
+GC Run Log
+
+
+Instrument: GCMS
+
+GC CONDITIONS
+
+Method File: ADTP_ecigs_wk1_slower
+Last Saved : 11/10/2025 7:03:36 PM
+
+Total GC Run Time: 40.3 minutes
+
+Refer to method interface to review Oven steps
+
+Equil. Time:	2.0 minutes
+Coolant:	OFF
+Max Temp:	450 deg C
+
+Inj A: SSL	300 deg C
+
+Inj B: NONE
+
+
+Transfer Line  Temperature: 250
+Carrier A: ConstantFlow - He	1.0 mL/min
+
+Split A: 10.0:1	Length: 15.00 M
+Split Mode: Ratio
+Vacuum Comp: ON	Diameter: 250 um
+
+
+Valves:
+	NONE
+
+
+No Instrument Timed Events
+

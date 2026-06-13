@@ -60,28 +60,27 @@ def parse_spectrum(path, prec=0, requested_files=None):
 
     IMPORTANT: The HRMS data format is not supported. \
         It can be differentiated from low resolution MS data using the \
-        _extern.inf or _FUNC .IDX files.
+        _extern.inf or _FUNC .IDX files. 
 
     Args:
-        path (str): Path to the .raw directory.
+        path (str): Path to the .raw directory. 
         prec (int, optional): Number of decimals to round ylabels.
         requested_files (list, optional): List of filenames to parse.
-
+    
     Returns:
-        List with a DataFile for each parsed spectrum.
+        List with a DataFile for each parsed spectrum.  
 
     """
     datafiles = []
 
     # There is MS spectrum data if and only if there is an _extern.inf file.
     # The file stores information about each MS spectrum, like polarity.
-    # Future work may find useful metadata there.
+    # Future work may find useful metadata there. 
     polarities = []
     calib_nums = []
     extern_inf = _find_file(path, '_extern.inf')
-    extern_inf = _find_file(path, '_extern.inf')
     if extern_inf is not None:
-        # Parse MS polarities from _extern.inf.
+        # Parse MS polarities from _extern.inf. 
         with open(os.path.join(path, extern_inf), 'rb') as f:
             lines = f.read().decode('ascii', 'ignore').splitlines()
         for i in range(len(lines)):
@@ -104,8 +103,9 @@ def parse_spectrum(path, prec=0, requested_files=None):
                         polarities.append(polarity)
                         break
 
-        # Parse mz calibration values from _HEADER.txt.
-        # There are a separate list of values for each MS spectrum.
+        # Parse mz calibration values from _HEADER.txt. 
+        # There are a separate list of values for each MS spectrum. 
+        # PE exports may omit _HEADER.TXT; skip calibration instead of failing.
         header_txt = _find_file_path(path, '_HEADER.TXT')
         if header_txt is not None:
             with open(header_txt, 'r') as f:
@@ -116,12 +116,13 @@ def parse_spectrum(path, prec=0, requested_files=None):
                 calib_nums.append(
                     [float(num) for num in line.split(': ')[1].split(',')[:-1]])
 
-    # The raw spectrum data is stored in _FUNC .DAT files.
-    # Each MS spectrum has an assigned polarity,
+    # The raw spectrum data is stored in _FUNC .DAT files. 
+    # Each MS spectrum has an assigned polarity, 
     #     but may not have calibration values.
     funcdat_files = sorted(
         fn for fn in os.listdir(path)
         if re.match(r'^_FUNC\d{3}\.DAT$', fn, re.IGNORECASE))
+    # Waters validates _FUNCTNS.INF size; PE exports may omit this file entirely.
     functns_inf = _find_file_path(path, '_FUNCTNS.INF')
     if functns_inf is not None:
         assert (os.path.getsize(functns_inf) == 32 * 13 * len(funcdat_files))
@@ -130,6 +131,8 @@ def parse_spectrum(path, prec=0, requested_files=None):
             continue
         polarity = None
         calib = None
+        # polarities/calib_nums may be shorter than funcdat_files when metadata
+        # is missing or only partially parsed; spectra parse without calib/polarity.
         if funcdat_index < len(polarities):
             polarity = polarities[funcdat_index]
             if funcdat_index < len(calib_nums):
@@ -141,41 +144,39 @@ def parse_spectrum(path, prec=0, requested_files=None):
 
 def parse_function(path, prec=0, polarity=None, calib=None):
     """
-    Parses data for a Waters function.
+    Parses data for a Waters function. 
 
     Each function corresponds to a MS or UV spectrum. \
         The data is extracted from numbered _FUNC .IDX and _FUNC .DAT files.
 
     IMPORTANT: There are multiple data formats for Waters spectra that are \
         differentiated by the number of bytes used to store each data pair. \
-        This program only supports the 2, 6, and 8 byte formats.
+        This program only supports the 2, 6, and 8 byte formats. 
 
     Args:
         path (str): Path to the _FUNC .DAT file.
         prec (int, optional): Number of decimals to round ylabels.
         polarity (str, optional): Polarity of the spectrum.
         calib (list, optional): Float calibration values of the spectrum.
-
+    
     Returns:
-        DataFile with MS or UV spectrum data.
+        DataFile with MS or UV spectrum data. 
 
     """
     # Extract the retention times, "pair" counts,
     #     and _FUNC .DAT data format from the _FUNC .IDX file.
     # A "pair" refers to a data pair of mz-intensity or wavelength-absorbance.
-    # Find the matching .IDX file case-insensitively.
     dat_dir = os.path.dirname(path)
     dat_base = os.path.basename(path)
-    idx_name = dat_base[:-3] + dat_base[-3:].replace('DAT', 'IDX').replace('dat', 'idx')
-    idx_path = _find_file_path(dat_dir, idx_name)
+    root, _ = os.path.splitext(dat_base)
+    idx_path = _find_file_path(dat_dir, root + '.IDX')
     if idx_path is None:
         idx_path = path[:-3] + 'IDX'  # fallback to original behavior
-
     times, pair_counts, bytes_per_pair = parse_funcidx(idx_path)
     if bytes_per_pair not in {2, 4, 6, 8}:
         raise Exception("The {bytes_per_pair}-bytes format is not supported.")
 
-    # Extract the ylabels and data values from the _FUNC .DAT file.
+    # Extract the ylabels and data values from the _FUNC .DAT file. 
     parse_funcdat = parse_funcdat2
     if bytes_per_pair == 6:
         parse_funcdat = parse_funcdat6
@@ -193,18 +194,18 @@ def parse_function(path, prec=0, polarity=None, calib=None):
 
 
 def parse_funcidx(path):
-    """
-    Parses a Waters _FUNC .IDX file.
+    """ 
+    Parses a Waters _FUNC .IDX file. 
 
     Learn more about this file format :ref:`here <funcidx>`.
 
     Args:
-        path (str): Path to the _FUNC .IDX file.
+        path (str): Path to the _FUNC .IDX file. 
 
     Returns:
         1D numpy array with retention times. 1D numpy array with the \
             number of data pairs at each time. Integer representing \
-            the file format of the corresponding _FUNC .DAT file.
+            the file format of the corresponding _FUNC .DAT file. 
 
     """
     num_times = os.path.getsize(path) // 22
@@ -217,12 +218,11 @@ def parse_funcidx(path):
     times = np.ndarray(num_times, '<f', raw_bytes, 12, 22).copy()
 
     # Calculate the _FUNC .DAT file format based on the bytes per pair.
-    # Find the DAT file case-insensitively.
-    dat_name = os.path.basename(path)[:-3] + path[-3:].replace('IDX', 'DAT').replace('idx', 'dat')
-    dat_path = _find_file_path(os.path.dirname(path), dat_name)
+    base = os.path.basename(path)
+    root, _ = os.path.splitext(base)
+    dat_path = _find_file_path(os.path.dirname(path), root + '.DAT')
     if dat_path is None:
         dat_path = path[:-3] + 'DAT'  # fallback
-
     nonzero = pair_counts != 0
     final_offset = offsets[nonzero][-1]
     final_paircount = pair_counts[nonzero][-1]
@@ -234,28 +234,28 @@ def parse_funcidx(path):
 
 def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     """
-    Parses a Waters _FUNC .DAT file with the 2-bytes format.
+    Parses a Waters _FUNC .DAT file with the 2-bytes format. 
 
-    This format contains MS data.
+    This format contains MS data. 
 
     Learn more about this file format :ref:`here <funcdat2>`.
 
     Args:
-        path (str): Path to the _FUNC .DAT file.
-        pair_counts (np.ndarray):
+        path (str): Path to the _FUNC .DAT file. 
+        pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        prec (int, optional): Number of decimals to round ylabels.
+        prec (int, optional): Number of decimals to round ylabels. 
         calib (list, optional): Float calibration values of the spectrum.
-
-    Returns:
+    
+    Returns: 
         1D numpy array with ylabels. 2D numpy array with \
             data values where the rows correspond to retention times \
             and the columns correspond to ylabels.
 
     """
-    # Extract the mz values from the _FUNCTNS.INF file.
-    # This code makes the assumption that in this format the
-    #     number of mz values is constant at each retention time.
+    # Extract the mz values from the _FUNCTNS.INF file. 
+    # This code makes the assumption that in this format the  
+    #     number of mz values is constant at each retention time. 
     inf_path = _find_file_path(os.path.dirname(path), '_FUNCTNS.INF')
     if inf_path is None:
         inf_path = os.path.join(os.path.dirname(path), '_FUNCTNS.INF')
@@ -263,7 +263,7 @@ def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     mzs = parse_funcinf(inf_path)[func_index]
     ylabels = mzs[mzs != 0.0]
 
-    # Extract the intensities from the _FUNC .DAT file.
+    # Extract the intensities from the _FUNC .DAT file. 
     with open(path, 'rb') as f:
         raw_bytes = f.read()
     num_datapairs = np.sum(pair_counts)
@@ -272,8 +272,8 @@ def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     val_pow = raw_values & 0x7
     values = np.multiply(val_base, 4 ** val_pow, dtype=np.uint32)
 
-    # Note: We have not come across a sample with more than 1 mz value.
-    # This may need to be reshaped differently in the future.
+    # Note: We have not come across a sample with more than 1 mz value. 
+    # This may need to be reshaped differently in the future. 
     data = values.reshape((pair_counts.size, ylabels.size))
 
     return ylabels, data
@@ -341,14 +341,14 @@ def parse_funcdat4(path, pair_counts, prec=0, calib=None):
 
 def parse_funcinf(path):
     """
-    Parses a Waters _FUNCTNS.INF file.
+    Parses a Waters _FUNCTNS.INF file. 
 
-    This file contains mz values for the 2-byte format.
+    This file contains mz values for the 2-byte format. 
 
     Learn more about this file format :ref:`here <funcdat2>`.
 
     Args:
-        path (str): Path to the _FUNCTNS.INF file.
+        path (str): Path to the _FUNCTNS.INF file. 
 
     Returns:
         2D numpy array of mz values where the rows correspond to functions.
@@ -363,20 +363,20 @@ def parse_funcinf(path):
 
 def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     """
-    Parses a Waters _FUNC .DAT file with the 6-bytes format.
+    Parses a Waters _FUNC .DAT file with the 6-bytes format. 
 
-    This format may contain MS or UV data.
+    This format may contain MS or UV data. 
 
     Learn more about this file format :ref:`here <funcdat6>`.
 
     Args:
-        path (str): Path to the Waters _FUNC .DAT file.
-        pair_counts (np.ndarray):
+        path (str): Path to the Waters _FUNC .DAT file. 
+        pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        prec (int, optional): Number of decimals to round ylabels.
+        prec (int, optional): Number of decimals to round ylabels. 
         calib (list, optional): Float calibration values of the spectrum.
-
-    Returns:
+    
+    Returns: 
         1D numpy array with ylabels. 2D numpy array with data values \
             where the rows correspond to retention times and \
             the columns correspond to ylabels.
@@ -390,20 +390,20 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
         raw_bytes = f.read()
     raw_values = np.ndarray(num_datapairs, '<I', raw_bytes, 2, 6)
 
-    # The data is stored as key-value pairs.
-    # For example, in MS data these are mz-intensity pairs.
-    # Calculate the `keys` from each 6-byte segment.
+    # The data is stored as key-value pairs. 
+    # For example, in MS data these are mz-intensity pairs. 
+    # Calculate the `keys` from each 6-byte segment. 
     key_bases = raw_values >> 9
     key_powers = (raw_values & 0x1F0) >> 4
     key_powers = np.subtract(key_powers, 23, dtype=np.int32)
     keys = key_bases * (2.0 ** key_powers)
     del key_bases, key_powers
 
-    # If it is MS data, calibrate the masses.
+    # If it is MS data, calibrate the masses. 
     if calib:
         keys = calibrate(keys, calib)
 
-    # Then round the keys to the nearest whole number.
+    # Then round the keys to the nearest whole number. 
     keys = np.round(keys, prec)
 
     # Calculate the `values` from each 6-byte segment.
@@ -412,11 +412,11 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     values = val_bases * (4 ** val_powers)
     del val_bases, val_powers, raw_values, raw_bytes
 
-    # Make the array of `ylabels` with keys.
+    # Make the array of `ylabels` with keys. 
     ylabels = np.unique(keys)
     ylabels.sort()
 
-    # Fill the `data` array with values.
+    # Fill the `data` array with values. 
     key_indices = np.searchsorted(ylabels, keys)
     data = np.zeros((num_times, ylabels.size), dtype=np.int64)
     cur_index = 0
@@ -434,20 +434,20 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
 
 def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     """
-    Parses a Waters _FUNC .DAT file with the 8-bytes format.
+    Parses a Waters _FUNC .DAT file with the 8-bytes format. 
 
-    This format contains MS data.
+    This format contains MS data. 
 
     Learn more about this file format :ref:`here <funcdat8>`.
 
     Args:
-        path (str): Path to the _FUNC .DAT file.
-        pair_counts (np.ndarray):
+        path (str): Path to the _FUNC .DAT file. 
+        pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        prec (int, optional): Number of decimals to round ylabels.
+        prec (int, optional): Number of decimals to round ylabels. 
         calib (list, optional): Float calibration values of the spectrum.
-
-    Returns:
+    
+    Returns: 
         1D numpy array with ylabels. 2D numpy array with \
             data values where the rows correspond to retention times \
             and the columns correspond to ylabels.
@@ -455,13 +455,13 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     num_times = pair_counts.size
     num_datapairs = np.sum(pair_counts)
 
-    # Optimized reading of 8-byte segments into `raw_values`.
+    # Optimized reading of 8-byte segments into `raw_values`. 
     with open(path, 'rb') as f:
         raw_bytes = f.read()
     raw_values = np.ndarray(num_datapairs, '<Q', raw_bytes, 0, 8)
 
-    # The data is stored as key-value pairs.
-    # For example, in MS data these are mz-intensity pairs.
+    # The data is stored as key-value pairs. 
+    # For example, in MS data these are mz-intensity pairs. 
     # Split each segment into `key_bits` and `val_bits`.
     key_bits = raw_values >> 28
     val_bits = raw_values & 0xFFFFFFF
@@ -477,17 +477,17 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     del num_keyint_bits, num_keyfrac_bits, key_bits
     del keyint_masks, keyfrac_masks
 
-    # Get the `keys` by adding the components.
-    # If it is MS data, calibrate the masses.
+    # Get the `keys` by adding the components. 
+    # If it is MS data, calibrate the masses. 
     keys = keyints + keyfracs
     if calib:
         keys = calibrate(keys, calib)
     del keyints, keyfracs
 
-    # Round the keys to the nearest whole number.
+    # Round the keys to the nearest whole number. 
     keys = np.round(keys, prec)
 
-    # Find the integers that need to be scaled via left shift.
+    # Find the integers that need to be scaled via left shift. 
     # This is based on the number of bits allocated for each integer.
     num_valint_bits = val_bits >> 22
     num_shifted = np.zeros(num_datapairs, np.uint8)
@@ -505,15 +505,15 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     del num_shifted, num_valint_bits, num_valfrac_bits
     del valint_masks, valfrac_masks
 
-    # Get the `values` by adding the components.
+    # Get the `values` by adding the components. 
     values = valints + valfracs
     del valints, valfracs
 
-    # Make the array of `ylabels` with keys.
+    # Make the array of `ylabels` with keys. 
     ylabels = np.unique(keys)
     ylabels.sort()
 
-    # Fill the `data` array with values.
+    # Fill the `data` array with values. 
     key_indices = np.searchsorted(ylabels, keys)
     data = np.zeros((num_times, ylabels.size), dtype=np.int64)
     cur_index = 0
@@ -531,7 +531,7 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
 
 def calibrate(mzs, calib_nums):
     """
-    Calibrates :obj:`mzs` using :obj:`calib_nums`.
+    Calibrates :obj:`mzs` using :obj:`calib_nums`. 
 
     Computes the formula c1 * mz^0 + c2 * mz^1 + c3 * mz^2 \
         for each mz where c1, c2, and c3 are the calibration values.
@@ -554,22 +554,22 @@ def calibrate(mzs, calib_nums):
 
 
 def calc_frac(keyfrac_bits, num_bits):
-    """
-    Decodes fractional values from :obj:`keyfrac_bits`.
+    """ 
+    Decodes fractional values from :obj:`keyfrac_bits`. 
 
     This method skips the costly computation of decoding a Waters \
         fraction by manipulating the bits into the standard \
         double-precision floating point format.
 
     Args:
-        keyfrac_bits (np.ndarray): Bits representing a fractional value.
-        num_bits (np.ndarray):
+        keyfrac_bits (np.ndarray): Bits representing a fractional value. 
+        num_bits (np.ndarray): 
             Bitlength of each fractional value. This number is greater than
-            the actual bitlength of the corresponding value in `keyfrac_bits`
+            the actual bitlength of the corresponding value in `keyfrac_bits` 
             when there are unseen zero bits padding the head.
 
-    Returns:
-        1D numpy array with fractional values.
+    Returns: 
+        1D numpy array with fractional values. 
 
     """
     exponent = np.uint64(0x3FF << 52)
@@ -594,9 +594,9 @@ def parse_analog(path, requested_files=None):
     Args:
         path (str): Path to the .raw directory.
         requested_files (list, optional): List of filenames to parse.
-
+    
     Returns:
-        List of DataFiles that contain analog data.
+        List of DataFiles that contain analog data. 
 
     """
     datafiles = []
@@ -608,7 +608,6 @@ def parse_analog(path, requested_files=None):
     analog_info = parse_chroinf(chroms_inf)
     for i in range(len(analog_info)):
         fn = f"_CHRO{i + 1:0>3}.DAT"
-        # Find the actual file case-insensitively
         actual_fn = _find_file(path, fn)
         if actual_fn is None:
             continue
@@ -624,14 +623,14 @@ def parse_chroinf(path):
     """
     Parses a Waters _CHROMS.INF file.
 
-    Retrieves the name and unit for each analog data file.
+    Retrieves the name and unit for each analog data file. 
 
     Args:
-        path (str): Path to the _CHROMS.INF file.
-
+        path (str): Path to the _CHROMS.INF file. 
+    
     Returns:
         List of string lists that contain the name and unit (if it exists) \
-            of the data in each analog file.
+            of the data in each analog file. 
 
     """
     f = open(path, 'r')
@@ -655,7 +654,7 @@ def parse_chrodat(path, name, units=None):
 
     These files may contain data for CAD, ELSD, or UV channels. \
         They may also contain other miscellaneous data like system pressure.
-
+    
     IMPORTANT: MassLynx classifies these files as "analog" data, but \
         a DataDirectory will not treat CAD, ELSD, or UV channels as analog. \
         Instead, those channels will be mapped to their detector.
@@ -663,10 +662,10 @@ def parse_chrodat(path, name, units=None):
     Learn more about this file format :ref:`here <chrodat>`.
 
     Args:
-        path (str): Path to the _CHRO .DAT file.
+        path (str): Path to the _CHRO .DAT file. 
         name (str): Name of the analog data.
         units (str, optional): Units of the analog data.
-
+    
     Returns:
         DataFile with analog data, if the file can be parsed. Otherwise, None.
 
@@ -682,8 +681,8 @@ def parse_chrodat(path, name, units=None):
     times_immut = np.ndarray(num_times, '<f', raw_bytes, data_start, 8)
     vals_immut = np.ndarray(num_times, '<f', raw_bytes, data_start + 4, 8)
 
-    # The arrays are copied so that they are mutable.
-    # This is just for user convenience.
+    # The arrays are copied so that they are mutable. 
+    # This is just for user convenience. 
     times = times_immut.copy()
     vals = vals_immut.copy().reshape(-1, 1)
     del times_immut, vals_immut, raw_bytes
@@ -718,10 +717,10 @@ def parse_metadata(path):
     Specifically, the date and vial position are extracted from _HEADER.txt.
 
     Args:
-        path (str): Path to the .raw directory.
-
+        path (str): Path to the .raw directory. 
+    
     Returns:
-        Dictionary with directory metadata.
+        Dictionary with directory metadata. 
 
     """
     metadata = {}
