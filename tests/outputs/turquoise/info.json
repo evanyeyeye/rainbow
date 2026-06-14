@@ -1,0 +1,19 @@
+{
+    "metadata": {
+        "vendor": "Waters",
+        "date": "01-JAN-2020 12:00:00",
+        "vialpos": "5"
+    },
+    "datafiles": {
+        "_func001.dat": {
+            "detector": "MS",
+            "shape": [
+                7916,
+                220
+            ],
+            "metadata": {
+                "polarity": "+"
+            }
+        }
+    }
+}
