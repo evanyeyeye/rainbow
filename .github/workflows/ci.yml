@@ -1,0 +1,56 @@
+name: CI
+
+# Build + test checks that run BEFORE merge, so packaging breaks (e.g. the
+# flat-layout discovery failure that only surfaced at release time) and test
+# regressions block the PR instead of the release. The full cross-platform
+# wheel matrix still runs only on a version tag, in publish.yml.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (compiles the optional accelerator)
+        run: python -m pip install -e .
+      - name: Run unit tests
+        run: python -m unittest -v
+
+  build-check:
+    name: Build wheel + sdist (no publish)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Builds a Linux wheel the same way the release does. cibuildwheel
+      # creates a wheelhouse/ dir in the project root, so this catches the
+      # flat-layout discovery error before merge. One Python is enough to
+      # exercise the packaging path; the tag build covers the full matrix.
+      - name: Build wheel
+        uses: pypa/cibuildwheel@v2.21
+        env:
+          CIBW_BUILD: cp312-manylinux_x86_64
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build + check sdist
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build --sdist
+          python -m twine check dist/*
