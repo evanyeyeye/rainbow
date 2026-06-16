@@ -25,3 +25,10 @@ dependencies = [
 [project.urls]
 Repository = "https://github.com/evanyeyeye/rainbow"
 Documentation = "https://rainbow-api.readthedocs.io"
+
+[tool.cibuildwheel]
+# Build CPython wheels for the optional compiled accelerator. The extension
+# is optional, so any platform that can't compile still yields a working
+# (pure-Python-fallback) wheel, and the sdist covers everything else.
+build = "cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
+skip = "*-musllinux* *_i686 *-win32"
