@@ -81,6 +81,15 @@ class DataTester(unittest.TestCase):
             fixture_meta = file_dict['metadata']
             actual_meta  = datafile.metadata
 
+            # When the fixture expects no metadata, assert emptiness strictly.
+            # The key-subset checks below would otherwise pass silently for a
+            # file that unexpectedly grew metadata, hiding regressions.
+            if not fixture_meta:
+                self.assertEqual(
+                    actual_meta, {},
+                    f"{name}: expected empty metadata but got "
+                    f"{list(actual_meta.keys())}")
+
             # Check scalar metadata (strings, dates, methods)
             scalar_keys = {k: v for k, v in fixture_meta.items()
                         if not k.endswith(('_first', '_last'))}

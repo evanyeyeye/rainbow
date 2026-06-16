@@ -43,16 +43,21 @@ from rainbow import DataFile
 # MAIN ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
-def parse_allfiles(path, prec=0):
+def parse_allfiles(path, prec=0, hrms=False):
     """
     Finds and parses Agilent Masshunter data files.
 
     Supports both MSProfile.bin (HRMS profile) and MSPeak.bin (centroided)
     formats. The format is auto-detected from the files present in AcqData/.
+    This is the single place that decides which MassHunter format to parse:
+    MSPeak.bin (centroided) is parsed automatically, while MSProfile.bin (HRMS
+    profile) is parsed only when ``hrms`` is set, since it requires python-lzf.
 
     Args:
         path (str): Path to the Agilent .D directory.
         prec (int, optional): Number of decimals to round ylabels (m/z values).
+        hrms (bool, optional): Parse MSProfile.bin (HRMS profile) data.
+            Requires python-lzf.
 
     Returns:
         List containing a DataFile for each parsed file.
@@ -66,10 +71,10 @@ def parse_allfiles(path, prec=0):
     acqdata_files = set(os.listdir(acqdata_path))
 
     if {"MSTS.xml", "MSScan.xsd", "MSScan.bin"} <= acqdata_files:
-        if "MSProfile.bin" in acqdata_files:
-            datafiles.append(parse_msdata(acqdata_path, prec))
-        elif "MSPeak.bin" in acqdata_files:
+        if "MSPeak.bin" in acqdata_files:
             datafiles.append(parse_mspeak_data(acqdata_path, prec))
+        elif "MSProfile.bin" in acqdata_files and hrms:
+            datafiles.append(parse_msdata(acqdata_path, prec))
 
     return datafiles
 

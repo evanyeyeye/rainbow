@@ -1,4 +1,8 @@
 import os
+import struct
+import warnings
+
+from lxml import etree
 
 from rainbow.agilent import chemstation
 from rainbow.datadirectory import DataDirectory
@@ -42,42 +46,25 @@ def read(path, prec=0, hrms=False, requested_files=None):
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(path, prec, requested_files))
 
-    acqdata = os.path.join(path, "AcqData")
-    if os.path.isdir(acqdata):
-        acqdata_files = set(os.listdir(acqdata))
-
-        required = {"MSTS.xml", "MSScan.xsd", "MSScan.bin"}
-        if required <= acqdata_files:
-
-            if "MSPeak.bin" in acqdata_files:
-                # Centroided data — no extra dependency, always parse.
-                from rainbow.agilent import masshunter
-                try:
-                    datafiles.extend(masshunter.parse_allfiles(path, prec))
-                except Exception as e:
-                    import warnings
-                    warnings.warn(
-                        f"Failed to parse MSPeak.bin in {path}: {e}",
-                        RuntimeWarning,
-                        stacklevel=2,
-                    )
-
-            elif "MSProfile.bin" in acqdata_files and hrms:
-                # HRMS profile data — requires python-lzf.
-                from rainbow.agilent import masshunter
-                try:
-                    datafiles.extend(masshunter.parse_allfiles(path, prec))
-                except ImportError as e:
-                    if 'lzf' in str(e).lower():
-                        raise ImportError(
-                            "You must install python-lzf to parse "
-                            "MSProfile.bin files.\n"
-                            "Run: pip install python-lzf\n"
-                            "If you have MSPeak.bin data, no extra "
-                            "packages are needed — it is parsed "
-                            "automatically."
-                        ) from e
-                    raise  # re-raise any other ImportError unchanged
+    # MassHunter data (AcqData/) — masshunter.parse_allfiles owns the format
+    # detection and the hrms gating. MSPeak.bin (centroided) is parsed
+    # automatically; MSProfile.bin (HRMS profile) only when hrms is set.
+    if os.path.isdir(os.path.join(path, "AcqData")):
+        from rainbow.agilent import masshunter
+        try:
+            datafiles.extend(masshunter.parse_allfiles(path, prec, hrms))
+        except (OSError, struct.error, ValueError, etree.XMLSyntaxError) as e:
+            # A malformed file shouldn't sink the whole directory read. Narrow
+            # to the errors parsing can realistically raise so unexpected
+            # exceptions (AttributeError, KeyError, ...) still propagate and a
+            # parser regression fails loudly. A missing python-lzf surfaces as
+            # ImportError from parse_msdata, which propagates with its own
+            # install hint.
+            warnings.warn(
+                f"Failed to parse MassHunter data in {path}: {e}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     metadata = chemstation.parse_metadata(path, datafiles)
     return DataDirectory(path, datafiles, metadata)
