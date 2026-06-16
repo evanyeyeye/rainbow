@@ -3,6 +3,23 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.0.14] - 2026-06-16
+
+### Fixed
+- **Cross-platform determinism in directory parsing.** `parse_allfiles` now
+  iterates the `.D` directory in sorted order instead of raw `os.listdir`
+  order. Directory-level metadata (date, vial position) is chosen by
+  `Counter.most_common`, whose tie-break follows insertion order; with an
+  unsorted listing this made the chosen value depend on the filesystem's
+  ordering, so a `.D` containing files with differently-formatted date strings
+  could yield different metadata on macOS vs. Linux. Parsing is now identical
+  on every platform.
+
+### Added
+- Pre-merge CI (`.github/workflows/ci.yml`): runs the test suite on Python 3.8
+  and 3.13 and builds a wheel + sdist on every pull request, so packaging and
+  test regressions are caught before merge rather than at release time.
+
 ## [1.0.13] - 2026-06-16
 
 ### Added
