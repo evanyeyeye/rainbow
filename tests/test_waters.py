@@ -45,5 +45,13 @@ class TestWaters(tests.datatester.DataTester):
         """
         self._DataTester__test_data_directory("white", "raw")
 
+    def test_turquoise(self):
+        """
+        Tests a Perkin-Elmer / TurboMass .raw export with
+        lowercase filenames and PE _extern.inf polarity format.
+
+        """
+        self._DataTester__test_data_directory("turquoise", "raw")
+
 if __name__ == '__main__':
     unittest.main()

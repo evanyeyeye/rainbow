@@ -5,8 +5,19 @@ docs/_autosummary/*
 # Virtual environment
 .venv/
 
-# Egg files
-*.egg-info/
-
 # MacOS
 .DS_Store
+.DS_STORE
+
+# build artifacts
+*.egg-info/
+build/
+dist/
+*.so
+# Cython-generated C source (regenerated at build time)
+rainbow/agilent/_uvdelta.c
+
+# local benchmark datasets (not part of the repo)
+/3543_DC/
+/MK-1200_Reduction/
+/mcintosh data/
