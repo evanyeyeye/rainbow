@@ -10,6 +10,13 @@ import numpy as np
 from lxml import etree
 from rainbow.datafile import DataFile
 
+# Optional compiled accelerator for the .uv LC-delta decode loop.
+# Falls back to the pure-Python implementations below if not built.
+try:
+    from rainbow.agilent import _uvdelta as _uvdelta_fast
+except ImportError:
+    _uvdelta_fast = None
+
 """
 MAIN PARSING METHODS
 
@@ -334,6 +341,34 @@ def decode_double_delta(f, offset):
 
 
 def decode_uv_delta(f, data_offsets, num_times, num_wavelengths):
+    """Decode the delta-encoded absorbances of an Agilent .uv file.
+
+    Each retention time holds ``num_wavelengths`` absorbances stored as 16-bit
+    deltas against a running accumulator. The sentinel value ``-0x8000`` instead
+    signals that the next 32-bit integer is a new absolute value.
+
+    If the compiled accelerator (:mod:`rainbow.agilent._uvdelta`) was built it is
+    used for the inner loop; otherwise this falls back to the pure-Python loop
+    below, which produces identical output. See :obj:`parse_uv`.
+
+    Args:
+        f (_io.BufferedReader): File opened in 'rb' mode.
+        data_offsets (dict): Offsets for this file format.
+        num_times (int): Number of retention times.
+        num_wavelengths (int): Number of wavelengths per time.
+
+    Returns:
+        Tuple of ``(times, data)``: a uint32 array of raw times and an
+        ``(num_times, num_wavelengths)`` int64 array of absorbances.
+
+    """
+    # Use the compiled accelerator if it was built (mirrors the loop below).
+    if _uvdelta_fast is not None:
+        f.seek(0)
+        buf = f.read()
+        return _uvdelta_fast.decode_uv_delta(
+            buf, data_offsets["data_start"], num_times, num_wavelengths)
+
     uint_unpack = struct.Struct('<I').unpack
     int_unpack = struct.Struct('<i').unpack
     short_unpack = struct.Struct('<h').unpack
@@ -361,6 +396,22 @@ def decode_uv_delta(f, data_offsets, num_times, num_wavelengths):
 
 
 def decode_uv_array(f, data_offsets, num_times, num_wavelengths):
+    """Decode the absorbances of an Agilent .uv file stored as raw doubles.
+
+    Used by the ``OL`` format variant, where each absorbance is a little-endian
+    float64 rather than a delta. See :obj:`parse_uv`.
+
+    Args:
+        f (_io.BufferedReader): File opened in 'rb' mode.
+        data_offsets (dict): Offsets for this file format.
+        num_times (int): Number of retention times.
+        num_wavelengths (int): Number of wavelengths per time.
+
+    Returns:
+        Tuple of ``(times, data)``: a uint32 array of raw times and an
+        ``(num_times, num_wavelengths)`` float64 array of absorbances.
+
+    """
     uint_unpack = struct.Struct('<I').unpack
 
     f.seek(data_offsets["data_start"])
@@ -511,32 +562,40 @@ def parse_uv_partial(path):
         return None
 
     # Extract the retention times and absorbances from each data segment.
-    f.seek(data_offsets['data_start'])
-    times = []
-    absorbances = []
-    while True:
-        try:
-            f.read(4)
-            time = uint_unpack(f.read(4))[0]
-            times.append(time)
-            f.read(14)
-            # If the next short is equal to -0x8000
-            #     then the next absorbance value is the next integer. 
-            # Otherwise, the short is a delta from the last absorbance value.
-            absorb_accum = 0
-            for _ in range(wavelengths.size):
-                check_int = short_unpack(f.read(2))[0]
-                if check_int == -0x8000:
-                    absorb_accum = int_unpack(f.read(4))[0]
-                else:
-                    absorb_accum += check_int
-                absorbances.append(absorb_accum)
-        except Exception:
-            break
+    if _uvdelta_fast is not None:
+        # Compiled path: scan the variable-length stream to EOF.
+        f.seek(0)
+        buf = f.read()
+        times, data = _uvdelta_fast.decode_uv_delta_stream(
+            buf, data_offsets['data_start'], wavelengths.size)
+        times = times / 60000
+    else:
+        f.seek(data_offsets['data_start'])
+        times = []
+        absorbances = []
+        while True:
+            try:
+                f.read(4)
+                time = uint_unpack(f.read(4))[0]
+                times.append(time)
+                f.read(14)
+                # If the next short is equal to -0x8000
+                #     then the next absorbance value is the next integer.
+                # Otherwise, the short is a delta from the last absorbance value.
+                absorb_accum = 0
+                for _ in range(wavelengths.size):
+                    check_int = short_unpack(f.read(2))[0]
+                    if check_int == -0x8000:
+                        absorb_accum = int_unpack(f.read(4))[0]
+                    else:
+                        absorb_accum += check_int
+                    absorbances.append(absorb_accum)
+            except Exception:
+                break
 
-    # Process the extracted values.
-    times = np.array(times) / 60000
-    data = np.array(absorbances).reshape((times.size, wavelengths.size))
+        # Process the extracted values.
+        times = np.array(times) / 60000
+        data = np.array(absorbances).reshape((times.size, wavelengths.size))
 
     # Scale the absorbances. 
     f.seek(data_offsets['scaling_factor'])

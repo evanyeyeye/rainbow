@@ -21,6 +21,17 @@ with `pip install --upgrade rainbow-api`.
 
 Keep the tag version and the `pyproject.toml` version the same (both `1.0.12`).
 
+## What the workflow builds
+
+Because the package includes an optional compiled extension (the `.uv`
+accelerator), the workflow builds **binary wheels** with
+[`cibuildwheel`](https://cibuildwheel.pypa.io/) across Linux, macOS, and Windows
+(the `wheels` job) plus a source distribution (the `sdist` job), then publishes
+all of them together. Users on common platforms install a prebuilt wheel with
+the accelerator included; everyone else gets the sdist, which falls back to
+pure Python if it cannot compile. A release therefore takes a few minutes
+longer than a pure-Python one while the wheels build in parallel.
+
 ## Rules of thumb
 
 - `git push origin main` -> nothing publishes.
