@@ -38,7 +38,12 @@ def parse_allfiles(path, prec=0, requested_files=None):
 
     """
     datafiles = []
-    for name in os.listdir(path):
+    # Sort for a deterministic parse order across platforms: os.listdir returns
+    # entries in filesystem order, which differs between macOS and Linux. The
+    # directory-level date/vialpos is chosen by Counter.most_common, whose tie
+    # break depends on insertion order, so an unsorted listing makes the
+    # resulting metadata platform-dependent.
+    for name in sorted(os.listdir(path)):
         if requested_files and name.lower() not in requested_files:
             continue
         datafile = parse_file(os.path.join(path, name), prec)
