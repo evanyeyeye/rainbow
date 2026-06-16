@@ -34,8 +34,11 @@ The workflow publishes using PyPI **Trusted Publishing (OIDC)**: GitHub proves
 the workflow's identity to PyPI at run time, so there is **no API token** stored
 in the repo or on anyone's laptop.
 
-This relies on a one-time setting on PyPI (Account -> Publishing -> pending
-publisher) that must match the workflow:
+This relies on a one-time setting on PyPI. Because `rainbow-api` already
+exists, add it from the project's own settings page (not the account-level
+"pending publisher", which is only for projects that don't exist yet):
+https://pypi.org/manage/project/rainbow-api/settings/publishing/ -> Add a new
+publisher -> GitHub. The values must match the workflow:
 
 | Field            | Value          |
 | ---------------- | -------------- |
