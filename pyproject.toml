@@ -26,6 +26,13 @@ dependencies = [
 Repository = "https://github.com/evanyeyeye/rainbow"
 Documentation = "https://rainbow-api.readthedocs.io"
 
+[tool.setuptools.packages.find]
+# Declare the package explicitly. Without this, setuptools' flat-layout
+# auto-discovery treats sibling directories (e.g. cibuildwheel's wheelhouse/,
+# or tests/, docs/) as top-level packages and fails with "Multiple top-level
+# packages discovered in a flat-layout".
+include = ["rainbow*"]
+
 [tool.cibuildwheel]
 # Build CPython wheels for the optional compiled accelerator. The extension
 # is optional, so any platform that can't compile still yields a working
