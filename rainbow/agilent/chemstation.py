@@ -341,6 +341,27 @@ def decode_double_delta(f, offset):
 
 
 def decode_uv_delta(f, data_offsets, num_times, num_wavelengths):
+    """Decode the delta-encoded absorbances of an Agilent .uv file.
+
+    Each retention time holds ``num_wavelengths`` absorbances stored as 16-bit
+    deltas against a running accumulator. The sentinel value ``-0x8000`` instead
+    signals that the next 32-bit integer is a new absolute value.
+
+    If the compiled accelerator (:mod:`rainbow.agilent._uvdelta`) was built it is
+    used for the inner loop; otherwise this falls back to the pure-Python loop
+    below, which produces identical output. See :obj:`parse_uv`.
+
+    Args:
+        f (_io.BufferedReader): File opened in 'rb' mode.
+        data_offsets (dict): Offsets for this file format.
+        num_times (int): Number of retention times.
+        num_wavelengths (int): Number of wavelengths per time.
+
+    Returns:
+        Tuple of ``(times, data)``: a uint32 array of raw times and an
+        ``(num_times, num_wavelengths)`` int64 array of absorbances.
+
+    """
     # Use the compiled accelerator if it was built (mirrors the loop below).
     if _uvdelta_fast is not None:
         f.seek(0)
@@ -375,6 +396,22 @@ def decode_uv_delta(f, data_offsets, num_times, num_wavelengths):
 
 
 def decode_uv_array(f, data_offsets, num_times, num_wavelengths):
+    """Decode the absorbances of an Agilent .uv file stored as raw doubles.
+
+    Used by the ``OL`` format variant, where each absorbance is a little-endian
+    float64 rather than a delta. See :obj:`parse_uv`.
+
+    Args:
+        f (_io.BufferedReader): File opened in 'rb' mode.
+        data_offsets (dict): Offsets for this file format.
+        num_times (int): Number of retention times.
+        num_wavelengths (int): Number of wavelengths per time.
+
+    Returns:
+        Tuple of ``(times, data)``: a uint32 array of raw times and an
+        ``(num_times, num_wavelengths)`` float64 array of absorbances.
+
+    """
     uint_unpack = struct.Struct('<I').unpack
 
     f.seek(data_offsets["data_start"])
