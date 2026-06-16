@@ -1,0 +1,52 @@
+$$ Version: 01.00
+$$ Acquired Name: TEST_SAMPLE_001
+$$ Acquired Date: 01-JAN-2020
+$$ Acquired Time: 12:00:00
+$$ Job Code: 
+$$ Task Code: 
+$$ User Name: 
+$$ Instrument: GCMS
+$$ Conditions: 
+$$ Laboratory Name: 
+$$ Sample Description: 
+$$ Solvent Delay: 0.000000
+$$ Submitter: 
+$$ SampleID: TEST_SAMPLE_001
+$$ Bottle Number: 5
+$$ Analysis Type: 
+$$ Case Number: 
+$$ Concentration Extract Volume: 0.000000
+$$ Contract: 
+$$ Decanted: 
+$$ Dilution Factor: 1.00000
+$$ EPA Sample Number: 
+$$ Extraction Date: 
+$$ Extraction Type: 
+$$ GC Column: 
+$$ GPC Cleanup: 
+$$ Cleanup: 
+$$ Heated Purge: 
+$$ Laboratory Code: 
+$$ Concentration Level: 
+$$ Matrix: 
+$$ Percent Moisture: 0.00000
+$$ pH: 0.000
+$$ Received Date: 
+$$ Sample Wt/Vol: 1.000000
+$$ SAS Number: 
+$$ SDG Number: 
+$$ Soil Aliquot Volume: 1.000000
+$$ Soil Extract Volume: 1.000000
+$$ Surrogate Lot Number: 
+$$ ISTD Lot Number: 
+$$ Surrogate Volume Added: 0.000000
+$$ Cal MS1 Static: 1.763137812764181E-001,1.001020715563338E+000,-2.747335026730384E-005,4.597549669148446E-008,-2.856645722975983E-011
+$$ Cal MS1 Dynamic: 1.126518963064643E+000,1.002684223744571E+000,-4.031031587083152E-005,7.821719393221303E-008,-5.488626470293187E-011
+$$ Associated Datafile: 
+$$ Cal MS1 Static Params: 0,618,0.00,9.00,15.4,15.8,2.6,hepta,STAT
+$$ Cal MS1 Dynamic Params: 2,620,2.00,0.100,15.4,15.8,2.6,hepta,SCN
+$$ Cal MS1 Fast Params: 2,620,0.10,0.100,15.4,15.8,2.6,hepta,FAST
+$$ Cal Time: 12:00
+$$ Cal Date: 01/01/20
+$$ Cal Function 1: 4.776461997183453E-001,1.001472416061658E+000,-3.179331396996626E-005,5.713442924359777E-008,-3.774373173459780E-011,T0
+$$ Cal StdDev Function 1: 0.000000

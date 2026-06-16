@@ -1,12 +1,52 @@
 """ 
 Methods for parsing Waters Masslynx files. 
- 
+
+Patched to support case-insensitive filenames (e.g. Perkin-Elmer GC-MS).
+
 """
 import os
 import re
 import numpy as np
 from rainbow.datafile import DataFile
 import pandas as pd
+
+
+def _find_file(directory, target_name):
+    """
+    Case-insensitive file lookup in a directory.
+
+    Args:
+        directory (str): Path to the directory.
+        target_name (str): Filename to search for (case-insensitive).
+
+    Returns:
+        The actual filename as it exists on disk, or None if not found.
+
+    """
+    target_lower = target_name.lower()
+    for fn in os.listdir(directory):
+        if fn.lower() == target_lower:
+            return fn
+    return None
+
+
+def _find_file_path(directory, target_name):
+    """
+    Case-insensitive file lookup that returns the full path.
+
+    Args:
+        directory (str): Path to the directory.
+        target_name (str): Filename to search for (case-insensitive).
+
+    Returns:
+        Full path to the file, or None if not found.
+
+    """
+    fn = _find_file(directory, target_name)
+    if fn is not None:
+        return os.path.join(directory, fn)
+    return None
+
 
 """
 SPECTRUM PARSING METHODS
@@ -38,42 +78,61 @@ def parse_spectrum(path, prec=0, requested_files=None):
     # Future work may find useful metadata there. 
     polarities = []
     calib_nums = []
-    if '_extern.inf' in os.listdir(path):
+    extern_inf = _find_file(path, '_extern.inf')
+    if extern_inf is not None:
         # Parse MS polarities from _extern.inf. 
-        with open(os.path.join(path, '_extern.inf'), 'rb') as f:
+        with open(os.path.join(path, extern_inf), 'rb') as f:
             lines = f.read().decode('ascii', 'ignore').splitlines()
         for i in range(len(lines)):
-            if not lines[i].startswith("Instrument Parameters"):
-                continue
-            if lines[i + 1].startswith("Polarity"):
-                polarity = lines[i + 1].split('\t\t\t')[1][-1]
-            else:
-                try:
-                    polarity = lines[i + 2].split('\t')[1][-1]
-                except Exception:
-                    raise Exception("Waters HRMS data is not supported.")
-            polarities.append(polarity)
+            # Waters format: "Instrument Parameters" trigger
+            if lines[i].startswith("Instrument Parameters"):
+                if lines[i + 1].startswith("Polarity"):
+                    polarity = lines[i + 1].split('\t\t\t')[1][-1]
+                else:
+                    try:
+                        polarity = lines[i + 2].split('\t')[1][-1]
+                    except Exception:
+                        raise Exception("Waters HRMS data is not supported.")
+                polarities.append(polarity)
+            # PE/TurboMass format: "Function N:" trigger
+            elif re.match(r'^Function\s+\d+', lines[i]):
+                for j in range(i + 1, min(i + 5, len(lines))):
+                    if lines[j].strip().startswith("Polarity"):
+                        pol_value = lines[j].split('\t')[-1].strip()
+                        polarity = pol_value[-1]  # last char: + or -
+                        polarities.append(polarity)
+                        break
 
         # Parse mz calibration values from _HEADER.txt. 
         # There are a separate list of values for each MS spectrum. 
-        with open(os.path.join(path, '_HEADER.TXT'), 'r') as f:
-            lines = f.read().splitlines()
-        for line in lines:
-            if not line.startswith("$$ Cal Function"):
-                continue
-            calib_nums.append(
-                [float(num) for num in line.split(': ')[1].split(',')[:-1]])
+        # PE exports may omit _HEADER.TXT; skip calibration instead of failing.
+        header_txt = _find_file_path(path, '_HEADER.TXT')
+        if header_txt is not None:
+            with open(header_txt, 'r') as f:
+                lines = f.read().splitlines()
+            for line in lines:
+                if not line.startswith("$$ Cal Function"):
+                    continue
+                calib_nums.append(
+                    [float(num) for num in line.split(': ')[1].split(',')[:-1]])
 
     # The raw spectrum data is stored in _FUNC .DAT files. 
     # Each MS spectrum has an assigned polarity, 
     #     but may not have calibration values.
-    funcdat_files = sorted(fn for fn in os.listdir(path) if re.match(r'^_FUNC\d{3}.DAT$', fn))
-    assert (os.path.getsize(os.path.join(path, "_FUNCTNS.INF")) == 32 * 13 * len(funcdat_files))
+    funcdat_files = sorted(
+        fn for fn in os.listdir(path)
+        if re.match(r'^_FUNC\d{3}\.DAT$', fn, re.IGNORECASE))
+    # Waters validates _FUNCTNS.INF size; PE exports may omit this file entirely.
+    functns_inf = _find_file_path(path, '_FUNCTNS.INF')
+    if functns_inf is not None:
+        assert (os.path.getsize(functns_inf) == 32 * 13 * len(funcdat_files))
     for funcdat_index, funcdat_file in enumerate(funcdat_files):
         if requested_files and funcdat_file.lower() not in requested_files:
             continue
         polarity = None
         calib = None
+        # polarities/calib_nums may be shorter than funcdat_files when metadata
+        # is missing or only partially parsed; spectra parse without calib/polarity.
         if funcdat_index < len(polarities):
             polarity = polarities[funcdat_index]
             if funcdat_index < len(calib_nums):
@@ -107,7 +166,13 @@ def parse_function(path, prec=0, polarity=None, calib=None):
     # Extract the retention times, "pair" counts,
     #     and _FUNC .DAT data format from the _FUNC .IDX file.
     # A "pair" refers to a data pair of mz-intensity or wavelength-absorbance.
-    times, pair_counts, bytes_per_pair = parse_funcidx(path[:-3] + 'IDX')
+    dat_dir = os.path.dirname(path)
+    dat_base = os.path.basename(path)
+    root, _ = os.path.splitext(dat_base)
+    idx_path = _find_file_path(dat_dir, root + '.IDX')
+    if idx_path is None:
+        idx_path = path[:-3] + 'IDX'  # fallback to original behavior
+    times, pair_counts, bytes_per_pair = parse_funcidx(idx_path)
     if bytes_per_pair not in {2, 4, 6, 8}:
         raise Exception("The {bytes_per_pair}-bytes format is not supported.")
 
@@ -153,10 +218,15 @@ def parse_funcidx(path):
     times = np.ndarray(num_times, '<f', raw_bytes, 12, 22).copy()
 
     # Calculate the _FUNC .DAT file format based on the bytes per pair.
+    base = os.path.basename(path)
+    root, _ = os.path.splitext(base)
+    dat_path = _find_file_path(os.path.dirname(path), root + '.DAT')
+    if dat_path is None:
+        dat_path = path[:-3] + 'DAT'  # fallback
     nonzero = pair_counts != 0
     final_offset = offsets[nonzero][-1]
     final_paircount = pair_counts[nonzero][-1]
-    dat_size = os.path.getsize(path[:-3] + 'DAT')
+    dat_size = os.path.getsize(dat_path)
     bytes_per_pair = (dat_size - final_offset) // final_paircount
 
     return times, pair_counts, bytes_per_pair
@@ -186,7 +256,9 @@ def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     # Extract the mz values from the _FUNCTNS.INF file. 
     # This code makes the assumption that in this format the  
     #     number of mz values is constant at each retention time. 
-    inf_path = os.path.join(os.path.dirname(path), '_FUNCTNS.INF')
+    inf_path = _find_file_path(os.path.dirname(path), '_FUNCTNS.INF')
+    if inf_path is None:
+        inf_path = os.path.join(os.path.dirname(path), '_FUNCTNS.INF')
     func_index = int(re.findall(r"\d+", os.path.basename(path))[0]) - 1
     mzs = parse_funcinf(inf_path)[func_index]
     ylabels = mzs[mzs != 0.0]
@@ -231,7 +303,9 @@ def parse_funcdat4(path, pair_counts, prec=0, calib=None):
     # Extract the mz values from the _FUNCTNS.INF file.
     # This code makes the assumption that in this format the
     #     number of mz values is constant at each retention time.
-    inf_path = os.path.join(os.path.dirname(path), '_FUNCTNS.INF')
+    inf_path = _find_file_path(os.path.dirname(path), '_FUNCTNS.INF')
+    if inf_path is None:
+        inf_path = os.path.join(os.path.dirname(path), '_FUNCTNS.INF')
     func_index = int(re.findall(r"\d+", os.path.basename(path))[0]) - 1
     mzs = parse_funcinf(inf_path)[func_index]
     ylabels = mzs[mzs != 0.0]
@@ -527,15 +601,19 @@ def parse_analog(path, requested_files=None):
     """
     datafiles = []
 
-    if '_CHROMS.INF' not in os.listdir(path):
+    chroms_inf = _find_file_path(path, '_CHROMS.INF')
+    if chroms_inf is None:
         return datafiles
 
-    analog_info = parse_chroinf(os.path.join(path, '_CHROMS.INF'))
+    analog_info = parse_chroinf(chroms_inf)
     for i in range(len(analog_info)):
         fn = f"_CHRO{i + 1:0>3}.DAT"
+        actual_fn = _find_file(path, fn)
+        if actual_fn is None:
+            continue
         if requested_files and fn.lower() not in requested_files:
             continue
-        datafile = parse_chrodat(os.path.join(path, fn), *analog_info[i])
+        datafile = parse_chrodat(os.path.join(path, actual_fn), *analog_info[i])
         if datafile:
             datafiles.append(datafile)
     return datafiles
@@ -648,7 +726,11 @@ def parse_metadata(path):
     metadata = {}
     metadata['vendor'] = "Waters"
 
-    with open(os.path.join(path, '_HEADER.TXT'), 'r') as f:
+    header_txt = _find_file_path(path, '_HEADER.TXT')
+    if header_txt is None:
+        return metadata
+
+    with open(header_txt, 'r') as f:
         lines = f.read().splitlines()
     for line in lines:
         if line.startswith("$$ Acquired Date"):
@@ -669,7 +751,10 @@ def parse_metadata(path):
 
 
 def parse_compound_names(path):
-    with open(os.path.join(path, "_FUNC001.CMP"), "rb") as f:
+    cmp_file = _find_file_path(path, '_FUNC001.CMP')
+    if cmp_file is None:
+        cmp_file = os.path.join(path, "_FUNC001.CMP")
+    with open(cmp_file, "rb") as f:
         data = f.read().decode("ascii", "ignore")
         data = data[7:]
         data = data.split("\x00")

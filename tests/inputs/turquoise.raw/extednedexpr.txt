@@ -1,0 +1,2 @@
+ADC standard deviation	3.89372
+ADC zero	216.595

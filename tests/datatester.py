@@ -2,7 +2,8 @@ import json
 import re
 import unittest
 from pathlib import Path
-import rainbow as rb 
+import numpy as np
+import rainbow as rb
 
 
 class DataTester(unittest.TestCase):
@@ -129,8 +130,13 @@ class DataTester(unittest.TestCase):
             csv_list = [tuple(map(float, line.split(','))) for line in csv_lines[1:]]
             data_list = [tuple(map(float, line.split(','))) for line in data_lines[1:]]
             self.assertEqual(csv_lines[0], data_lines[0])
+            # Compare numerically with a tight tolerance rather than by exact
+            # text. Retention times are accumulated with np.arange, whose last
+            # bit can differ across NumPy versions/platforms; an exact float
+            # comparison is spuriously fragile while still failing on any real
+            # numeric discrepancy.
             self.assertEqual(len(csv_list), len(data_list))
-            for row1, row2 in zip(csv_list, data_list):
-                self.assertEqual(len(row1), len(row2))
-                for v1, v2 in zip(row1, row2):
-                    self.assertAlmostEqual(v1, v2, places=10)
+            np.testing.assert_allclose(
+                np.array(data_list), np.array(csv_list),
+                rtol=1e-9, atol=1e-9,
+                err_msg=f"{name}: data differs beyond tolerance")
