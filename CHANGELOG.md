@@ -3,7 +3,7 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.16] - 2026-06-17
 
 ### Added
 - **Agilent MassHunter HRMS Q-TOF profile support (issue #27).** Q-TOF
