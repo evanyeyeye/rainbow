@@ -1,0 +1,237 @@
+<SampleInfo>
+  <Version>1.0</Version>
+  <Field>
+    <Name>Dilution</Name>
+    <DisplayName>Dilution</DisplayName>
+    <Value>1</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Inj Vol (µl)</Name>
+    <DisplayName>Inj Vol (µl)</DisplayName>
+    <Value>0</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Wt/Vol</Name>
+    <DisplayName>Wt/Vol</DisplayName>
+    <Value>0</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Sample ID</Name>
+    <DisplayName>Sample ID</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Sample Name</Name>
+    <DisplayName>Sample Name</DisplayName>
+    <Value>GLOVEOIL</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Sample Position</Name>
+    <DisplayName>Sample Position</DisplayName>
+    <Value>202</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Sample Type</Name>
+    <DisplayName>Sample Type</DisplayName>
+    <Value>Sample</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Data File</Name>
+    <DisplayName>Data File</DisplayName>
+    <Value>D:\Agilent\ICPMH\1\DATA\GC\CLOVEOIL.b\001SMPL.d</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Method</Name>
+    <DisplayName>Method</DisplayName>
+    <Value>D:\Agilent\ICPMH\1\DATA\GC\CLOVEOIL.b</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Override DA Method</Name>
+    <DisplayName>Override DA Method</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Level Name</Name>
+    <DisplayName>Level Name</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Comment</Name>
+    <DisplayName>Comment</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Balance Override</Name>
+    <DisplayName>Balance Override</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Barcode</Name>
+    <DisplayName>Barcode</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Equilib Time (min)</Name>
+    <DisplayName>Equilib Time (min)</DisplayName>
+    <Value>0</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Plate Code</Name>
+    <DisplayName>Plate Code</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Plate Position</Name>
+    <DisplayName>Plate Position</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Rack Code</Name>
+    <DisplayName>Rack Code</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>Rack Position</Name>
+    <DisplayName>Rack Position</DisplayName>
+    <Value>
+    </Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>UserDefined617379779</Name>
+    <DisplayName>Custom ISTD Conc Level</DisplayName>
+    <Value>1</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>UserDefined493969318</Name>
+    <DisplayName>Tune Mode Data</DisplayName>
+    <Value>&lt;?xml version="1.0" encoding="utf-16" standalone="yes"?&gt;&lt;TuneModeData&gt;&lt;Key value="1"&gt;&lt;ModeName&gt;no gas&lt;/ModeName&gt;&lt;/Key&gt;&lt;/TuneModeData&gt;</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>UserDefined592740097</Name>
+    <DisplayName>GUID_SampleList</DisplayName>
+    <Value>cc446e80-9539-4780-9c16-ca2eadef54e0</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>UserDefined1012881810</Name>
+    <DisplayName>GUID_Measurement</DisplayName>
+    <Value>3779c05d-ea88-4412-aa2a-ad0b822b2d9b</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>OperatorName</Name>
+    <DisplayName>OperatorName</DisplayName>
+    <Value>ICPQQQ</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>AcqTime</Name>
+    <DisplayName>AcqTime</DisplayName>
+    <Value>2024-05-01T23:36:50Z</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>SampleLockedRunMode</Name>
+    <DisplayName>SampleLockedRunMode</DisplayName>
+    <Value>False</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>RunCompletedFlag</Name>
+    <DisplayName>RunCompletedFlag</DisplayName>
+    <Value>True</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+  <Field>
+    <Name>InstrumentName</Name>
+    <DisplayName>InstrumentName</DisplayName>
+    <Value>G3665A SG23233243</Value>
+    <DataType>8</DataType>
+    <Units>
+    </Units>
+  </Field>
+</SampleInfo>

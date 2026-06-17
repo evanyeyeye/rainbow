@@ -14,6 +14,7 @@ exports instead use a single :ref:`.dx archive <dx>`.
    Agilent .ch (FID) <agilent/ch_fid>
    Agilent .ch (other) <agilent/ch_other>
    Agilent MSProfile.bin <agilent/hrms>
+   Agilent ICP-MS MSProfile.bin <agilent/icpms>
    Agilent OpenLab CDS (.dx) <agilent/dx>
 
 It may be useful to search for a binary format by detector. 
@@ -39,5 +40,7 @@ It may be useful to search for a binary format by detector.
      - :doc:`Agilent .ch (other) <agilent/ch_other>`
    * - ELSD
      - :doc:`Agilent .ch (other) <agilent/ch_other>`
-   * - HRMS 
+   * - HRMS
      - :doc:`Agilent MSProfile.bin <agilent/hrms>`
+   * - ICP-MS
+     - :doc:`Agilent ICP-MS MSProfile.bin <agilent/icpms>`
