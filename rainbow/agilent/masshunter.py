@@ -5,9 +5,12 @@ Methods for parsing Agilent Masshunter files.
 import os
 import struct
 import numpy as np
-import lzf
 from lxml import etree
 from rainbow import DataFile
+
+# NOTE: `lzf` (python-lzf) is imported lazily inside parse_msdata. It is only
+# needed to decompress MSProfile.bin, so the rest of this module - including
+# the scan-counting that replaces MSTS.xml - works without it installed.
 
 
 """
@@ -39,7 +42,10 @@ def parse_allfiles(path, prec=0):
         return datafiles
 
     acqdata_files = set(os.listdir(acqdata_path))
-    if {"MSTS.xml", "MSScan.xsd", "MSScan.bin"} <= acqdata_files:
+    # MSTS.xml is no longer required: the scan count is recovered by reading
+    # MSScan.bin to EOF (see parse_msdata). This lets us parse Agilent OpenLab
+    # .rslt/.sirslt result folders, which omit MSTS.xml.
+    if {"MSScan.xsd", "MSScan.bin"} <= acqdata_files:
         if "MSProfile.bin" in acqdata_files:
             datafiles.append(parse_msdata(acqdata_path, prec))
         # Future work should also parse the MSPeak.bin format. 
@@ -61,73 +67,56 @@ def parse_msdata(path, prec=0):
     IMPORTANT: Masshunter MS data can be either stored in MSProfile.bin or \
         MSPeak.bin. This method only supports parsing MSProfile.bin.  
     
-    The following files are used (in order of listing): 
-        - MSTS.xml -> Number of retention times.
+    The following files are used (in order of listing):
         - MSScan.xsd -> File structure of MSScan.bin.
-        - MSScan.bin -> Offsets and compression info for MSProfile.bin.
+        - MSScan.bin -> Offsets, compression info, and scan count.
         - MSMassCal.bin -> Calibration info for masses.
         - MSProfile.bin -> Actual data values.
+
+    The scan count is recovered by reading MSScan.bin to EOF, so MSTS.xml is \
+        not required. This lets us parse OpenLab .rslt/.sirslt result \
+        folders, which omit MSTS.xml.
 
     Learn more about this file format :ref:`here <hrms>`.
 
     Args:
         path (str): Path to the AcqData subdirectory.
         prec (int, optional): Number of decimals to round mz values.
-    
+
     Returns:
         DataFile containing Masshunter MS data.
 
     """
-    # MSTS.xml: Extract number of retention times. 
-    # In future work, this step could potentially be skipped by reading 
-    #    MSScan.bin until EOF and counting the offsets. 
-    # This would remove reliance on MSTS.xml being in the directory.
-    tree = etree.parse(os.path.join(path, "MSTS.xml"))
-    root = tree.getroot()
-    num_times = 0
-    for time_seg in root.findall("TimeSegment"):
-        num_times += int(time_seg.find("NumOfScans").text)
+    # lzf is only needed to decompress MSProfile.bin below. Import it lazily
+    # with a clear message so that everything up to this point can run (and be
+    # tested) without python-lzf installed.
+    try:
+        import lzf
+    except ModuleNotFoundError:
+        raise ModuleNotFoundError(
+            "You must install python-lzf to parse MSProfile.bin (HRMS) data.")
 
-    # MSScan.xsd: Extract the file structure of MSScan.bin. 
-    # There are "simple" types can be directly translated into number types.
-    # But there are "complex" types that are made up of other
-    #     "simple" and "complex" types.
-    # These are stored in a dictionary to enable recursive parsing. 
-    tree = etree.parse(os.path.join(path, "MSScan.xsd"))
-    root = tree.getroot()
-    namespace = tree.xpath('namespace-uri(.)') 
-    complextypes_dict = {}
-    for complextype in root.findall(f"{{{namespace}}}complexType"):
-        innertypes = []
-        for element in complextype[0].findall(f"{{{namespace}}}element"):
-            innertypes.append((element.get('name'), element.get('type')))
-        complextypes_dict[complextype.get('name')] = innertypes
+    # MSScan.xsd: Extract the file structure of MSScan.bin.
+    complextypes_dict = parse_scan_xsd(os.path.join(path, "MSScan.xsd"))
 
-    # MSScan.bin: Extract information about MSProfile.bin. 
-    # For each retention time, this includes: 
-    #   - the retention time itself 
-    #   - starting offset of data in MSProfile.bin
-    #   - length in bytes of the compressed data 
-    #   - length in bytes of the uncompressed data 
-    #   - number of masses recorded at the retention time
-    # Future work could determine if the data blocks for each retention time 
-    #     are always contiguous. If that is the case, the offset is unneeded. 
-    f = open(os.path.join(path, "MSScan.bin"), 'rb')
-    f.seek(0x58) # start offset
-    f.seek(struct.unpack('<I', f.read(4))[0])
-    data_info = np.empty(num_times, dtype=object)
-    for i in range(num_times):
-        # "ScanRecordType" is always the name of the root "complex" type.
-        scan_info = read_complextype(f, complextypes_dict, "ScanRecordType")
-        spectrum_info = scan_info['SpectrumParamValues']
-        data_info[i] = (
-            scan_info['ScanTime'], 
-            spectrum_info['PointCount'],
-            spectrum_info['SpectrumOffset'], 
-            spectrum_info['ByteCount'], 
-            spectrum_info['UncompressedByteCount']
-        )
-    f.close()
+    # MSScan.bin: Read every scan record until EOF. The number of records is
+    # the number of retention times - historically read from MSTS.xml, which
+    # is absent in OpenLab result folders. For each retention time we keep:
+    #   - the retention time itself
+    #   - the number of masses recorded
+    #   - the starting offset of the data in MSProfile.bin
+    #   - the compressed length in bytes
+    #   - the uncompressed length in bytes
+    scan_records = read_scan_records(
+        os.path.join(path, "MSScan.bin"), complextypes_dict)
+    num_times = len(scan_records)
+    data_info = [
+        (rec['ScanTime'],
+         rec['SpectrumParamValues']['PointCount'],
+         rec['SpectrumParamValues']['SpectrumOffset'],
+         rec['SpectrumParamValues']['ByteCount'],
+         rec['SpectrumParamValues']['UncompressedByteCount'])
+        for rec in scan_records]
 
     # MSMassCal.bin: Extract calibration values for masses. 
     # There seem to be 10 doubles stored for each retention time. But this
@@ -197,7 +186,73 @@ def parse_msdata(path, prec=0):
     f.close()
     
     return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
-   
+
+
+def parse_scan_xsd(xsd_path):
+    """
+    Parses MSScan.xsd into a dictionary describing its "complex" types.
+
+    There are "simple" types that translate directly into number types, and
+    "complex" types made up of other "simple" and "complex" types. The
+    returned dictionary maps each complex type's name to a list of its
+    (name, type) members, which enables the recursive parsing in
+    :obj:`read_complextype`.
+
+    Args:
+        xsd_path (str): Path to MSScan.xsd.
+
+    Returns:
+        Dictionary mapping complex type names to lists of (name, type) tuples.
+
+    """
+    tree = etree.parse(xsd_path)
+    root = tree.getroot()
+    namespace = tree.xpath('namespace-uri(.)')
+    complextypes_dict = {}
+    for complextype in root.findall(f"{{{namespace}}}complexType"):
+        innertypes = []
+        for element in complextype[0].findall(f"{{{namespace}}}element"):
+            innertypes.append((element.get('name'), element.get('type')))
+        complextypes_dict[complextype.get('name')] = innertypes
+    return complextypes_dict
+
+
+def read_scan_records(msscan_path, complextypes_dict):
+    """
+    Reads every scan record (ScanRecordType) from MSScan.bin until EOF.
+
+    The records are contiguous and the file ends exactly on a record
+    boundary, so reading until EOF yields one record per retention time.
+    The length of the returned list is therefore the scan count, which was
+    historically read from MSTS.xml. Recovering it here removes that
+    dependency, so result folders that omit MSTS.xml (Agilent OpenLab
+    .rslt/.sirslt) can be parsed.
+
+    The exact members of each record depend on the instrument's MSScan.xsd;
+    callers extract whichever fields they need (e.g. parse_msdata pulls the
+    MSProfile.bin offsets and byte counts).
+
+    Args:
+        msscan_path (str): Path to MSScan.bin.
+        complextypes_dict (dict): Output of :obj:`parse_scan_xsd`.
+
+    Returns:
+        List of dictionaries, one per retention time, each mapping the
+        ScanRecordType member names to their parsed values.
+
+    """
+    file_size = os.path.getsize(msscan_path)
+    records = []
+    with open(msscan_path, 'rb') as f:
+        f.seek(0x58)  # offset to the uint32 pointer at the start of records
+        f.seek(struct.unpack('<I', f.read(4))[0])
+        while f.tell() < file_size:
+            # "ScanRecordType" is always the name of the root "complex" type.
+            records.append(
+                read_complextype(f, complextypes_dict, "ScanRecordType"))
+    return records
+
+
 def read_complextype(f, complextypes_dict, name):
     """ 
     Reads a "complex" type from :obj:`f`. Used only for MSScan.bin. 

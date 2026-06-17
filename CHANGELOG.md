@@ -3,6 +3,21 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **MassHunter HRMS no longer requires `MSTS.xml`.** The number of retention
+  times is now recovered by reading `MSScan.bin` to EOF instead of from
+  `MSTS.xml`, which is absent from Agilent OpenLab `.rslt`/`.sirslt` result
+  folders. Validated against the `yellow` fixture, where the recovered count
+  matches `MSTS.xml` exactly. The `python-lzf` import is now lazy (it is only
+  needed to decompress `MSProfile.bin`), so the rest of the MassHunter module
+  imports and runs without it.
+
+### Added
+- `tests/test_masshunter.py`: verifies the `MSScan.bin` scan count matches
+  `MSTS.xml` and is recovered even when `MSTS.xml` is removed.
+
 ## [1.0.15] - 2026-06-17
 
 ### Added
