@@ -13,21 +13,19 @@ The HRMS data is encoded across several files in a subdirectory named AcqData:
 
    * - File
      - Information
-   * - MSTS.xml
-     - Number of retention times
    * - MSScan.xsd
      - File structure of MSScan.bin
-   * - MSScan.bin 
-     - Offsets and compression info for MSProfile.bin
+   * - MSScan.bin
+     - Offsets, compression info, and the number of retention times
    * - MSMassCal.bin
      - Calibration info for masses
-   * - MSProfile.bin 
-     - Mz and intensity values 
+   * - MSProfile.bin
+     - Mz and intensity values
 
-**MSTS.xml** is an XML document that contains several :code:`NumOfScans` elements, whose values summed together give the total number of retention times. This is useful for parsing subsequent files. 
+The number of retention times is obtained from **MSScan.bin** itself by reading its scan records until the end of the file (see below). Some acquisitions also include an **MSTS.xml** document whose :code:`NumOfScans` elements sum to the same total, but **rainbow** does not require it. This matters because OpenLab :code:`.rslt`/:code:`.sirslt` result folders omit MSTS.xml.
 
-.. code-block:: xml 
-   
+.. code-block:: xml
+
    <TimeSegment TimeSegmentID="2">
        <StartTime>1.04351666666667</StartTime>
        <EndTime>7.99746666666667</EndTime>
@@ -64,7 +62,7 @@ A complex type is comprised of simple types and other complex types. The followi
 
 The root type is the complex type :code:`ScanRecordType`. 
 
-**MSScan.bin** is a binary that contains a data segment in the format defined by :code:`ScanRecordType` for each retention time. These data segments begin at offset 0x58. 
+**MSScan.bin** is a binary that contains a data segment in the format defined by :code:`ScanRecordType` for each retention time. A little-endian 4-byte offset at 0x58 points to the first data segment. The segments are contiguous and the file ends exactly on a segment boundary, so reading them until EOF gives the total number of retention times.
 
 The simplified example above would correspond to the following data segment structure:
 
