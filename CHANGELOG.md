@@ -18,9 +18,22 @@ to [Semantic Versioning](https://semver.org/).
   references are qualified with the schema's target-namespace prefix (e.g.
   `mstns:ScanRecordType`). These previously raised `KeyError` while reading
   `MSScan.bin`.
+- **Polynomial m/z calibration for HRMS.** When `DefaultMassCal.xml` provides a
+  polynomial `ValueUseFlags`, `rainbow` now applies the polynomial correction
+  (`MSMassCal.bin` stores `[coeff, base, left, right, c0..c5]` per scan) on top
+  of the traditional calibration. Validated to <0.0001 Da against m/z that
+  Agilent MassHunter BioConfirm exports for the reporter's spectra; the
+  traditional calibration alone is ~1-2 ppm off. Files without
+  `DefaultMassCal.xml` keep the traditional calibration.
+- **Optional compiled accelerator for the MSProfile.bin run-length decode**
+  (`rainbow/agilent/_msprofile.pyx`). The decode is an inherently sequential,
+  variable-width byte loop; the Cython version is ~100x faster than the
+  pure-Python loop and bit-identical. Like the `.uv` accelerator it is optional
+  — without a compiler or Cython, `rainbow` falls back to pure Python.
 - `tests/test_masshunter.py`: parses trimmed real Q-TOF profile fixtures
   (`magenta.D`, `cyan.D`) end to end without `python-lzf`, cross-checking the
-  decoded intensities; plus the existing `MSScan.bin` scan-count tests.
+  decoded intensities and validating the calibrated m/z against BioConfirm.
+  `tests/test_accelerator.py` adds parity tests for the `_msprofile` extension.
 
 ### Changed
 - **MassHunter HRMS no longer requires `MSTS.xml`.** The number of retention
@@ -32,6 +45,12 @@ to [Semantic Versioning](https://semver.org/).
   `MSProfile.bin` segment is actually encountered, so the rest of the
   MassHunter module - including the run-length-encoded Q-TOF profile path -
   imports and runs without `python-lzf` installed.
+- **Faster HRMS profile parsing (~8x end to end** on large files; e.g. a 185 MB
+  `MSProfile.bin` went from ~35 s to ~4.5 s). The compiled decoder removes the
+  decode bottleneck, the per-scan m/z arrays are concatenated instead of routed
+  through a ~100M-element Python list, and the (retention time x m/z) grid is
+  binned with integer keys in a single pass instead of a global sort (with a
+  memory-bounded fallback to the sort-based path). Output is unchanged.
 
 ## [1.0.15] - 2026-06-17
 

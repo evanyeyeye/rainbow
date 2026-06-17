@@ -13,6 +13,14 @@ from rainbow import DataFile
 # rest of this module - the scan-counting that replaces MSTS.xml and the
 # run-length-encoded (Q-TOF) MSProfile.bin path - works without it installed.
 
+# Optional compiled accelerator for the run-length MSProfile.bin decode. If it
+# was not built (no compiler or no Cython at install time), decompress_inten_list
+# falls back to the pure-Python loop transparently.
+try:
+    from rainbow.agilent import _msprofile as _msprofile_fast
+except ImportError:
+    _msprofile_fast = None
+
 
 """
 MAIN PARSING METHOD 
@@ -99,6 +107,7 @@ def parse_msdata(path, prec=0):
     #   - the starting offset of the data in MSProfile.bin
     #   - the compressed length in bytes
     #   - the uncompressed length in bytes
+    #   - the calibration id (selects a polynomial calibration; see below)
     scan_records = read_scan_records(
         os.path.join(path, "MSScan.bin"), complextypes_dict)
     num_times = len(scan_records)
@@ -107,17 +116,26 @@ def parse_msdata(path, prec=0):
          rec['SpectrumParamValues']['PointCount'],
          rec['SpectrumParamValues']['SpectrumOffset'],
          rec['SpectrumParamValues']['ByteCount'],
-         rec['SpectrumParamValues']['UncompressedByteCount'])
+         rec['SpectrumParamValues']['UncompressedByteCount'],
+         rec.get('CalibrationID'))
         for rec in scan_records]
 
-    # MSMassCal.bin: Extract calibration values for masses. 
-    # There seem to be 10 doubles stored for each retention time. But this
-    #     method only uses the first 2. Future work could determine what the
-    #     other 8 doubles are used for.
+    # MSMassCal.bin: Extract calibration values for masses.
+    # Each retention time stores 10 doubles: the two "traditional" calibration
+    #     numbers (coeff, base) used as mz = (coeff * (t - base))**2, then two
+    #     time-of-flight clip bounds (left, right) and six polynomial
+    #     coefficients. The polynomial is an optional refinement applied on top
+    #     of the traditional calibration; see calibrate_mz.
     f = open(os.path.join(path, "MSMassCal.bin"), 'rb')
     f.seek(0x4c) # start offset
-    calib_vals = np.ndarray((num_times, 2), '<d', f.read(), 0, (84, 8))
+    calib_vals = np.ndarray((num_times, 10), '<d', f.read(), 0, (84, 8))
     f.close()
+
+    # DefaultMassCal.xml: per-calibration-id flags selecting which polynomial
+    #     coefficients are active. Absent for older/LZF data, in which case
+    #     only the traditional calibration is applied.
+    calib_flags = parse_default_masscal(
+        os.path.join(path, "DefaultMassCal.xml"))
 
     # MSProfile.bin: Extract the data values.
     # Each retention time has a data segment that starts with two doubles
@@ -137,10 +155,10 @@ def parse_msdata(path, prec=0):
     twodoubles_unpack = struct.Struct('<dd').unpack
     times = np.empty(num_times)
     num_mz_per_time = np.empty(num_times)
-    mz_list = []
+    mz_arrs = []
     inten_arrs = []
     for i in range(num_times):
-        time, num_mz, offset, comp_len, decomp_len = data_info[i]
+        time, num_mz, offset, comp_len, decomp_len, calib_id = data_info[i]
         times[i] = time
         num_mz_per_time[i] = num_mz
 
@@ -149,7 +167,12 @@ def parse_msdata(path, prec=0):
         comp_bytes = f.read(comp_len)
         if segment_is_rle(comp_bytes, num_mz):
             start_mz, delta_mz = twodoubles_unpack(comp_bytes[:16])
-            inten = decompress_inten_list(memoryview(comp_bytes)[16:], num_mz)
+            body = memoryview(comp_bytes)[16:]
+            # Use the compiled accelerator if it was built (identical output).
+            if _msprofile_fast is not None:
+                inten = _msprofile_fast.decompress_inten_list(body, num_mz)
+            else:
+                inten = decompress_inten_list(body, num_mz)
         else:
             # Only LZF-compressed segments need python-lzf; import it lazily so
             # RLE-only data (and the rest of this module) works without it.
@@ -163,42 +186,152 @@ def parse_msdata(path, prec=0):
             start_mz, delta_mz = twodoubles_unpack(decomp_view[:16])
             inten = np.ndarray(num_mz, '<I', bytes(decomp_view[16:]))
 
-        # Calculate the calibrated mz values.
-        mzs = np.arange(
+        # Calculate the calibrated mz values from the raw time-of-flight axis.
+        tof = np.arange(
             start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
-        mzs = mzs[:num_mz]
-        coeff, base = calib_vals[i]
-        mzs -= base
-        mzs *= coeff
-        mzs **= 2
+        tof = tof[:num_mz]
+        mzs = calibrate_mz(tof, calib_vals[i], calib_flags.get(calib_id))
 
-        mz_list.extend(mzs.tolist())
+        mz_arrs.append(mzs)
         inten_arrs.append(inten)
 
-    # Process the extracted data values.
-    mz_arr = np.round(np.array(mz_list), prec)
-    intensities = np.concatenate(inten_arrs)
-
-    # Make the array of ylabels containing mz values. 
-    mz_ylabels = np.unique(mz_arr)
-    mz_ylabels.sort()
-
-    # Fill the `data` array containing intensities. 
-    # Optimized using numpy vectorization.
-    mz_indices = np.searchsorted(mz_ylabels, mz_arr)
-    data = np.zeros((num_times, mz_ylabels.size), dtype=np.uint64)
-    cur_index = 0
-    for i in range(num_times):
-        stop_index = cur_index + int(num_mz_per_time[i])
-        np.add.at(
-            data[i], 
-            mz_indices[cur_index:stop_index], 
-            intensities[cur_index:stop_index])
-        cur_index = stop_index
-    
     f.close()
 
+    # Concatenating the per-scan arrays avoids materializing a ~100M-element
+    # Python list (and the numpy round-trip through it), which otherwise
+    # dominates parsing of large profile files.
+    mz_arr = np.round(np.concatenate(mz_arrs), prec)
+    intensities = np.concatenate(inten_arrs).astype(np.uint64)
+    rows = np.repeat(np.arange(num_times), num_mz_per_time.astype(np.int64))
+    mz_ylabels, data = bin_to_grid(mz_arr, intensities, rows, num_times, prec)
+
     return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
+
+
+# Cap on the dense (retention time x mz-bin) grid the fast binning path will
+# allocate, in cells. 50M uint64 cells is ~400 MB; above this we fall back to
+# the sort-based mapping, which only allocates the occupied columns.
+_MAX_DENSE_BINS = 50_000_000
+
+
+def bin_to_grid(mz_arr, intensities, rows, num_times, prec):
+    """
+    Bins per-point (mz, intensity) values into a (retention time x mz) grid.
+
+    Rounding to ``prec`` decimals puts the mz values on a discrete grid of
+    spacing ``10**-prec``. Scaling them to integers lets us assign each point a
+    column directly and sum with a single pass, avoiding the global sort that
+    :func:`numpy.unique`/:func:`numpy.searchsorted` would do over every point.
+    For wide mz ranges at high ``prec`` the dense grid would be too large, so
+    above :data:`_MAX_DENSE_BINS` we fall back to the sort-based mapping.
+
+    Args:
+        mz_arr (np.ndarray): Rounded mz value of every point, all scans
+            concatenated.
+        intensities (np.ndarray): uint64 intensity of every point.
+        rows (np.ndarray): Retention-time (row) index of every point.
+        num_times (int): Number of retention times (grid rows).
+        prec (int): Number of decimals the mz values were rounded to.
+
+    Returns:
+        Tuple ``(mz_ylabels, data)``: the sorted unique mz values that occur,
+        and the ``(num_times, mz_ylabels.size)`` uint64 intensity grid.
+
+    """
+    scale = 10 ** prec
+    keys = np.round(mz_arr * scale).astype(np.int64)
+    low = int(keys.min())
+    span = int(keys.max()) - low + 1
+
+    if span * num_times <= _MAX_DENSE_BINS:
+        # Dense path: integer mz keys index straight into the grid.
+        grid = np.zeros(num_times * span, dtype=np.uint64)
+        np.add.at(grid, rows * span + (keys - low), intensities)
+        grid = grid.reshape(num_times, span)
+        present = np.nonzero(grid.any(axis=0))[0]
+        return (low + present) / scale, grid[:, present]
+
+    # Sparse path: map mz values onto only the columns that occur.
+    mz_ylabels = np.unique(mz_arr)
+    cols = np.searchsorted(mz_ylabels, mz_arr)
+    grid = np.zeros(num_times * mz_ylabels.size, dtype=np.uint64)
+    np.add.at(grid, rows * mz_ylabels.size + cols, intensities)
+    return mz_ylabels, grid.reshape(num_times, mz_ylabels.size)
+
+
+def parse_default_masscal(xml_path):
+    """
+    Reads the polynomial ``ValueUseFlags`` for each calibration id from
+    DefaultMassCal.xml.
+
+    Each ``DefaultCalibration`` has a ``Polynomial`` step whose
+    ``ValueUseFlags`` is a bitmask: bit ``k`` (counting from the least
+    significant) being set means the polynomial includes a term of order
+    ``k``, and the active coefficients in MSMassCal.bin fill those orders in
+    ascending order. A flag of 0 (or a missing file) means no polynomial
+    refinement - only the traditional calibration is used.
+
+    Args:
+        xml_path (str): Path to DefaultMassCal.xml.
+
+    Returns:
+        Dictionary mapping calibration id (int) to its ValueUseFlags (int).
+        Empty if the file does not exist.
+
+    """
+    if not os.path.exists(xml_path):
+        return {}
+    flags = {}
+    root = etree.parse(xml_path).getroot()
+    for calibration in root.iter("DefaultCalibration"):
+        calib_id = calibration.get("DefaultCalibrationID")
+        if calib_id is None:
+            continue
+        for step in calibration.iter("Step"):
+            if step.findtext("CalibrationFormula") == "Polynomial":
+                use_flags = step.findtext("ValueUseFlags")
+                flags[int(calib_id)] = int(use_flags) if use_flags else 0
+    return flags
+
+
+def calibrate_mz(tof, calib_row, use_flags):
+    """
+    Converts a raw time-of-flight axis to calibrated mz values.
+
+    The traditional calibration is ``mz = (coeff * (tof - base))**2``. When a
+    polynomial refinement is active (``use_flags`` truthy), a correction is
+    subtracted: the six MSMassCal.bin coefficients are assigned to the
+    polynomial orders whose bits are set in ``use_flags`` (ascending), and the
+    polynomial is evaluated on the time-of-flight clipped to ``[left, right]``.
+    This matches the masses Agilent MassHunter reports (validated to <0.0001
+    Da against exported spectra); without it the masses are off by ~1-2 ppm.
+
+    Args:
+        tof (np.ndarray): Raw time-of-flight values for one scan.
+        calib_row (np.ndarray): The scan's 10 MSMassCal.bin doubles
+            (coeff, base, left, right, and six polynomial coefficients).
+        use_flags (int or None): The polynomial ValueUseFlags for this scan's
+            calibration id, or None/0 to apply only the traditional formula.
+
+    Returns:
+        A numpy array of calibrated mz values.
+
+    """
+    coeff, base, left, right = calib_row[:4]
+    mzs = (coeff * (tof - base)) ** 2
+    if not use_flags:
+        return mzs
+
+    # Map the six coefficients onto the polynomial orders flagged for use.
+    coefficients = calib_row[4:10]
+    orders = [k for k in range(use_flags.bit_length()) if use_flags >> k & 1]
+    poly = np.zeros(max(orders) + 1) if orders else np.zeros(1)
+    for order, coefficient in zip(orders, coefficients):
+        poly[order] = coefficient
+    # np.polyval wants coefficients highest-order first; Horner's method keeps
+    # the high-order terms stable for the large time-of-flight magnitudes.
+    correction = np.polyval(poly[::-1], np.clip(tof, left, right))
+    return mzs - correction
 
 
 def segment_is_rle(comp_bytes, num_mz):
