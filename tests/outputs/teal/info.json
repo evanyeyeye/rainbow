@@ -1,0 +1,54 @@
+{
+    "metadata": {
+        "vendor": "Agilent",
+        "date": "2025-06-19T20:30:07.2297248-04:00",
+        "method": "standbyflush.amx"
+    },
+    "datafiles": {
+        "DAD1I.UV": {
+            "detector": "UV",
+            "shape": [750, 226],
+            "metadata": {
+                "device": "DAD",
+                "description": "DAD1I,DAD: Spectrum",
+                "unit": "mAU"
+            }
+        },
+        "DAD1H.CH": {
+            "detector": "UV",
+            "shape": [750, 1],
+            "metadata": {
+                "device": "DAD",
+                "description": "DAD1H,Sig=330.0,4.0  Ref=360.0,100.0",
+                "unit": "mAU"
+            }
+        },
+        "DAD1A.CH": {
+            "detector": "UV",
+            "shape": [750, 1],
+            "metadata": {
+                "device": "DAD",
+                "description": "DAD1A,Sig=210.0,4.0  Ref=360.0,100.0",
+                "unit": "mAU"
+            }
+        },
+        "WPS1A.IT": {
+            "detector": null,
+            "shape": [6002, 1],
+            "metadata": {
+                "device": "WPS",
+                "description": "WPS1A,Temperature",
+                "unit": "°C"
+            }
+        },
+        "PMP1B.IT": {
+            "detector": null,
+            "shape": [24028, 1],
+            "metadata": {
+                "device": "PMP",
+                "description": "PMP1B,Pressure",
+                "unit": "bar"
+            }
+        }
+    }
+}

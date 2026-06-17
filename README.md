@@ -11,6 +11,11 @@
 * `.ms` - MS (supports incomplete files)
 * `MSProfile.bin` - HRMS
 
+**Agilent .dx (OpenLab CDS)**
+* `.UV` - DAD spectrum
+* `.CH` - single-wavelength UV/DAD signals
+* `.IT` - instrument telemetry, as analog data (parse with `telemetry=True`)
+
 **Waters .raw**
 * `CHRO` - CAD and ELSD, as well as miscellaneous analog data
 * `FUNC` - UV and MS 

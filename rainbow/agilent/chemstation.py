@@ -417,17 +417,20 @@ def decode_uv_array(f, data_offsets, num_times, num_wavelengths):
         ``(num_times, num_wavelengths)`` float64 array of absorbances.
 
     """
-    uint_unpack = struct.Struct('<I').unpack
+    # Each segment is a 22-byte header (4 pad, 4 little-endian uint32 time,
+    # 14 pad) followed by ``num_wavelengths`` little-endian float64 values.
+    # The doubles are not delta-encoded, so the whole block can be read at
+    # once with strided views instead of looping value-by-value.
+    segment_size = 22 + num_wavelengths * 8
 
     f.seek(data_offsets["data_start"])
-    times = np.empty(num_times, dtype=np.uint32)
-    data = np.empty((num_times, num_wavelengths), dtype=np.float64)
-    for i in range(num_times):
-        f.read(4)
-        times[i] = uint_unpack(f.read(4))[0]
-        f.read(14)
-        for j in range(num_wavelengths):
-            data[i, j] = struct.unpack('<d', f.read(8))[0]
+    raw = f.read(segment_size * num_times)
+
+    times = np.ndarray(
+        num_times, '<u4', raw, 4, (segment_size,)).astype(np.uint32)
+    data = np.ndarray(
+        (num_times, num_wavelengths), '<f8', raw, 22,
+        (segment_size, 8)).astype(np.float64)
 
     return times, data
 

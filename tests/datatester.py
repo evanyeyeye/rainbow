@@ -10,7 +10,7 @@ class DataTester(unittest.TestCase):
     Unit tests for parsing file formats. 
 
     """
-    def __test_data_directory(self, color, ext):
+    def __test_data_directory(self, color, ext, telemetry=False):
         """ 
         Runs all tests for a DataDirectory after parsing. 
 
@@ -47,7 +47,7 @@ class DataTester(unittest.TestCase):
                 detector_to_names[detector] = [name]
 
         datadir_path = tests_path / "inputs" / (color + "." + ext)
-        datadir = rb.read(str(datadir_path))
+        datadir = rb.read(str(datadir_path), telemetry=telemetry)
 
         # Tests attributes of the DataDirectory.
         # Also tests classification of its DataFiles. 
