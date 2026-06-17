@@ -1,5 +1,7 @@
-# Ship the Cython source for the optional accelerator so source builds (sdist)
-# can compile it. Exclude the generated C file: it is a build artifact and is
-# regenerated from the .pyx at build time (Cython is in build-system.requires).
+# Ship the Cython sources for the optional accelerators so source builds (sdist)
+# can compile them. Exclude the generated C files: they are build artifacts and
+# are regenerated from the .pyx at build time (Cython is in build-system.requires).
 include rainbow/agilent/_uvdelta.pyx
+include rainbow/agilent/_msprofile.pyx
 exclude rainbow/agilent/_uvdelta.c
+exclude rainbow/agilent/_msprofile.c

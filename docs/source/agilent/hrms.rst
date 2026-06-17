@@ -85,7 +85,7 @@ The simplified example above would correspond to the following data segment stru
 
 Although it is a simplified example, the table above contains the key information about a MSProfile.bin binary that is stored in MSScan.bin.
 
-**MSMassCal.bin** is a binary that contains a data segment of 10 little-endian doubles for each retention time. The first 2 doubles are used as calibration numbers for the mz values recorded at the corresponding retention time. The purpose of the other 8 doubles is currently unknown. The data segments begin at offset 0x4c. 
+**MSMassCal.bin** is a binary that contains a data segment of 10 little-endian doubles for each retention time, beginning at offset 0x4c. The first 2 doubles (:code:`coeff`, :code:`base`) are the "traditional" calibration numbers. The next 2 (:code:`left`, :code:`right`) are time-of-flight clip bounds and the final 6 are polynomial coefficients, used for the optional polynomial refinement described below.
 
 **MSProfile.bin** stores a data segment for each retention time. Assume little-endianness.
 
@@ -96,7 +96,9 @@ The intensities that follow the 2-double header are stored in one of two ways, d
 - **LZF compression.** The whole segment, header included, is compressed with the `LZF algorithm <http://home.schmorp.de/marc/liblzf.html>`_. The decompressed length (``UncompressedByteCount`` in MSScan.bin) is required for decompression. This path needs the optional ``python-lzf`` dependency.
 - **Run-length encoding (RLE).** Q-TOF profile acquisitions leave the 2-double header raw and follow it with an RLE intensity stream. The stream starts with a 4-byte word whose low 3 bytes are the point count and whose high byte is a fixed ``0x90`` marker; **rainbow** uses this signature to recognize the format. Two little-endian ``int32`` values follow (both stored negated): an initial run of zero intensities, and a width flag (1, 2, 3, or 4, mapping to a 1-, 2-, 4-, or 8-byte signed integer) for the values that come next. Each subsequent value is read at the current width: a non-negative value is a literal intensity, while a negative value ``-v`` encodes ``divmod(v, 4)`` — the quotient is a run of zero intensities and the remainder is the new width flag to switch to. Trailing zero intensities are not stored. This path does not require ``python-lzf``.
 
-Let the corresponding 2 calibration numbers from MSMassCal.bin be :code:`coeff` and :code:`base`. The calibration formula for each :code:`mz` is :code:`(coeff * (mz - base))^2`. 
+Let :code:`t` be the raw time-of-flight value of a point and :code:`coeff`, :code:`base` its scan's first two MSMassCal.bin numbers. The traditional calibration is :code:`mz = (coeff * (t - base))^2`.
+
+On instruments that record a polynomial refinement, a correction is subtracted from that result. **DefaultMassCal.xml** stores, per calibration id, a ``ValueUseFlags`` bitmask: bit :code:`k` being set means the polynomial has a term of order :code:`k`, and the six MSMassCal.bin coefficients fill the flagged orders in ascending order. The polynomial is evaluated on :code:`t` clipped to :code:`[left, right]` and subtracted from :code:`mz`. This matches the masses Agilent MassHunter reports (validated to <0.0001 Da against exported spectra); without it the masses are off by roughly 1-2 ppm. When DefaultMassCal.xml is absent, only the traditional calibration is applied.
 
 The rest of the data segment consists of the intensities as unsigned integers. Recall that the number of intensities is stored in MSScan.bin. 
 

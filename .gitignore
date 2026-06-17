@@ -11,6 +11,7 @@ dist/
 *.so
 # Cython-generated C source (regenerated at build time)
 rainbow/agilent/_uvdelta.c
+rainbow/agilent/_msprofile.c
 
 # local benchmark datasets (not part of the repo)
 /3543_DC/

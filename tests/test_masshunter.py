@@ -3,6 +3,8 @@ import shutil
 import struct
 import tempfile
 import unittest
+
+import numpy as np
 from lxml import etree
 
 from rainbow.agilent import masshunter
@@ -14,17 +16,23 @@ from rainbow.agilent import masshunter
 # MSTS.xml-independent counting against.
 YELLOW_ACQDATA = os.path.join("tests", "inputs", "yellow.D", "AcqData")
 
-# `magenta` and `cyan` are the first three scans of two real Q-TOF profile
+# `magenta` and `cyan` are three-scan slices of two real Q-TOF profile
 # acquisitions from issue #27, whose MSProfile.bin intensities are run-length
 # encoded rather than LZF-compressed. They cover the two format variants we
 # have seen:
 #   - magenta: older MSScan.xsd (bare type names); UncompressedByteCount > 0.
 #   - cyan: newer MSScan.xsd (namespace-prefixed type names, e.g.
 #       "mstns:ScanRecordType"); UncompressedByteCount == 0.
-# Neither folder contains MSTS.xml, so they also exercise the MSTS-independent
-# scan counting. Both decode without python-lzf installed.
+# Each slice starts at the scan the reporter exported from Agilent MassHunter
+# BioConfirm, so the first scan has a known ground-truth m/z (BIOCONFIRM_APEX_MZ
+# below). Neither folder contains MSTS.xml, so they also exercise the
+# MSTS-independent scan counting. Both decode without python-lzf installed.
 MAGENTA_D = os.path.join("tests", "inputs", "magenta.D")
 CYAN_D = os.path.join("tests", "inputs", "cyan.D")
+
+# Apex m/z that BioConfirm reports for each fixture's first scan (its main-peak
+# base peak), used to validate the mass calibration against ground truth.
+BIOCONFIRM_APEX_MZ = {MAGENTA_D: 734.4836, CYAN_D: 825.4221}
 
 
 class TestMasshunter(unittest.TestCase):
@@ -163,6 +171,48 @@ class TestMasshunterProfile(unittest.TestCase):
         self.assertGreater(datafile.ylabels.min(), 100)
         self.assertLess(datafile.ylabels.max(), 5000)
         self.assertTrue((datafile.ylabels[1:] > datafile.ylabels[:-1]).all())
+
+    def _scan_axis(self, directory, scan_index, use_polynomial=True):
+        """ Decoded intensities and calibrated mz for one scan of a fixture. """
+        acqdata = os.path.join(directory, "AcqData")
+        records = self._records(acqdata)
+        record = records[scan_index]
+        params = record['SpectrumParamValues']
+        num_mz = params['PointCount']
+        with open(os.path.join(acqdata, "MSProfile.bin"), 'rb') as f:
+            f.seek(params['SpectrumOffset'])
+            segment = f.read(params['ByteCount'])
+        start_mz, delta_mz = struct.unpack('<dd', segment[:16])
+        inten = masshunter.decompress_inten_list(
+            memoryview(segment)[16:], num_mz)
+
+        with open(os.path.join(acqdata, "MSMassCal.bin"), 'rb') as cal_file:
+            cal_bytes = cal_file.read()
+        calib = np.ndarray((len(records), 10), '<d', cal_bytes[0x4c:], 0, (84, 8))
+        flags = masshunter.parse_default_masscal(
+            os.path.join(acqdata, "DefaultMassCal.xml"))
+        use_flags = flags.get(record.get('CalibrationID')) if use_polynomial \
+            else None
+        tof = np.arange(
+            start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
+        mzs = masshunter.calibrate_mz(tof[:num_mz], calib[scan_index], use_flags)
+        return inten, mzs
+
+    def test_polynomial_calibration_matches_bioconfirm(self):
+        """ The polynomial calibration reproduces the m/z Agilent reports, and
+        is meaningfully more accurate than the traditional calibration alone. """
+        for directory, truth in BIOCONFIRM_APEX_MZ.items():
+            with self.subTest(fixture=directory):
+                inten, mzs = self._scan_axis(directory, 0)
+                apex = mzs[int(np.argmax(inten))]
+                self.assertAlmostEqual(apex, truth, places=3)
+                # The polynomial term is actually applied (primary differs and
+                # is further from the truth).
+                _, mzs_primary = self._scan_axis(
+                    directory, 0, use_polynomial=False)
+                apex_primary = mzs_primary[int(np.argmax(inten))]
+                self.assertNotAlmostEqual(apex_primary, apex, places=5)
+                self.assertLess(abs(apex - truth), abs(apex_primary - truth))
 
     def test_malformed_rle_raises_valueerror(self):
         """ A corrupt RLE stream raises a clear ValueError, not a cryptic

@@ -1,33 +1,34 @@
 """
-Build hook for the optional compiled accelerator.
+Build hook for the optional compiled accelerators.
 
 Project metadata lives in ``pyproject.toml``; this file exists only to compile
-the optional Cython extension that speeds up Agilent .uv decoding. The
-extension is marked ``optional`` so that a missing compiler (or missing Cython)
-never breaks installation -- the package falls back to pure Python.
+the optional Cython extensions that speed up Agilent decoding (.uv delta and
+MassHunter MSProfile.bin run-length decode). Each extension is marked
+``optional`` so that a missing compiler (or missing Cython) never breaks
+installation -- the package falls back to pure Python.
 """
 import os
 
 from setuptools import setup, Extension
 
-_PYX = "rainbow/agilent/_uvdelta.pyx"
+# Optional compiled accelerators, keyed by module name -> Cython source.
+_EXTENSIONS = {
+    "rainbow.agilent._uvdelta": "rainbow/agilent/_uvdelta.pyx",
+    "rainbow.agilent._msprofile": "rainbow/agilent/_msprofile.pyx",
+}
 
 ext_modules = []
-# Only attempt to compile the accelerator if both Cython and the source are
-# present. The source is missing only from a malformed sdist; guarding here
-# means such a build degrades to pure Python instead of failing outright.
-if os.path.exists(_PYX):
+# Only compile an accelerator if both Cython and its source are present. A
+# source is missing only from a malformed sdist; guarding here means such a
+# build degrades to pure Python instead of failing outright.
+_sources = {name: pyx for name, pyx in _EXTENSIONS.items() if os.path.exists(pyx)}
+if _sources:
     try:
         from Cython.Build import cythonize
 
         ext_modules = cythonize(
-            [
-                Extension(
-                    "rainbow.agilent._uvdelta",
-                    [_PYX],
-                    optional=True,
-                )
-            ],
+            [Extension(name, [pyx], optional=True)
+             for name, pyx in _sources.items()],
             compiler_directives={"language_level": "3"},
         )
     except ImportError:

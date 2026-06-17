@@ -1,11 +1,12 @@
 """
-Tests for the optional compiled .uv accelerator.
+Tests for the optional compiled accelerators.
 
-These verify the contract that matters for the optional extension: when the
-compiled accelerator (:mod:`rainbow.agilent._uvdelta`) is present, it produces
-output bit-identical to the pure-Python fallback, and it fails safely on
-truncated input rather than reading out of bounds. The tests skip themselves
-when the extension was not built.
+These verify the contract that matters for the optional extensions: when a
+compiled accelerator (:mod:`rainbow.agilent._uvdelta` for .uv decoding,
+:mod:`rainbow.agilent._msprofile` for MassHunter MSProfile.bin) is present, it
+produces output bit-identical to the pure-Python fallback, and it fails safely
+on malformed input rather than reading out of bounds. The tests skip themselves
+when an extension was not built.
 """
 import unittest
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from rainbow.agilent import chemstation as cs
+from rainbow.agilent import masshunter as mh
 
 # Every fixture .D directory that contains a .uv file, covering all decode
 # paths: delta (brown=v31, red=v131), partial (green), and array/OL (pink).
@@ -56,6 +58,45 @@ class TestUVAccelerator(unittest.TestCase):
         truncated = b"\x00" * 64
         with self.assertRaises(ValueError):
             cs._uvdelta_fast.decode_uv_delta(truncated, 0, 100, 106)
+
+
+# MassHunter Q-TOF profile fixtures whose run-length-encoded MSProfile.bin
+# exercises the _msprofile accelerator.
+MSPROFILE_FIXTURES = ["magenta.D", "cyan.D"]
+
+
+@unittest.skipIf(mh._msprofile_fast is None, "compiled accelerator not built")
+class TestMSProfileAccelerator(unittest.TestCase):
+    """The compiled RLE decoder matches the pure-Python reference exactly."""
+
+    def _segments(self, fixture):
+        """Yield (segment_body, num_mz) for every scan of a fixture."""
+        acqdata = Path("tests") / "inputs" / fixture / "AcqData"
+        complextypes = mh.parse_scan_xsd(str(acqdata / "MSScan.xsd"))
+        records = mh.read_scan_records(str(acqdata / "MSScan.bin"), complextypes)
+        with open(acqdata / "MSProfile.bin", 'rb') as f:
+            for record in records:
+                params = record['SpectrumParamValues']
+                f.seek(params['SpectrumOffset'])
+                segment = f.read(params['ByteCount'])
+                yield memoryview(segment)[16:], params['PointCount']
+
+    def test_fast_matches_pure_python(self):
+        """Compiled RLE output is bit-identical to the pure-Python reference."""
+        for fixture in MSPROFILE_FIXTURES:
+            with self.subTest(fixture=fixture):
+                for body, num_mz in self._segments(fixture):
+                    fast = mh._msprofile_fast.decompress_inten_list(body, num_mz)
+                    slow = mh.decompress_inten_list(body, num_mz)
+                    np.testing.assert_array_equal(fast, slow)
+
+    def test_malformed_input_raises(self):
+        """A bad width flag raises ValueError, like the pure-Python path."""
+        import struct
+        bad = (struct.pack('<I', 5 | (0x90 << 24))
+               + struct.pack('<ii', 0, -1) + struct.pack('<b', -4))
+        with self.assertRaises(ValueError):
+            mh._msprofile_fast.decompress_inten_list(memoryview(bad), 5)
 
 
 if __name__ == "__main__":
