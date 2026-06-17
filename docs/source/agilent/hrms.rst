@@ -87,11 +87,14 @@ Although it is a simplified example, the table above contains the key informatio
 
 **MSMassCal.bin** is a binary that contains a data segment of 10 little-endian doubles for each retention time. The first 2 doubles are used as calibration numbers for the mz values recorded at the corresponding retention time. The purpose of the other 8 doubles is currently unknown. The data segments begin at offset 0x4c. 
 
-**MSProfile.bin** is a binary that has been compressed using the `LZF algorithm <http://home.schmorp.de/marc/liblzf.html>`_. The length of the decompressed data is required for LZF decompression. 
+**MSProfile.bin** stores a data segment for each retention time. Assume little-endianness.
 
-This file format is comprised of a data segment for each retention time. Assume little-endianness. 
+Each data segment begins with 2 doubles that hold the smallest mz value and the mz delta value, before calibration. The resulting mz range may be unusable without calibration because the values can be very large.
 
-Each data segment begins with 2 doubles that hold the smallest mz value and the mz delta value, before calibration. The resulting mz range may be unusable without calibration because the values can be very large. 
+The intensities that follow the 2-double header are stored in one of two ways, depending on the instrument:
+
+- **LZF compression.** The whole segment, header included, is compressed with the `LZF algorithm <http://home.schmorp.de/marc/liblzf.html>`_. The decompressed length (``UncompressedByteCount`` in MSScan.bin) is required for decompression. This path needs the optional ``python-lzf`` dependency.
+- **Run-length encoding (RLE).** Q-TOF profile acquisitions leave the 2-double header raw and follow it with an RLE intensity stream. The stream starts with a 4-byte word whose low 3 bytes are the point count and whose high byte is a fixed ``0x90`` marker; **rainbow** uses this signature to recognize the format. Two little-endian ``int32`` values follow (both stored negated): an initial run of zero intensities, and the integer width (1, 2, 4, or 8 bytes) of the values that come next. Each subsequent value is read at the current width: a non-negative value is a literal intensity, while a negative value ``-v`` encodes ``divmod(v, 4)`` — the quotient is a run of zero intensities and the remainder is the new integer width to switch to. Trailing zero intensities are not stored. This path does not require ``python-lzf``.
 
 Let the corresponding 2 calibration numbers from MSMassCal.bin be :code:`coeff` and :code:`base`. The calibration formula for each :code:`mz` is :code:`(coeff * (mz - base))^2`. 
 

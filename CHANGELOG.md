@@ -5,18 +5,33 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Agilent MassHunter HRMS Q-TOF profile support (issue #27).** Q-TOF
+  acquisitions store `MSProfile.bin` intensities with a run-length encoding
+  rather than LZF compression, which made the parser raise `ValueError: error
+  in compressed data`. `rainbow` now detects the encoding from each scan
+  segment's own header and decodes it (`decompress_inten_list`). The decode is
+  validated against two real datasets (474 and 1256 scans): every scan's
+  decoded maximum intensity matches the `MaxY` value stored independently in
+  `MSScan.bin`.
+- Support for the newer MassHunter `MSScan.xsd` variant, whose complex-type
+  references are qualified with the schema's target-namespace prefix (e.g.
+  `mstns:ScanRecordType`). These previously raised `KeyError` while reading
+  `MSScan.bin`.
+- `tests/test_masshunter.py`: parses trimmed real Q-TOF profile fixtures
+  (`magenta.D`, `cyan.D`) end to end without `python-lzf`, cross-checking the
+  decoded intensities; plus the existing `MSScan.bin` scan-count tests.
+
 ### Changed
 - **MassHunter HRMS no longer requires `MSTS.xml`.** The number of retention
   times is now recovered by reading `MSScan.bin` to EOF instead of from
   `MSTS.xml`, which is absent from Agilent OpenLab `.rslt`/`.sirslt` result
-  folders. Validated against the `yellow` fixture, where the recovered count
-  matches `MSTS.xml` exactly. The `python-lzf` import is now lazy (it is only
-  needed to decompress `MSProfile.bin`), so the rest of the MassHunter module
-  imports and runs without it.
-
-### Added
-- `tests/test_masshunter.py`: verifies the `MSScan.bin` scan count matches
-  `MSTS.xml` and is recovered even when `MSTS.xml` is removed.
+  folders. Validated against the `yellow` fixture (centroided) and two real
+  HRMS profile datasets, where the recovered count matches `MSTS.xml` exactly.
+- The `python-lzf` import is now lazy and only happens when an LZF-compressed
+  `MSProfile.bin` segment is actually encountered, so the rest of the
+  MassHunter module - including the run-length-encoded Q-TOF profile path -
+  imports and runs without `python-lzf` installed.
 
 ## [1.0.15] - 2026-06-17
 
