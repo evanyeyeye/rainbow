@@ -1,5 +1,6 @@
 import os
 import shutil
+import struct
 import tempfile
 import unittest
 from lxml import etree
@@ -12,6 +13,18 @@ from rainbow.agilent import masshunter
 # gives us a ground-truth scan count from MSTS.xml to validate the
 # MSTS.xml-independent counting against.
 YELLOW_ACQDATA = os.path.join("tests", "inputs", "yellow.D", "AcqData")
+
+# `magenta` and `cyan` are the first three scans of two real Q-TOF profile
+# acquisitions from issue #27, whose MSProfile.bin intensities are run-length
+# encoded rather than LZF-compressed. They cover the two format variants we
+# have seen:
+#   - magenta: older MSScan.xsd (bare type names); UncompressedByteCount > 0.
+#   - cyan: newer MSScan.xsd (namespace-prefixed type names, e.g.
+#       "mstns:ScanRecordType"); UncompressedByteCount == 0.
+# Neither folder contains MSTS.xml, so they also exercise the MSTS-independent
+# scan counting. Both decode without python-lzf installed.
+MAGENTA_D = os.path.join("tests", "inputs", "magenta.D")
+CYAN_D = os.path.join("tests", "inputs", "cyan.D")
 
 
 class TestMasshunter(unittest.TestCase):
@@ -71,6 +84,108 @@ class TestMasshunter(unittest.TestCase):
                 os.path.join(tmp, "MSScan.bin"), complextypes)
             self.assertEqual(
                 len(records), self._msts_scan_count(YELLOW_ACQDATA))
+
+
+class TestMasshunterProfile(unittest.TestCase):
+    """
+    Tests parsing run-length-encoded MSProfile.bin (HRMS) data (issue #27).
+
+    Q-TOF profile acquisitions store intensities with a run-length encoding
+    instead of LZF compression, which made the parser raise "error in
+    compressed data" (and, on newer files, fail to even read MSScan.xsd
+    because its type names are namespace-prefixed). These tests parse trimmed
+    real fixtures end to end and cross-check the decoded intensities against an
+    independent value stored in MSScan.bin.
+
+    They run without python-lzf installed, since RLE data does not use it.
+
+    """
+    def _records(self, acqdata):
+        complextypes = masshunter.parse_scan_xsd(
+            os.path.join(acqdata, "MSScan.xsd"))
+        return masshunter.read_scan_records(
+            os.path.join(acqdata, "MSScan.bin"), complextypes)
+
+    def _assert_decodes(self, directory):
+        """ Parses the fixture and checks each scan's decoded maximum
+        intensity against the MaxY field stored independently in MSScan.bin. """
+        datafiles = masshunter.parse_allfiles(directory)
+        self.assertEqual(len(datafiles), 1)
+        datafile = datafiles[0]
+
+        acqdata = os.path.join(directory, "AcqData")
+        records = self._records(acqdata)
+        # One retention time per scan record; MSProfile.bin parsed to a grid.
+        self.assertEqual(datafile.data.shape[0], len(records))
+        self.assertEqual(datafile.xlabels.size, len(records))
+        self.assertEqual(datafile.data.shape[1], datafile.ylabels.size)
+
+        with open(os.path.join(acqdata, "MSProfile.bin"), 'rb') as f:
+            for record in records:
+                params = record['SpectrumParamValues']
+                f.seek(params['SpectrumOffset'])
+                segment = f.read(params['ByteCount'])
+                # The segment must be recognized as RLE (not mistaken for LZF).
+                self.assertTrue(
+                    masshunter.segment_is_rle(segment, params['PointCount']))
+                inten = masshunter.decompress_inten_list(
+                    memoryview(segment)[16:], params['PointCount'])
+                self.assertEqual(inten.size, params['PointCount'])
+                # MaxY is the per-scan maximum intensity, stored separately from
+                # the intensity stream - a strong independent decode check.
+                self.assertEqual(int(inten.max()), int(params['MaxY']))
+
+    def test_magenta_profile_decodes(self):
+        """ Older-format RLE profile data (issue #27) parses and decodes. """
+        self._assert_decodes(MAGENTA_D)
+
+    def test_cyan_profile_decodes(self):
+        """ Newer-format (namespace-prefixed XSD) RLE profile data parses. """
+        self._assert_decodes(CYAN_D)
+
+    def test_rle_not_confused_with_lzf(self):
+        """ segment_is_rle only fires on the real signature. """
+        records = self._records(os.path.join(MAGENTA_D, "AcqData"))
+        params = records[0]['SpectrumParamValues']
+        num_mz = params['PointCount']
+        with open(os.path.join(MAGENTA_D, "AcqData", "MSProfile.bin"), 'rb') as f:
+            f.seek(params['SpectrumOffset'])
+            segment = f.read(params['ByteCount'])
+        self.assertTrue(masshunter.segment_is_rle(segment, num_mz))
+        # Wrong point count -> not RLE (the embedded length must match).
+        self.assertFalse(masshunter.segment_is_rle(segment, num_mz + 1))
+        # Arbitrary/LZF-like bytes lack the 0x90 marker word -> not RLE.
+        self.assertFalse(masshunter.segment_is_rle(b"\x00" * 32, num_mz))
+
+    def test_mass_calibration_in_range(self):
+        """ The calibrated mz axis spans a sensible HRMS range. """
+        datafile = masshunter.parse_allfiles(CYAN_D)[0]
+        self.assertGreater(datafile.ylabels.min(), 100)
+        self.assertLess(datafile.ylabels.max(), 5000)
+        self.assertTrue((datafile.ylabels[1:] > datafile.ylabels[:-1]).all())
+
+    def test_malformed_rle_raises_valueerror(self):
+        """ A corrupt RLE stream raises a clear ValueError, not a cryptic
+        KeyError/struct.error/silent wraparound. """
+        # 4-byte point-count word, then negated (init_zero_repeat, width_flag).
+        def stream(init_zero_repeat, width_flag, tail):
+            return (struct.pack('<I', 5 | (0x90 << 24))
+                    + struct.pack('<ii', -init_zero_repeat, -width_flag) + tail)
+
+        # Token -4 -> divmod(4, 4) = (1, 0): a zero-width switch is invalid.
+        bad_width = stream(0, 1, struct.pack('<b', -4))
+        with self.assertRaises(ValueError):
+            masshunter.decompress_inten_list(memoryview(bad_width)[0:], 5)
+
+        # A positive initial zero-repeat would start the write index negative.
+        neg_index = stream(-3, 1, b"")
+        with self.assertRaises(ValueError):
+            masshunter.decompress_inten_list(memoryview(neg_index)[0:], 5)
+
+        # More literals than the point count must not overflow silently.
+        too_many = stream(0, 1, struct.pack('<b', 7) * 9)
+        with self.assertRaises(ValueError):
+            masshunter.decompress_inten_list(memoryview(too_many)[0:], 5)
 
 
 if __name__ == '__main__':
