@@ -3,6 +3,32 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.0.15] - 2026-06-17
+
+### Added
+- **Agilent OpenLab CDS (`.dx`) support.** OpenLab 2.x exports a single OPC
+  (zip) archive rather than a `.D` directory. `rb.read` now accepts a `.dx`
+  path and parses its payloads with the existing Chemstation decoders: the DAD
+  spectrum (`.UV`), single-wavelength signals (`.CH`), and—opt-in—instrument
+  telemetry (`.IT`). Trace names, units, and detector roles are recovered from
+  the `injection.acmd` manifest, since the payload files are named by GUID. The
+  DAD spectrum's absorbance is corrected by a `2**-17` fixed-point shift unique
+  to this format, validated against the file's own single-wavelength channels.
+  Decoding and test data were contributed by an anonymous collaborator.
+- `rb.read(..., telemetry=True)` parses `.dx` instrument-telemetry traces
+  (pressure, temperature, flow, etc.) as analog data. Off by default, since
+  most users only want the detector signals; a telemetry trace named in
+  `requested_files` is parsed regardless of the flag.
+- `tests/test_agilent.py::test_teal` and `test_teal_telemetry_off`: a `.dx`
+  fixture (DAD spectrum, two wavelength channels, two telemetry traces)
+  verified end-to-end, plus coverage of the telemetry opt-in behavior.
+
+### Changed
+- The `OL` `.uv` decoder (`decode_uv_array`) now reads its raw-double data
+  with a single strided NumPy view instead of a per-value Python loop, decoding
+  roughly **30× faster** with bit-identical output. This speeds up both `.dx`
+  spectra and the existing `131 OL` `.uv` files.
+
 ## [1.0.14] - 2026-06-16
 
 ### Fixed

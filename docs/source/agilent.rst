@@ -1,7 +1,8 @@
 Agilent (.D)
 ============
 
-Agilent directories are distinguished by the .D extension. 
+Agilent directories are distinguished by the .D extension. OpenLab CDS 2.x
+exports instead use a single :ref:`.dx archive <dx>`.
 
 **rainbow** can parse the following Agilent binary formats:
 
@@ -13,6 +14,7 @@ Agilent directories are distinguished by the .D extension.
    Agilent .ch (FID) <agilent/ch_fid>
    Agilent .ch (other) <agilent/ch_other>
    Agilent MSProfile.bin <agilent/hrms>
+   Agilent OpenLab CDS (.dx) <agilent/dx>
 
 It may be useful to search for a binary format by detector. 
 
@@ -27,8 +29,9 @@ It may be useful to search for a binary format by detector.
      - Formats
    * - UV
      - :doc:`Agilent .uv <agilent/uv>` :raw-html:`<br/>`
-       :doc:`Agilent .ch (other) <agilent/ch_other>`
-   * - MS 
+       :doc:`Agilent .ch (other) <agilent/ch_other>` :raw-html:`<br/>`
+       :doc:`Agilent OpenLab CDS (.dx) <agilent/dx>`
+   * - MS
      - :doc:`Agilent .ms <agilent/ms>`
    * - FID 
      - :doc:`Agilent .ch (FID) <agilent/ch_fid>`

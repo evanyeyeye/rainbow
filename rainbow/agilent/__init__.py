@@ -4,20 +4,25 @@ from rainbow.agilent import chemstation
 from rainbow.datadirectory import DataDirectory
 
 
-def read(path, prec=0, hrms=False, requested_files=None):
+def read(path, prec=0, hrms=False, requested_files=None, telemetry=False):
     """
-    Reads an Agilent .D directory. 
+    Reads an Agilent .D directory or .dx archive.
 
     Args:
-        path (str): Path of the directory.
+        path (str): Path of the directory or .dx file.
         prec (int, optional): Number of decimals to round masses.
         hrms (bool, optional): Flag for HRMS parsing.
         requested_files (list, optional): List of filenames to parse.
+        telemetry (bool, optional): Flag for parsing .dx telemetry traces.
 
     Returns:
-        DataDirectory representing the Agilent .D directory. 
+        DataDirectory representing the Agilent data.
 
     """
+    if os.path.splitext(path)[1].lower() == '.dx':
+        from rainbow.agilent import openlab
+        return openlab.read(path, prec, requested_files, telemetry)
+
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(path, prec, requested_files))
     if hrms:
@@ -43,6 +48,10 @@ def read_metadata(path):
         Dictionary containing a list of datafiles and the metadata.
 
     """
+    if os.path.splitext(path)[1].lower() == '.dx':
+        from rainbow.agilent import openlab
+        return openlab.read_metadata(path)
+
     datafiles = []
     metadata = chemstation.parse_metadata(path, datafiles)
     if len(metadata) == 1:

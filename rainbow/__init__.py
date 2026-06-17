@@ -4,32 +4,40 @@ from rainbow.datadirectory import DataDirectory
 from rainbow import agilent, waters
 
 
-def read(path, prec=0, hrms=False, requested_files=None):
+def read(path, prec=0, hrms=False, requested_files=None, telemetry=False):
     """
-    Reads a chromatogram data directory. Main method of the package. 
+    Reads a chromatogram data directory. Main method of the package.
 
     Increasing the precision may drastically increase memory usage for \
         larger files. Specifying a higher precision mainly affects the \
         parsing of MS data, because intensities are summed within the given \
         precision for each ylabel.
-        
-    Max precision available for Agilent MS data is 1. 
-    
-    Max precision recommended for Waters MS data is 3. 
-   
+
+    Max precision available for Agilent MS data is 1.
+
+    Max precision recommended for Waters MS data is 3.
+
     Agilent HRMS parsing may be slow. Set the flag to enable it.
+
+    For Agilent .dx archives, instrument telemetry traces (e.g. pressure, \
+        temperature) are skipped unless the telemetry flag is set.
 
     Args:
         path (str): Path of the directory.
         prec (int, optional): Number of decimals to round ylabels.
         hrms (bool, optional): Flag for Agilent HRMS parsing.
         requested_files (list, optional): List of filenames to parse.
+        telemetry (bool, optional): Flag for Agilent .dx telemetry traces.
 
     Returns:
-        DataDirectory representing the directory. 
+        DataDirectory representing the directory.
 
     """
-    if not isinstance(path, str) or not os.path.isdir(path):
+    ext = os.path.splitext(path)[1] if isinstance(path, str) else ''
+    if ext.lower() == '.dx':
+        if not isinstance(path, str) or not os.path.isfile(path):
+            raise Exception(f"{path} is not a file.")
+    elif not isinstance(path, str) or not os.path.isdir(path):
         raise Exception(f"{path} is not a directory.")
 
     if not isinstance(prec, int) or prec < 0:
@@ -45,9 +53,8 @@ def read(path, prec=0, hrms=False, requested_files=None):
         requested_files = list(map(str.lower, requested_files))
 
     datadir = None
-    ext = os.path.splitext(path)[1]
-    if ext.upper() == '.D':
-        datadir = agilent.read(path, prec, hrms, requested_files)
+    if ext.upper() == '.D' or ext.lower() == '.dx':
+        datadir = agilent.read(path, prec, hrms, requested_files, telemetry)
     elif ext.lower() == '.raw':
         datadir = waters.read(path, prec, requested_files)
 
@@ -69,7 +76,7 @@ def read_metadata(path):
     """
     datadir = None
     ext = os.path.splitext(path)[1]
-    if ext.upper() == '.D':
+    if ext.upper() == '.D' or ext.lower() == '.dx':
         metadata = agilent.read_metadata(path)
     elif ext.lower() == '.raw':
         metadata = waters.read_metadata(path)
