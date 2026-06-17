@@ -1,5 +1,6 @@
 import os
 import shutil
+import struct
 import tempfile
 import unittest
 from lxml import etree
@@ -162,6 +163,29 @@ class TestMasshunterProfile(unittest.TestCase):
         self.assertGreater(datafile.ylabels.min(), 100)
         self.assertLess(datafile.ylabels.max(), 5000)
         self.assertTrue((datafile.ylabels[1:] > datafile.ylabels[:-1]).all())
+
+    def test_malformed_rle_raises_valueerror(self):
+        """ A corrupt RLE stream raises a clear ValueError, not a cryptic
+        KeyError/struct.error/silent wraparound. """
+        # 4-byte point-count word, then negated (init_zero_repeat, width_flag).
+        def stream(init_zero_repeat, width_flag, tail):
+            return (struct.pack('<I', 5 | (0x90 << 24))
+                    + struct.pack('<ii', -init_zero_repeat, -width_flag) + tail)
+
+        # Token -4 -> divmod(4, 4) = (1, 0): a zero-width switch is invalid.
+        bad_width = stream(0, 1, struct.pack('<b', -4))
+        with self.assertRaises(ValueError):
+            masshunter.decompress_inten_list(memoryview(bad_width)[0:], 5)
+
+        # A positive initial zero-repeat would start the write index negative.
+        neg_index = stream(-3, 1, b"")
+        with self.assertRaises(ValueError):
+            masshunter.decompress_inten_list(memoryview(neg_index)[0:], 5)
+
+        # More literals than the point count must not overflow silently.
+        too_many = stream(0, 1, struct.pack('<b', 7) * 9)
+        with self.assertRaises(ValueError):
+            masshunter.decompress_inten_list(memoryview(too_many)[0:], 5)
 
 
 if __name__ == '__main__':

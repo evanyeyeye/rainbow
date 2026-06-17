@@ -234,13 +234,13 @@ def decompress_inten_list(comp_view, num_mz):
 
     The stream begins with a 4-byte point-count word (low 3 bytes) and a fixed
     0x90 marker (high byte), then two little-endian int32s: an initial count of
-    leading zero intensities and the integer width used for the values that
-    follow (1, 2, 4 or 8 bytes; both are stored negated). The remaining values
-    are then read at the current width:
+    leading zero intensities and a width flag (both stored negated). The width
+    flag is 1, 2, 3 or 4, mapping to a 1-, 2-, 4- or 8-byte signed integer. The
+    remaining values are then read at the current width:
         - A non-negative value is a literal intensity.
         - A negative value -v encodes ``divmod(v, 4)``: the quotient is a run
-          of zero intensities to emit, and the remainder is the new integer
-          width to switch to for subsequent values.
+          of zero intensities to emit, and the remainder is the new width flag
+          to switch to for subsequent values.
     Trailing zero intensities are not stored, so the output is pre-filled with
     zeros to length ``num_mz``.
 
@@ -250,6 +250,10 @@ def decompress_inten_list(comp_view, num_mz):
 
     Returns:
         A numpy array of ``num_mz`` uint32 intensities.
+
+    Raises:
+        ValueError: If the stream is malformed (bad width flag, runs past the
+            point count, or is truncated).
 
     """
     unpackers = {
@@ -263,23 +267,36 @@ def decompress_inten_list(comp_view, num_mz):
     init_zero_repeat, width_flag = struct.unpack('<ii', comp_view[4:12])
     cur_idx = -init_zero_repeat
     width_flag = -width_flag
-    cur_size = sizes[width_flag]
-    cur_unpack = unpackers[width_flag]
+    # cur_idx only ever advances, so once it starts non-negative it stays in
+    # range and out-of-bounds literals raise IndexError below. A positive
+    # init_zero_repeat would make it start negative (and silently wrap), so
+    # reject that up front. Bad width flags and truncated tails surface as
+    # KeyError / struct.error inside the loop; all are reported as ValueError
+    # rather than added as per-iteration checks that would slow the hot path.
+    if cur_idx < 0:
+        raise ValueError(
+            "Malformed MSProfile.bin RLE segment: negative initial index.")
 
     inten = np.zeros(num_mz, dtype=np.uint32)
     offset = 12
     end = len(comp_view)
-    while offset < end:
-        value = cur_unpack(comp_view[offset:offset + cur_size])[0]
-        offset += cur_size
-        if value >= 0:
-            inten[cur_idx] = value
-            cur_idx += 1
-        else:
-            num_zeros, width_flag = divmod(-value, 4)
-            cur_idx += num_zeros
-            cur_size = sizes[width_flag]
-            cur_unpack = unpackers[width_flag]
+    try:
+        cur_size = sizes[width_flag]
+        cur_unpack = unpackers[width_flag]
+        while offset < end:
+            value = cur_unpack(comp_view[offset:offset + cur_size])[0]
+            offset += cur_size
+            if value >= 0:
+                inten[cur_idx] = value
+                cur_idx += 1
+            else:
+                num_zeros, width_flag = divmod(-value, 4)
+                cur_idx += num_zeros
+                cur_size = sizes[width_flag]
+                cur_unpack = unpackers[width_flag]
+    except (KeyError, IndexError, struct.error) as err:
+        raise ValueError(
+            "Malformed MSProfile.bin RLE segment.") from err
     return inten
 
 
