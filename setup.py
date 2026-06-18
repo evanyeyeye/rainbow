@@ -2,10 +2,10 @@
 Build hook for the optional compiled accelerators.
 
 Project metadata lives in ``pyproject.toml``; this file exists only to compile
-the optional Cython extensions that speed up Agilent decoding (.uv delta and
-MassHunter MSProfile.bin run-length decode). Each extension is marked
-``optional`` so that a missing compiler (or missing Cython) never breaks
-installation -- the package falls back to pure Python.
+the optional Cython extensions that speed up Agilent decoding (the ``.uv`` and
+``.ch`` delta loops and the MassHunter ``MSProfile.bin`` run-length decode).
+Each extension is marked ``optional`` so that a missing compiler (or missing
+Cython) never breaks installation -- the package falls back to pure Python.
 """
 import os
 

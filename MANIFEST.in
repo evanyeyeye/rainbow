@@ -3,5 +3,7 @@
 # are regenerated from the .pyx at build time (Cython is in build-system.requires).
 include rainbow/agilent/_uvdelta.pyx
 include rainbow/agilent/_msprofile.pyx
+include rainbow/agilent/_chdelta.pyx
 exclude rainbow/agilent/_uvdelta.c
 exclude rainbow/agilent/_msprofile.c
+exclude rainbow/agilent/_chdelta.c

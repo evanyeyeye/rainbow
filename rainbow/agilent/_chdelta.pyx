@@ -44,6 +44,12 @@ def decode_delta(const unsigned char[::1] buf, Py_ssize_t offset):
     Returns:
         An ``int64`` array of the accumulated values (one per sample), matching
         ``np.array(decode_delta(...))`` from the pure-Python path.
+
+    On a well-formed stream (terminated by a non-``0x10`` header byte) this is
+    bit-identical to the pure-Python reference. The one difference is on a
+    truncated/corrupt stream that ends mid-record: this returns the values
+    decoded so far, whereas the pure-Python path raises ``struct.error`` on the
+    short read. Graceful truncation is the intended behavior here.
     """
     cdef Py_ssize_t n = buf.shape[0]
     cdef Py_ssize_t off = offset
