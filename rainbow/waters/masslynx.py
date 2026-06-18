@@ -8,6 +8,7 @@ import os
 import re
 import numpy as np
 from rainbow.datafile import DataFile
+from rainbow._binning import bin_datapairs
 import pandas as pd
 
 
@@ -411,63 +412,7 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     values = val_bases * (4 ** val_powers)
     del val_bases, val_powers, raw_values, raw_bytes
 
-    return _bin_datapairs(keys, values, pair_counts, prec)
-
-
-def _bin_datapairs(keys, values, pair_counts, prec):
-    """
-    Bins (key, value) data pairs into a (retention time x ylabel) matrix.
-
-    Each scan (retention time) contributes ``pair_counts[i]`` consecutive
-    pairs from the flat :obj:`keys`/:obj:`values` arrays. Pairs that share a
-    ylabel within the same scan are summed.
-
-    The keys are already rounded to :obj:`prec` decimals and are non-negative
-    (m/z or wavelength), so the unique ylabels and each pair's column are found
-    with an integer histogram in O(n) instead of sorting every pair with
-    ``np.unique``/``np.searchsorted``. The values are accumulated into an
-    ``int64`` matrix (fractional values truncate on add, exactly as the prior
-    per-scan ``np.add.at`` loop did).
-
-    Args:
-        keys (np.ndarray): Flat ylabels, rounded to :obj:`prec`, non-negative.
-        values (np.ndarray): Flat values paired with :obj:`keys`.
-        pair_counts (np.ndarray): Number of pairs at each retention time.
-        prec (int): Number of decimals the keys were rounded to.
-
-    Returns:
-        1D numpy array with ylabels. 2D ``int64`` numpy array with data values
-            (rows are retention times, columns are ylabels).
-
-    """
-    num_times = pair_counts.size
-
-    # Map each rounded key onto a non-negative integer bin so the unique
-    # ylabels and per-pair columns come from a histogram, not a sort.
-    scale = 10 ** prec if prec > 0 else 1
-    int_keys = np.rint(keys * scale).astype(np.int64)
-    int_keys -= int_keys.min()
-
-    present = np.zeros(int(int_keys.max()) + 1, dtype=bool)
-    present[int_keys] = True
-    num_ylabels = int(present.sum())
-
-    # Column of each pair = its dense bin's rank among the present bins.
-    # Columns increase with the key value, so scattering the (already
-    # rounded) keys yields the sorted unique ylabels - in the keys' own dtype,
-    # matching the previous np.unique(keys) (e.g. float32 for calibrated m/z).
-    columns = (np.cumsum(present) - 1)[int_keys]
-    ylabels = np.empty(num_ylabels, dtype=keys.dtype)
-    ylabels[columns] = keys
-
-    rows = np.repeat(np.arange(num_times), pair_counts)
-    flat_indices = rows * num_ylabels + columns
-
-    data = np.zeros(num_times * num_ylabels, dtype=np.int64)
-    np.add.at(data, flat_indices, values)
-    del int_keys, present, columns, rows, flat_indices, keys, values
-
-    return ylabels, data.reshape(num_times, num_ylabels)
+    return bin_datapairs(keys, values, pair_counts, prec)
 
 
 def parse_funcdat8(path, pair_counts, prec=0, calib=None):
@@ -546,7 +491,7 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     values = valints + valfracs
     del valints, valfracs
 
-    return _bin_datapairs(keys, values, pair_counts, prec)
+    return bin_datapairs(keys, values, pair_counts, prec)
 
 
 def calibrate(mzs, calib_nums):

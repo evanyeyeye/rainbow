@@ -9,6 +9,7 @@ from collections import Counter
 import numpy as np
 from lxml import etree
 from rainbow.datafile import DataFile
+from rainbow._binning import bin_datapairs
 
 # Optional compiled accelerator for the .uv LC-delta decode loop.
 # Falls back to the pure-Python implementations below if not built.
@@ -710,22 +711,10 @@ def parse_ms(path, prec=0):
     int_values = np.multiply(8 ** int_heads, int_tails, dtype=np.uint32)
     del int_encs, int_heads, int_tails, raw_bytes
 
-    # Make the array of `ylabels` with mz values. 
-    ylabels = np.unique(mzs)
-    ylabels.sort()
-
-    # Make the `data` array with intensities. 
-    mz_indices = np.searchsorted(ylabels, mzs)
-    data = np.zeros((num_times, ylabels.size), dtype=np.uint32)
-    cur_index = 0
-    for i in range(num_times):
-        stop_index = cur_index + int(pair_counts[i])
-        np.add.at(
-            data[i],
-            mz_indices[cur_index:stop_index],
-            int_values[cur_index:stop_index])
-        cur_index = stop_index
-    del mz_indices, mzs, int_values, pair_counts
+    # Bin the mz-intensity pairs into a (retention time x mz) matrix.
+    ylabels, data = bin_datapairs(
+        mzs, int_values, pair_counts, prec, data_dtype=np.uint32)
+    del mzs, int_values, pair_counts
 
     # Read file metadata.
     metadata_offsets = {
@@ -809,24 +798,12 @@ def parse_ms_partial(path, prec=0):
     int_values = np.multiply(8 ** int_heads, int_tails, dtype=np.uint32)
     del int_encs, int_heads, int_tails, raw_bytes
 
-    # Make the array of `ylabels` with mz values. 
-    ylabels = np.unique(mzs)
-    ylabels.sort()
+    # Bin the mz-intensity pairs into a (retention time x mz) matrix.
+    ylabels, data = bin_datapairs(
+        mzs, int_values, pair_counts, prec, data_dtype=np.uint32)
+    del mzs, int_values, pair_counts
 
-    # Fill the `data` array with intensities.
-    mz_indices = np.searchsorted(ylabels, mzs)
-    data = np.zeros((num_times, ylabels.size), dtype=np.uint32)
-    cur_index = 0
-    for i in range(num_times):
-        stop_index = cur_index + pair_counts[i]
-        np.add.at(
-            data[i],
-            mz_indices[cur_index:stop_index],
-            int_values[cur_index:stop_index])
-        cur_index = stop_index
-    del mz_indices, mzs, int_values, pair_counts
-
-    # Read file metadata. 
+    # Read file metadata.
     metadata_offsets = {
         'date': 0xB2,
         'method': 0xE4
