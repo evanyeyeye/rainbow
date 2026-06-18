@@ -382,7 +382,6 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
             the columns correspond to ylabels.
 
     """
-    num_times = pair_counts.size
     num_datapairs = np.sum(pair_counts)
 
     # Read most significant 4 bytes from each segment into `raw_values`.
@@ -412,24 +411,63 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
     values = val_bases * (4 ** val_powers)
     del val_bases, val_powers, raw_values, raw_bytes
 
-    # Make the array of `ylabels` with keys. 
-    ylabels = np.unique(keys)
-    ylabels.sort()
+    return _bin_datapairs(keys, values, pair_counts, prec)
 
-    # Fill the `data` array with values. 
-    key_indices = np.searchsorted(ylabels, keys)
-    data = np.zeros((num_times, ylabels.size), dtype=np.int64)
-    cur_index = 0
-    for i in range(num_times):
-        stop_index = cur_index + pair_counts[i]
-        np.add.at(
-            data[i],
-            key_indices[cur_index:stop_index],
-            values[cur_index:stop_index])
-        cur_index = stop_index
-    del key_indices, keys, values, pair_counts
 
-    return ylabels, data
+def _bin_datapairs(keys, values, pair_counts, prec):
+    """
+    Bins (key, value) data pairs into a (retention time x ylabel) matrix.
+
+    Each scan (retention time) contributes ``pair_counts[i]`` consecutive
+    pairs from the flat :obj:`keys`/:obj:`values` arrays. Pairs that share a
+    ylabel within the same scan are summed.
+
+    The keys are already rounded to :obj:`prec` decimals and are non-negative
+    (m/z or wavelength), so the unique ylabels and each pair's column are found
+    with an integer histogram in O(n) instead of sorting every pair with
+    ``np.unique``/``np.searchsorted``. The values are accumulated into an
+    ``int64`` matrix (fractional values truncate on add, exactly as the prior
+    per-scan ``np.add.at`` loop did).
+
+    Args:
+        keys (np.ndarray): Flat ylabels, rounded to :obj:`prec`, non-negative.
+        values (np.ndarray): Flat values paired with :obj:`keys`.
+        pair_counts (np.ndarray): Number of pairs at each retention time.
+        prec (int): Number of decimals the keys were rounded to.
+
+    Returns:
+        1D numpy array with ylabels. 2D ``int64`` numpy array with data values
+            (rows are retention times, columns are ylabels).
+
+    """
+    num_times = pair_counts.size
+
+    # Map each rounded key onto a non-negative integer bin so the unique
+    # ylabels and per-pair columns come from a histogram, not a sort.
+    scale = 10 ** prec if prec > 0 else 1
+    int_keys = np.rint(keys * scale).astype(np.int64)
+    int_keys -= int_keys.min()
+
+    present = np.zeros(int(int_keys.max()) + 1, dtype=bool)
+    present[int_keys] = True
+    num_ylabels = int(present.sum())
+
+    # Column of each pair = its dense bin's rank among the present bins.
+    # Columns increase with the key value, so scattering the (already
+    # rounded) keys yields the sorted unique ylabels - in the keys' own dtype,
+    # matching the previous np.unique(keys) (e.g. float32 for calibrated m/z).
+    columns = (np.cumsum(present) - 1)[int_keys]
+    ylabels = np.empty(num_ylabels, dtype=keys.dtype)
+    ylabels[columns] = keys
+
+    rows = np.repeat(np.arange(num_times), pair_counts)
+    flat_indices = rows * num_ylabels + columns
+
+    data = np.zeros(num_times * num_ylabels, dtype=np.int64)
+    np.add.at(data, flat_indices, values)
+    del int_keys, present, columns, rows, flat_indices, keys, values
+
+    return ylabels, data.reshape(num_times, num_ylabels)
 
 
 def parse_funcdat8(path, pair_counts, prec=0, calib=None):
@@ -452,10 +490,9 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
             data values where the rows correspond to retention times \
             and the columns correspond to ylabels.
     """
-    num_times = pair_counts.size
     num_datapairs = np.sum(pair_counts)
 
-    # Optimized reading of 8-byte segments into `raw_values`. 
+    # Optimized reading of 8-byte segments into `raw_values`.
     with open(path, 'rb') as f:
         raw_bytes = f.read()
     raw_values = np.ndarray(num_datapairs, '<Q', raw_bytes, 0, 8)
@@ -509,24 +546,7 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     values = valints + valfracs
     del valints, valfracs
 
-    # Make the array of `ylabels` with keys. 
-    ylabels = np.unique(keys)
-    ylabels.sort()
-
-    # Fill the `data` array with values. 
-    key_indices = np.searchsorted(ylabels, keys)
-    data = np.zeros((num_times, ylabels.size), dtype=np.int64)
-    cur_index = 0
-    for i in range(num_times):
-        stop_index = cur_index + pair_counts[i]
-        np.add.at(
-            data[i],
-            key_indices[cur_index:stop_index],
-            values[cur_index:stop_index])
-        cur_index = stop_index
-    del key_indices, keys, values, pair_counts
-
-    return ylabels, data
+    return _bin_datapairs(keys, values, pair_counts, prec)
 
 
 def calibrate(mzs, calib_nums):
