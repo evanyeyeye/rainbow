@@ -18,6 +18,10 @@ try:
 except ImportError:
     _uvdelta_fast = None
 
+# Lookup table for the .ms intensity scale 8 ** (int_enc >> 14); the 2-bit
+# head field is 0..3, so indexing this beats np.power over every pair.
+_MS_INT_POW8 = np.array([1, 8, 64, 512], dtype=np.uint32)
+
 """
 MAIN PARSING METHODS
 
@@ -708,7 +712,7 @@ def parse_ms(path, prec=0):
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
     int_heads = int_encs >> 14
     int_tails = int_encs & 0x3fff
-    int_values = np.multiply(8 ** int_heads, int_tails, dtype=np.uint32)
+    int_values = np.multiply(_MS_INT_POW8[int_heads], int_tails, dtype=np.uint32)
     del int_encs, int_heads, int_tails, raw_bytes
 
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
@@ -795,7 +799,7 @@ def parse_ms_partial(path, prec=0):
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
     int_heads = int_encs >> 14
     int_tails = int_encs & 0x3fff
-    int_values = np.multiply(8 ** int_heads, int_tails, dtype=np.uint32)
+    int_values = np.multiply(_MS_INT_POW8[int_heads], int_tails, dtype=np.uint32)
     del int_encs, int_heads, int_tails, raw_bytes
 
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.

@@ -12,6 +12,13 @@ from rainbow._binning import bin_datapairs
 import pandas as pd
 
 
+# Lookup tables for the per-pair exponents in the 6-byte _FUNC.DAT format.
+# Both exponents come from small bit-fields, so indexing a table is much
+# faster than np.power over the whole pair array - with identical values.
+_FUNC6_KEY_POW2 = 2.0 ** (np.arange(32) - 23)  # 2 ** (((raw & 0x1F0) >> 4) - 23)
+_FUNC6_VAL_POW4 = (4 ** np.arange(16)).astype(np.int64)  # 4 ** (raw & 0xF)
+
+
 def _find_file(directory, target_name):
     """
     Case-insensitive file lookup in a directory.
@@ -390,27 +397,24 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
         raw_bytes = f.read()
     raw_values = np.ndarray(num_datapairs, '<I', raw_bytes, 2, 6)
 
-    # The data is stored as key-value pairs. 
-    # For example, in MS data these are mz-intensity pairs. 
-    # Calculate the `keys` from each 6-byte segment. 
+    # The data is stored as key-value pairs.
+    # For example, in MS data these are mz-intensity pairs.
+    # Calculate the `keys` from each 6-byte segment.
     key_bases = raw_values >> 9
-    key_powers = (raw_values & 0x1F0) >> 4
-    key_powers = np.subtract(key_powers, 23, dtype=np.int32)
-    keys = key_bases * (2.0 ** key_powers)
-    del key_bases, key_powers
+    keys = key_bases * _FUNC6_KEY_POW2[(raw_values & 0x1F0) >> 4]
+    del key_bases
 
-    # If it is MS data, calibrate the masses. 
+    # If it is MS data, calibrate the masses.
     if calib:
         keys = calibrate(keys, calib)
 
-    # Then round the keys to the nearest whole number. 
+    # Then round the keys to the nearest whole number.
     keys = np.round(keys, prec)
 
     # Calculate the `values` from each 6-byte segment.
     val_bases = np.ndarray(num_datapairs, '<h', raw_bytes, 0, 6)
-    val_powers = raw_values & 0xF
-    values = val_bases * (4 ** val_powers)
-    del val_bases, val_powers, raw_values, raw_bytes
+    values = val_bases * _FUNC6_VAL_POW4[raw_values & 0xF]
+    del val_bases, raw_values, raw_bytes
 
     return bin_datapairs(keys, values, pair_counts, prec)
 
