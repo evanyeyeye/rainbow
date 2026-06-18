@@ -44,6 +44,13 @@ datafile = datadir.get_file("DAD1A.uv")
 ```
 
 Here, the `datadir` DataDirectory object contains a DataFile object for `DAD1A.uv`. 
+
+*rainbow* normally infers the vendor from the path suffix (`.D`/`.dx` for Agilent, `.raw` for Waters). A directory whose name lacks that suffix is identified from its contents instead, so renamed datasets still parse. To force a parser explicitly, pass `format`:
+
+```python
+datadir = rb.read("Noscapine 3", format="waters")
+```
+
 The raw UV data is contained in numpy arrays that are attributes of `datafile`. Users may find the following particularly useful:
 * `datafile.xlabels` - 1D numpy array with retention times
 * `datafile.ylabels` - 1D numpy array with wavelengths
@@ -53,30 +60,30 @@ There is a [tutorial](https://rainbow-api.readthedocs.io/en/latest/tutorial.html
 
 ## Performance
 
-Decoding Agilent diode-array (DAD) `.uv` files is the one hot spot in the
-library: each file holds a large retention-time &times; wavelength grid of
-delta-encoded absorbances, and the decoding is inherently sequential, so it
-cannot be vectorized with NumPy. *rainbow* ships an optional compiled extension
-(`rainbow/agilent/_uvdelta.pyx`, built with Cython) that runs this inner loop in
-C, decoding large DAD files roughly **100&times; faster** while producing
-bit-identical results.
+A few decode loops dominate parsing time: each reads a long sequence of
+delta- or run-length-encoded values into a running accumulator, which is
+inherently sequential and cannot be vectorized with NumPy. *rainbow* ships
+optional compiled extensions (built with Cython) that run these inner loops in
+C, roughly **100&times; faster** while producing bit-identical results:
 
-The accelerator is entirely optional:
+* `rainbow/agilent/_uvdelta.pyx` &mdash; the Agilent diode-array (DAD) `.uv` decode.
+* `rainbow/agilent/_chdelta.pyx` &mdash; the Agilent `.ch` channel (CAD/ELSD/UV) decode.
+* `rainbow/agilent/_msprofile.pyx` &mdash; the MassHunter `MSProfile.bin` run-length decode.
 
-* Prebuilt wheels on PyPI already include it, so `pip install rainbow-api`
+The accelerators are entirely optional:
+
+* Prebuilt wheels on PyPI already include them, so `pip install rainbow-api`
   gives you the fast path with no compiler needed.
 * If you install from source without a compiler (or without Cython), the build
-  simply skips the extension and *rainbow* falls back to a pure-Python decoder
-  with identical output. You can check which path is active with
-  `rainbow.agilent.chemstation._uvdelta_fast is not None`.
-
-Other formats (`.ch` channels, `.ms`, MassHunter) are already fast and do not
-use the accelerator.
+  simply skips the extensions and *rainbow* falls back to pure-Python decoders
+  with identical output. You can check whether a given accelerator is active
+  with, e.g., `rainbow.agilent.chemstation._uvdelta_fast is not None`
+  (likewise `_chdelta_fast` and `rainbow.agilent.masshunter._msprofile_fast`).
 
 ## Contents
 * `rainbow/` contains the code of the Python library.
 * `docs/` contains code for generating documentation. To build documentation locally, you will need to install the `sphinx` and `sphinx-rtd-theme` packages. Then, move to the `docs/` directory and run `make html`. The docpages will be generated under `docs/_build`. 
-* `tests/` contains unit tests for the library. These can be run with `python -m unittest`. 
+* `tests/` contains unit tests for the library. These can be run with `pytest` from the repository root (install the test dependency with `pip install -e .[test]`). 
 
 For development, an editable install (`pip install -e .`) compiles the optional
 accelerator in place if a C compiler and Cython are available; otherwise the

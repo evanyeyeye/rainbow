@@ -3,6 +3,36 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-06-18
+
+### Added
+- **`format` argument on `rb.read` and `rb.read_metadata`.** Forces the vendor
+  parser (`'agilent'` or `'waters'`), bypassing extension/content detection.
+- **Content-based vendor detection.** A data directory whose name lacks the
+  conventional `.D`/`.raw`/`.dx` suffix is now identified from its contents (an
+  `AcqData` subdirectory or a `.ch`/`.uv`/`.ms` file for Agilent; the
+  `_FUNCTNS.INF`/`_HEADER.TXT` manifests or `_FUNC###.DAT` files for Waters).
+  Suffixed paths are dispatched exactly as before - the content sniff runs only
+  when the extension matches nothing, so it can only make a previously
+  unreadable path readable, never change how an already-recognized path parses.
+- **Optional compiled accelerator for the Agilent `.ch` delta decode**
+  (`rainbow/agilent/_chdelta.pyx`). The CAD/ELSD/UV channel signal is a
+  sequential running-accumulator decode with a data-dependent stride, like the
+  `.uv` and `MSProfile.bin` decoders; the Cython inner loop is ~11x faster than
+  the pure-Python path and bit-identical. Like the other accelerators it is
+  optional, with a transparent pure-Python fallback when no compiler/Cython is
+  available.
+
+### Changed
+- **Faster MS spectrum parsing.** A shared vectorized binning helper
+  (`rainbow/_binning.py`) replaces the per-scan `np.unique`/`searchsorted`/
+  `np.add.at` loops in the Waters `_FUNC.DAT` and Agilent `.ms` decoders, and
+  the per-datapair exponentials use small lookup tables instead of `np.power`.
+  Output is unchanged (bit-identical); the local benchmark corpus parses ~2-3x
+  faster overall.
+- **Test suite migrated to pytest.** Added a `test` extra in `pyproject.toml`;
+  run the suite with `pytest` (`pip install -e .[test]`).
+
 ## [1.1.0] - 2026-06-17
 
 ### Fixed
