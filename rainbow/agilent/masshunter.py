@@ -589,10 +589,12 @@ def decompress_inten_list(comp_view, num_mz):
     leading zero intensities and a width flag (both stored negated). The width
     flag is 1, 2, 3 or 4, mapping to a 1-, 2-, 4- or 8-byte signed integer. The
     remaining values are then read at the current width:
-        - A non-negative value is a literal intensity.
-        - A negative value -v encodes ``divmod(v, 4)``: the quotient is a run
-          of zero intensities to emit, and the remainder is the new width flag
-          to switch to for subsequent values.
+
+    - A non-negative value is a literal intensity.
+    - A negative value -v encodes ``divmod(v, 4)``: the quotient is a run
+      of zero intensities to emit, and the remainder is the new width flag
+      to switch to for subsequent values.
+
     Trailing zero intensities are not stored, so the output is pre-filled with
     zeros to length ``num_mz``.
 
