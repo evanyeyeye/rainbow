@@ -58,9 +58,9 @@ There is a [tutorial](https://rainbow-api.readthedocs.io/en/latest/tutorial.html
 ## Performance
 
 A few inherently-sequential decode loops are sped up by optional compiled
-(Cython) extensions &mdash; roughly **100&times; faster**, bit-identical, with a
-transparent pure-Python fallback when no compiler is available (prebuilt PyPI
-wheels include them). See the
+(Cython) extensions: roughly **100x faster**, bit-identical, with a transparent
+pure-Python fallback when no compiler is available (prebuilt PyPI wheels include
+them). See the
 [Performance](https://rainbow-api.readthedocs.io/en/latest/performance.html)
 page in the documentation for the optimization strategies behind *rainbow* and
 the considerations for adding a new format.
