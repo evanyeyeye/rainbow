@@ -58,10 +58,19 @@ def parse_allfiles(path, prec=0, hrms=False, centroid=False):
     # MSScan.bin record geometry (see read_scan_records). This lets us parse
     # Agilent OpenLab .rslt/.sirslt result folders, which omit MSTS.xml.
     if {"MSScan.xsd", "MSScan.bin"} <= acqdata_files:
-        if centroid and "MSPeak.bin" in acqdata_files:
-            datafiles.append(parse_mspeakdata(acqdata_path, prec))
-        if hrms and "MSProfile.bin" in acqdata_files:
-            datafiles.append(parse_msdata(acqdata_path, prec))
+        # ICP-MS data is distinguished by the presence of MSScan_XSpecific.bin,
+        # which records the per-isotope channels. Its MSProfile.bin is stored
+        # uncompressed in a different layout than the HRMS one, so it needs a
+        # dedicated parser, and it is parsed under the hrms flag like the HRMS
+        # profile it stands in for.
+        if "MSScan_XSpecific.bin" in acqdata_files:
+            if hrms:
+                datafiles.append(parse_icpmsdata(acqdata_path, prec))
+        else:
+            if centroid and "MSPeak.bin" in acqdata_files:
+                datafiles.append(parse_mspeakdata(acqdata_path, prec))
+            if hrms and "MSProfile.bin" in acqdata_files:
+                datafiles.append(parse_msdata(acqdata_path, prec))
 
     return datafiles
 
@@ -217,6 +226,128 @@ def parse_msdata(path, prec=0):
     mz_ylabels, data = bin_to_grid(mz_arr, intensities, rows, num_times, prec)
 
     return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
+
+
+def parse_icpmsdata(path, prec=0):
+    """
+    Parses Agilent Masshunter ICP-MS data (MSProfile.bin).
+
+    ICP-MS acquisitions store an intensity for each isotope channel at every
+    retention time. Unlike the HRMS MSProfile.bin parsed by :obj:`parse_msdata`,
+    the ICP-MS MSProfile.bin is NOT LZF-compressed and is laid out as four
+    parallel blocks per scan (channel index, reported value, raw pulse count,
+    analog value). This parser reads the reported values, which are the
+    intensities Masshunter reports in its CSV export.
+
+    The decoding was contributed by Jeremy Hourigan (UC Santa Cruz); see
+    issue #25. It has been verified against an Agilent 8900 triple-quadrupole
+    ICP-MS file. It currently supports time-resolved acquisitions with a single
+    tune mode and one measurement per isotope; files with multiple tune modes
+    or multiple measurements per isotope are not yet handled.
+
+    The following files are used (in order of listing):
+        - MSScan.xsd -> File structure of MSScan.bin.
+        - MSScan.bin -> Per-scan retention time, offset, and point count.
+        - MSTS_XSpecific.xml -> Number of isotope channels.
+        - MSTS_XAddition.xml (parent dir) -> Real isotope m/z labels.
+        - MSProfile.bin -> Actual data values (uncompressed).
+
+    Args:
+        path (str): Path to the AcqData subdirectory.
+        prec (int, optional): Number of decimals to round m/z values.
+
+    Returns:
+        DataFile containing Masshunter ICP-MS data.
+
+    """
+    # MSScan.xsd: Extract the file structure of MSScan.bin.
+    complextypes_dict = parse_scan_xsd(os.path.join(path, "MSScan.xsd"))
+
+    # MSScan.bin: Read one scan record per retention time. ICP-MS MSProfile.bin
+    # is uncompressed, so only the retention time, point count, and data offset
+    # are needed (no byte counts or calibration ids).
+    scan_records = read_scan_records(
+        os.path.join(path, "MSScan.bin"), complextypes_dict, count_scans(path))
+    num_times = len(scan_records)
+    data_info = [
+        (rec['ScanTime'],
+         rec['SpectrumParamValues']['PointCount'],
+         rec['SpectrumParamValues']['SpectrumOffset'])
+        for rec in scan_records]
+
+    # MSTS_XSpecific.xml: Extract the number of isotope channels (masses).
+    root = etree.parse(os.path.join(path, "MSTS_XSpecific.xml")).getroot()
+    num_masses = 0
+    for ion_record in root.findall("IonRecord"):
+        num_masses += len(ion_record.findall("Masses"))
+
+    # Determine the m/z label for each isotope channel.
+    mz_ylabels = _read_icpms_mzs(path, num_masses)
+
+    # MSProfile.bin: Extract the data values (uncompressed).
+    # Each scan stores four parallel blocks of `num_mz` points:
+    #   - channel index : num_mz * 4 bytes (float32, unused here)
+    #   - reported value : num_mz * 8 bytes (float64) <- the reported intensity
+    #   - raw pulse count: num_mz * 8 bytes (float64, unused here)
+    #   - analog value   : num_mz * 8 bytes (float64, unused here)
+    # Only the reported values are kept; the pulse and analog blocks are used
+    # for detector cross-calibration but are not part of the DataFile.
+    f = open(os.path.join(path, "MSProfile.bin"), 'rb')
+    times = np.empty(num_times)
+    data = np.empty((num_times, num_masses), dtype=np.float64)
+    double_block = struct.Struct(f'<{num_masses}d').unpack
+    for i in range(num_times):
+        time, num_mz, offset = data_info[i]
+        times[i] = time
+        f.seek(offset)
+        f.read(num_mz * 4) # skip the channel-index block
+        data[i] = double_block(f.read(num_mz * 8)) # reported values
+    f.close()
+
+    # Sort channels by m/z so the ylabels are monotonically increasing.
+    mz_ylabels = np.round(mz_ylabels, prec)
+    order = np.argsort(mz_ylabels, kind='stable')
+
+    return DataFile(
+        "MSProfile.bin", 'MS', times, mz_ylabels[order], data[:, order], {})
+
+
+def _read_icpms_mzs(path, num_masses):
+    """
+    Returns the m/z label for each ICP-MS isotope channel.
+
+    Prefers the real isotope m/z values from MSTS_XAddition.xml (located one
+    directory above AcqData). Falls back to the per-channel XValue stored in
+    MSScan_XSpecific.bin when that file is absent or does not match the
+    expected channel count.
+
+    Args:
+        path (str): Path to the AcqData subdirectory.
+        num_masses (int): Number of isotope channels.
+
+    Returns:
+        1D numpy array of m/z values, length num_masses.
+
+    """
+    addition_path = os.path.join(path, os.pardir, "MSTS_XAddition.xml")
+    if os.path.isfile(addition_path):
+        root = etree.parse(addition_path).getroot()
+        mzs = [float(im.findtext("ProductIonMZ"))
+               for im in root.findall(".//MSTS_XAddition_IndexedMasses")
+               if im.findtext("ProductIonMZ") is not None]
+        if len(mzs) == num_masses:
+            return np.array(mzs, dtype=np.float64)
+
+    # Fallback: XValue per channel from MSScan_XSpecific.bin. Its layout is
+    # described by MSScan_XSpecific.xsd, parsed the same way as MSScan.xsd.
+    complextypes_dict = parse_scan_xsd(
+        os.path.join(path, "MSScan_XSpecific.xsd"))
+    f = open(os.path.join(path, "MSScan_XSpecific.bin"), 'rb')
+    f.seek(0x48) # start offset
+    mzs = [read_complextype(f, complextypes_dict, "IonRecordType")['XValue']
+           for _ in range(num_masses)]
+    f.close()
+    return np.array(mzs, dtype=np.float64)
 
 
 # Cap on the dense (retention time x mz-bin) grid the fast binning path will
