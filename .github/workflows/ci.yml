@@ -27,9 +27,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install (compiles the optional accelerator)
-        run: python -m pip install -e .
+        run: python -m pip install -e .[test]
       - name: Run unit tests
-        run: python -m unittest -v
+        run: python -m pytest -v
 
   build-check:
     name: Build wheel + sdist (no publish)
