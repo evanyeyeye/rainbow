@@ -29,11 +29,23 @@ to [Semantic Versioning](https://semver.org/).
   instead of raising on the truncated segment.
 
 ### Added
-- `tests/test_masshunter.py::TestMasshunterMultiBlock`: trimmed real TOF-MS
-  fixtures (`gold.D`, a 3-scan profile+centroid slice; `copper.D`, the same with
-  a truncated `MSProfile.bin`) covering the two-block record stride, the
-  `DefaultMassCal.xml` calibration fallback, geometry-based stride inference, and
-  incomplete-acquisition recovery.
+- **Agilent MassHunter centroid (`MSPeak.bin`) support (issue #37).** `MSPeak.bin`
+  stores the peak-picked (centroid) spectrum of each scan - the counterpart to
+  the dense profile trace in `MSProfile.bin`. `rb.read(..., centroid=True)` now
+  parses it (off by default, like `hrms`). GC-quadrupole centroids are stored as
+  m/z directly (validated to 7e-5 relative agreement against the same
+  acquisition's `data.ms`); Q-TOF/TOF centroids are stored as time-of-flight and
+  are calibrated with the same `DefaultMassCal.xml`/`MSMassCal.bin` path as the
+  profile. When a `.D` contains `MSPeak.bin` but is read without the flag,
+  `centroid_available` is set in the directory metadata so the option is
+  discoverable. The centroid decoding was contributed by denisshragin.
+- `tests/test_masshunter.py::TestMasshunterMultiBlock` and
+  `TestMasshunterCentroid`: trimmed real TOF-MS fixtures (`gold.D`, a 3-scan
+  profile+centroid slice; `copper.D`, the same with a truncated `MSProfile.bin`)
+  covering the two-block record stride, the `DefaultMassCal.xml` calibration
+  fallback, geometry-based stride inference, incomplete-acquisition recovery, and
+  the centroid path (block selection, GC-quad and calibrated-TOF axes, the
+  `centroid=True` flag, and the metadata note).
 
 ## [1.0.16] - 2026-06-17
 

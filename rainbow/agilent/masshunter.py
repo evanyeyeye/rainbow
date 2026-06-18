@@ -27,19 +27,22 @@ MAIN PARSING METHOD
 
 """
 
-def parse_allfiles(path, prec=0):
+def parse_allfiles(path, prec=0, hrms=False, centroid=False):
     """
-    Finds and parses Agilent Masshunter data files. \
-    Currently, only HRMS data is supported. \
-    See the documentation on :obj:`parse_msdata` for info on the limitations.
+    Finds and parses Agilent Masshunter MS data files.
 
-    If more file formats are added in the future, \
-        parsing should branch out from this method. 
+    MassHunter stores a scan's spectrum as a dense profile trace
+    (``MSProfile.bin``) and/or a peak-picked centroid list (``MSPeak.bin``).
+    Both are opt-in: ``hrms`` parses the profile and ``centroid`` parses the
+    centroids (see :obj:`parse_msdata` and :obj:`parse_mspeakdata`). With
+    neither flag set nothing is parsed here.
 
     Args:
         path (str): Path to the Agilent .D directory.
         prec (int, optional): Number of decimals to round ylabels.
-    
+        hrms (bool, optional): Parse the profile spectrum (MSProfile.bin).
+        centroid (bool, optional): Parse the centroid spectrum (MSPeak.bin).
+
     Returns:
         List containing a DataFile for each parsed file.
 
@@ -51,15 +54,14 @@ def parse_allfiles(path, prec=0):
         return datafiles
 
     acqdata_files = set(os.listdir(acqdata_path))
-    # MSTS.xml is no longer required: the scan count is recovered by reading
-    # MSScan.bin to EOF (see parse_msdata). This lets us parse Agilent OpenLab
-    # .rslt/.sirslt result folders, which omit MSTS.xml.
+    # MSTS.xml is no longer required: the scan count is recovered from the
+    # MSScan.bin record geometry (see read_scan_records). This lets us parse
+    # Agilent OpenLab .rslt/.sirslt result folders, which omit MSTS.xml.
     if {"MSScan.xsd", "MSScan.bin"} <= acqdata_files:
-        if "MSProfile.bin" in acqdata_files:
+        if centroid and "MSPeak.bin" in acqdata_files:
+            datafiles.append(parse_mspeakdata(acqdata_path, prec))
+        if hrms and "MSProfile.bin" in acqdata_files:
             datafiles.append(parse_msdata(acqdata_path, prec))
-        # Future work should also parse the MSPeak.bin format. 
-        # elif "MSPeak.bin" in acqdata_files:
-        #     ...
 
     return datafiles
 
@@ -120,40 +122,15 @@ def parse_msdata(path, prec=0):
          rec.get('CalibrationID'))
         for rec in scan_records]
 
-    # MSMassCal.bin: Extract calibration values for masses.
-    # Each retention time stores 10 doubles: the two "traditional" calibration
-    #     numbers (coeff, base) used as mz = (coeff * (t - base))**2, then two
-    #     time-of-flight clip bounds (left, right) and six polynomial
-    #     coefficients. The polynomial is an optional refinement applied on top
-    #     of the traditional calibration; see calibrate_mz.
-    # MSMassCal.bin holds the per-scan refinement of these values. Some
-    #     acquisitions (e.g. older Q-TOF/TOF datasets) omit it and keep only the
-    #     default calibration in DefaultMassCal.xml; reconstruct each scan's row
-    #     from its CalibrationID then. The per-scan refinement is sub-ppm, so the
-    #     default values reproduce the reported m/z to <0.0001 Da.
-    masscal_path = os.path.join(path, "MSMassCal.bin")
-    if os.path.isfile(masscal_path):
-        f = open(masscal_path, 'rb')
-        f.seek(0x4c) # start offset
-        calib_vals = np.ndarray((num_times, 10), '<d', f.read(), 0, (84, 8))
-        f.close()
-    else:
-        default_rows = read_default_masscal_rows(
-            os.path.join(path, "DefaultMassCal.xml"))
-        if not default_rows:
-            raise FileNotFoundError(
-                "Cannot calibrate MSProfile.bin: neither MSMassCal.bin nor a "
-                f"usable DefaultMassCal.xml was found in {path}.")
-        fallback_row = next(iter(default_rows.values()))
-        calib_vals = np.array(
-            [default_rows.get(cid, fallback_row) for *_, cid in data_info],
-            dtype='<d')
-
-    # DefaultMassCal.xml: per-calibration-id flags selecting which polynomial
-    #     coefficients are active. Absent for older/LZF data, in which case
-    #     only the traditional calibration is applied.
-    calib_flags = parse_default_masscal(
-        os.path.join(path, "DefaultMassCal.xml"))
+    # Mass calibration (see _load_calibration and calibrate_mz): the per-scan
+    # 10 doubles and polynomial flags. A profile m/z axis is stored as raw
+    # time-of-flight, so MSProfile.bin always needs the calibration.
+    calib_vals, calib_flags = _load_calibration(
+        path, [cid for *_, cid in data_info])
+    if calib_vals is None:
+        raise FileNotFoundError(
+            "Cannot calibrate MSProfile.bin: neither MSMassCal.bin nor a "
+            f"usable DefaultMassCal.xml was found in {path}.")
 
     # MSProfile.bin: Extract the data values.
     # Each retention time has a data segment that starts with two doubles
@@ -293,6 +270,126 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, prec):
     return mz_ylabels, grid.reshape(num_times, mz_ylabels.size)
 
 
+# Bytes-per-peak -> (mz dtype, intensity dtype) for the MSPeak.bin centroid
+# encodings seen in the wild. 8 and 12 interleave one mz and one intensity per
+# peak; 16 stores all mz values then all intensities (a split block).
+_PEAK_DTYPES = {8: ('<f4', '<f4'), 12: ('<f8', '<f4'), 16: ('<f8', '<f8')}
+
+
+def parse_mspeakdata(path, prec=0):
+    """
+    Parses Masshunter centroided MS data stored in MSPeak.bin.
+
+    MSPeak.bin holds the peak-picked (centroid) spectrum of each scan - a list
+    of (mz, intensity) pairs - in contrast to the dense profile trace in
+    MSProfile.bin (:obj:`parse_msdata`). GC quadrupole acquisitions store only
+    centroids; Q-TOF/TOF acquisitions store a profile block and a centroid block
+    per scan (see :obj:`read_scan_records`), and this reads the centroid one.
+
+    The following files are used:
+        - MSScan.xsd  -> File structure of MSScan.bin.
+        - MSScan.bin  -> Per-scan metadata and pointers into MSPeak.bin.
+        - MSPeak.bin  -> Raw (mz, intensity) peak pairs.
+
+    The MSPeak.bin centroid decoding was contributed by denisshragin (issue #37).
+
+    Args:
+        path (str): Path to the AcqData subdirectory.
+        prec (int, optional): Number of decimals to round mz values.
+
+    Returns:
+        DataFile containing Masshunter centroided MS data.
+
+    """
+    complextypes_dict = parse_scan_xsd(os.path.join(path, "MSScan.xsd"))
+    scan_records = read_scan_records(
+        os.path.join(path, "MSScan.bin"), complextypes_dict, count_scans(path))
+    num_times = len(scan_records)
+
+    # Mass calibration. GC-quadrupole MSPeak.bin already stores m/z (no
+    # calibration files, so calib_vals is None), but a TOF/Q-TOF centroid axis
+    # is raw time-of-flight and is calibrated exactly like the profile axis.
+    calibration_ids = [record.get('CalibrationID') for record in scan_records]
+    calib_vals, calib_flags = _load_calibration(path, calibration_ids)
+
+    peak_path = os.path.join(path, "MSPeak.bin")
+    peak_size = os.path.getsize(peak_path)
+    times = np.empty(num_times)
+    num_peaks_per_time = np.zeros(num_times, dtype=np.int64)
+    mz_arrs = []
+    inten_arrs = []
+    with open(peak_path, 'rb') as f:
+        for i, record in enumerate(scan_records):
+            times[i] = record['ScanTime']
+            block = _select_centroid_block(record['SpectrumParamsBlocks'])
+            if block is None:
+                continue
+            num_peaks = block['PointCount']
+            offset = block['SpectrumOffset']
+            byte_count = block['ByteCount']
+            # Skip scans with no peaks, or whose data was never (fully) written
+            # (an interrupted acquisition - keep the complete scans).
+            if (num_peaks <= 0 or byte_count <= 0
+                    or offset + byte_count > peak_size):
+                continue
+            f.seek(offset)
+            mzs, intensities = _decode_peak_block(
+                f.read(byte_count), num_peaks, byte_count // num_peaks)
+            if calib_vals is not None:
+                mzs = calibrate_mz(np.asarray(mzs, dtype=np.float64),
+                                   calib_vals[i], calib_flags.get(
+                                       calibration_ids[i]))
+            mz_arrs.append(np.round(mzs, prec))
+            inten_arrs.append(intensities)
+            num_peaks_per_time[i] = num_peaks
+
+    if not mz_arrs:
+        return DataFile(
+            "MSPeak.bin", 'MS', times, np.array([], dtype=np.float64),
+            np.zeros((num_times, 0), dtype=np.uint64), {})
+
+    mz_arr = np.concatenate(mz_arrs)
+    intensities = np.concatenate(inten_arrs).astype(np.uint64)
+    rows = np.repeat(np.arange(num_times), num_peaks_per_time)
+    mz_ylabels, data = bin_to_grid(mz_arr, intensities, rows, num_times, prec)
+    return DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data, {})
+
+
+def _select_centroid_block(blocks):
+    """
+    Returns the centroid (MSPeak.bin) block among a scan's SpectrumParamValues
+    blocks, or None if there is no peak block.
+
+    A centroid block stores fixed-width (mz, intensity) peaks, so its ByteCount
+    is an exact multiple of PointCount equal to one of the known bytes-per-peak
+    widths. A profile block's ByteCount is a compressed length and does not
+    satisfy this, which distinguishes the two on instruments that store both.
+    """
+    for block in blocks:
+        num_peaks = block['PointCount']
+        byte_count = block['ByteCount']
+        if (num_peaks > 0 and byte_count % num_peaks == 0
+                and byte_count // num_peaks in _PEAK_DTYPES):
+            return block
+    return None
+
+
+def _decode_peak_block(raw, num_peaks, bytes_per_peak):
+    """
+    Decodes one MSPeak.bin centroid segment into (mz, intensity) float arrays.
+
+    The segment is a split block: all ``num_peaks`` mz values followed by all
+    ``num_peaks`` intensities. ``bytes_per_peak`` selects the dtypes (see
+    :data:`_PEAK_DTYPES`).
+    """
+    mz_dtype, inten_dtype = _PEAK_DTYPES[bytes_per_peak]
+    mz_bytes = num_peaks * np.dtype(mz_dtype).itemsize
+    mzs = np.frombuffer(raw[:mz_bytes], dtype=mz_dtype)
+    intensities = np.frombuffer(
+        raw[mz_bytes:num_peaks * bytes_per_peak], dtype=inten_dtype)
+    return mzs, intensities
+
+
 def parse_default_masscal(xml_path):
     """
     Reads the polynomial ``ValueUseFlags`` for each calibration id from
@@ -371,6 +468,49 @@ def read_default_masscal_rows(xml_path):
         row += [0.0] * (10 - len(row))
         rows[int(calib_id)] = row[:10]
     return rows
+
+
+def _load_calibration(path, calibration_ids):
+    """
+    Loads the per-scan mass calibration for an AcqData directory.
+
+    Returns ``(calib_vals, calib_flags)`` where ``calib_vals`` is an ``(N, 10)``
+    array of the ten calibration doubles for each of the N scans (in the order
+    of ``calibration_ids``) and ``calib_flags`` maps each CalibrationID to its
+    polynomial ValueUseFlags. The values come from the per-scan MSMassCal.bin
+    when present, otherwise from DefaultMassCal.xml by CalibrationID (see
+    :obj:`read_default_masscal_rows`); the per-scan refinement MSMassCal.bin
+    adds is sub-ppm.
+
+    Returns ``(None, None)`` when the directory has no calibration at all - e.g.
+    GC-quadrupole centroid data, whose MSPeak.bin already stores m/z directly.
+
+    Args:
+        path (str): Path to the AcqData subdirectory.
+        calibration_ids (list): CalibrationID of each scan, in scan order.
+
+    Returns:
+        Tuple ``(calib_vals, calib_flags)``, or ``(None, None)`` if uncalibrated.
+
+    """
+    masscal_path = os.path.join(path, "MSMassCal.bin")
+    if os.path.isfile(masscal_path):
+        with open(masscal_path, 'rb') as f:
+            f.seek(0x4c)  # start offset
+            calib_vals = np.ndarray(
+                (len(calibration_ids), 10), '<d', f.read(), 0, (84, 8))
+    else:
+        default_rows = read_default_masscal_rows(
+            os.path.join(path, "DefaultMassCal.xml"))
+        if not default_rows:
+            return None, None
+        fallback_row = next(iter(default_rows.values()))
+        calib_vals = np.array(
+            [default_rows.get(cid, fallback_row) for cid in calibration_ids],
+            dtype='<d')
+    calib_flags = parse_default_masscal(
+        os.path.join(path, "DefaultMassCal.xml"))
+    return calib_vals, calib_flags
 
 
 def calibrate_mz(tof, calib_row, use_flags):
@@ -637,17 +777,30 @@ def read_scan_records(msscan_path, complextypes_dict, num_records=None):
                     abs(body // s - num_records) if num_records else s))
 
         if stride is not None:
+            # Number of SpectrumParamValues blocks per record (e.g. a profile
+            # block plus a centroid block). read_complextype consumes the scalar
+            # fields and the first block; read any remaining blocks explicitly so
+            # callers that need the centroid block (parse_mspeakdata) can see it.
+            num_blocks = (stride - scalar) // block
             for i in range(body // stride):
                 f.seek(rec_start + i * stride)
-                records.append(
-                    read_complextype(f, complextypes_dict, "ScanRecordType"))
+                record = read_complextype(
+                    f, complextypes_dict, "ScanRecordType")
+                blocks = [record['SpectrumParamValues']]
+                for _ in range(num_blocks - 1):
+                    blocks.append(read_complextype(
+                        f, complextypes_dict, "SpectrumParamsType"))
+                record['SpectrumParamsBlocks'] = blocks
+                records.append(record)
         else:
             # No stride tiles the region (e.g. truncated mid-record): best-effort
             # single-block read to EOF.
             f.seek(rec_start)
             while f.tell() < file_size:
-                records.append(
-                    read_complextype(f, complextypes_dict, "ScanRecordType"))
+                record = read_complextype(
+                    f, complextypes_dict, "ScanRecordType")
+                record['SpectrumParamsBlocks'] = [record['SpectrumParamValues']]
+                records.append(record)
     return records
 
 

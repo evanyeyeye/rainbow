@@ -139,7 +139,7 @@ class TestMasshunterProfile(unittest.TestCase):
     def _assert_decodes(self, directory):
         """ Parses the fixture and checks each scan's decoded maximum
         intensity against the MaxY field stored independently in MSScan.bin. """
-        datafiles = masshunter.parse_allfiles(directory)
+        datafiles = masshunter.parse_allfiles(directory, hrms=True)
         self.assertEqual(len(datafiles), 1)
         datafile = datafiles[0]
 
@@ -189,7 +189,7 @@ class TestMasshunterProfile(unittest.TestCase):
 
     def test_mass_calibration_in_range(self):
         """ The calibrated mz axis spans a sensible HRMS range. """
-        datafile = masshunter.parse_allfiles(CYAN_D)[0]
+        datafile = masshunter.parse_allfiles(CYAN_D, hrms=True)[0]
         self.assertGreater(datafile.ylabels.min(), 100)
         self.assertLess(datafile.ylabels.max(), 5000)
         self.assertTrue((datafile.ylabels[1:] > datafile.ylabels[:-1]).all())
@@ -326,7 +326,7 @@ class TestMasshunterMultiBlock(unittest.TestCase):
     def test_gold_parses_with_default_masscal(self):
         """ gold parses end to end to a profile grid with a sensible TOF m/z
         axis, calibrated from DefaultMassCal.xml (no MSMassCal.bin). """
-        datafile = masshunter.parse_allfiles(GOLD_D)[0]
+        datafile = masshunter.parse_allfiles(GOLD_D, hrms=True)[0]
         self.assertEqual(datafile.data.shape[0], 3)               # 3 scans
         self.assertEqual(datafile.xlabels.size, 3)
         self.assertEqual(datafile.data.shape[1], datafile.ylabels.size)
@@ -356,9 +356,79 @@ class TestMasshunterMultiBlock(unittest.TestCase):
         """ copper's MSScan.bin describes four scans but MSProfile.bin holds
         only three; parsing keeps the three complete scans rather than failing
         on the truncated segment. """
-        datafile = masshunter.parse_allfiles(COPPER_D)[0]
+        datafile = masshunter.parse_allfiles(COPPER_D, hrms=True)[0]
         self.assertEqual(datafile.data.shape[0], 3)
         self.assertEqual(datafile.xlabels.size, 3)
+
+
+class TestMasshunterCentroid(unittest.TestCase):
+    """
+    Tests parsing centroided MS data from MSPeak.bin - the opt-in counterpart to
+    the MSProfile.bin profile spectrum (centroid=True).
+
+    MSPeak.bin is uncompressed, so these run without python-lzf. They cover a
+    GC-quadrupole acquisition whose MSPeak.bin already stores m/z (yellow), a
+    Q-TOF acquisition whose centroid axis is time-of-flight and is calibrated
+    like the profile (gold), the centroid=True flag, and the discoverability
+    metadata note.
+    """
+    def test_select_centroid_block(self):
+        """ On a scan that stores both, the centroid (fixed-width peak) block is
+        chosen over the compressed profile block. """
+        acqdata = os.path.join(GOLD_D, "AcqData")
+        complextypes = masshunter.parse_scan_xsd(
+            os.path.join(acqdata, "MSScan.xsd"))
+        records = masshunter.read_scan_records(
+            os.path.join(acqdata, "MSScan.bin"), complextypes,
+            masshunter.count_scans(acqdata))
+        blocks = records[0]['SpectrumParamsBlocks']
+        self.assertEqual(len(blocks), 2)  # profile block + centroid block
+        chosen = masshunter._select_centroid_block(blocks)
+        self.assertIsNotNone(chosen)
+        self.assertIn(chosen['ByteCount'] // chosen['PointCount'], (8, 12, 16))
+
+    def test_yellow_centroid_axis_matches_data_ms(self):
+        """ The GC-quadrupole MSPeak.bin m/z axis (already calibrated) matches
+        the independent data.ms axis for the same acquisition. """
+        centroid = masshunter.parse_mspeakdata(YELLOW_ACQDATA)
+        self.assertEqual(centroid.name, "MSPeak.bin")
+        self.assertEqual(centroid.detector, "MS")
+        self.assertEqual(centroid.data.shape[0], centroid.xlabels.size)
+        self.assertEqual(centroid.data.shape[1], centroid.ylabels.size)
+        self.assertTrue((centroid.ylabels[1:] > centroid.ylabels[:-1]).all())
+
+        import rainbow as rb
+        data_ms = rb.read("tests/inputs/yellow.D").get_file("data.ms")
+        np.testing.assert_array_equal(centroid.ylabels, data_ms.ylabels)
+
+    def test_gold_centroid_is_calibrated(self):
+        """ A TOF centroid axis is stored as time-of-flight; parsing calibrates
+        it to real m/z (within the profile's m/z range, not raw flight time). """
+        centroid = masshunter.parse_mspeakdata(os.path.join(GOLD_D, "AcqData"))
+        self.assertGreater(centroid.ylabels.min(), 50)
+        self.assertLess(centroid.ylabels.max(), 1100)
+        self.assertTrue((centroid.ylabels[1:] > centroid.ylabels[:-1]).all())
+
+    def test_centroid_flag_end_to_end(self):
+        """ centroid=True adds the MSPeak.bin DataFile; by default it is not
+        parsed but a metadata note advertises that it is available. """
+        import rainbow as rb
+
+        default = rb.read("tests/inputs/yellow.D")
+        self.assertNotIn("MSPeak.bin", [df.name for df in default.datafiles])
+        self.assertTrue(default.metadata.get("centroid_available"))
+
+        with_centroid = rb.read("tests/inputs/yellow.D", centroid=True)
+        self.assertIn("MSPeak.bin", [df.name for df in with_centroid.datafiles])
+        # data.ms is untouched - centroid is additive, not a replacement.
+        self.assertIn("data.ms", [df.name for df in with_centroid.datafiles])
+        self.assertNotIn("centroid_available", with_centroid.metadata)
+
+    def test_centroid_truncation_is_graceful(self):
+        """ A truncated MSPeak.bin segment is skipped rather than crashing. """
+        centroid = masshunter.parse_mspeakdata(os.path.join(COPPER_D, "AcqData"))
+        self.assertEqual(centroid.name, "MSPeak.bin")
+        self.assertGreaterEqual(centroid.data.shape[0], 3)
 
 
 if __name__ == '__main__':
