@@ -11,12 +11,17 @@ from lxml import etree
 from rainbow.datafile import DataFile
 from rainbow._binning import bin_datapairs
 
-# Optional compiled accelerator for the .uv LC-delta decode loop.
+# Optional compiled accelerators for the delta decode loops.
 # Falls back to the pure-Python implementations below if not built.
 try:
     from rainbow.agilent import _uvdelta as _uvdelta_fast
 except ImportError:
     _uvdelta_fast = None
+
+try:
+    from rainbow.agilent import _chdelta as _chdelta_fast
+except ImportError:
+    _chdelta_fast = None
 
 # Lookup table for the .ms intensity scale 8 ** (int_enc >> 14); the 2-bit
 # head field is 0..3, so indexing this beats np.power over every pair.
@@ -293,6 +298,12 @@ def parse_ch_other(path, head):
     return DataFile(path, detector, times, ylabels, data, metadata)
 
 def decode_delta(f, offset):
+    # Use the compiled accelerator if it was built (mirrors the loop below).
+    if _chdelta_fast is not None:
+        f.seek(0)
+        buf = f.read()
+        return _chdelta_fast.decode_delta(buf, offset)
+
     byte_unpack = struct.Struct('>B').unpack
     short_unpack = struct.Struct('>h').unpack
     int_unpack = struct.Struct('>i').unpack

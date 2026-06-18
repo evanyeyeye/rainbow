@@ -15,6 +15,7 @@ from setuptools import setup, Extension
 _EXTENSIONS = {
     "rainbow.agilent._uvdelta": "rainbow/agilent/_uvdelta.pyx",
     "rainbow.agilent._msprofile": "rainbow/agilent/_msprofile.pyx",
+    "rainbow.agilent._chdelta": "rainbow/agilent/_chdelta.pyx",
 }
 
 ext_modules = []
