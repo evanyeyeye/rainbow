@@ -6,49 +6,25 @@ to [Semantic Versioning](https://semver.org/).
 ## [1.2.0] - 2026-06-18
 
 ### Added
-- **Agilent MassHunter ICP-MS support (issue #25).** MassHunter `.D`
-  directories from ICP-MS instruments (e.g. Agilent 7700 / 8900) are now
-  parsed. ICP-MS data is detected by the presence of `MSScan_XSpecific.bin`
-  and routed to a new `parse_icpmsdata`, which reads the *uncompressed*
-  `MSProfile.bin` (four parallel per-scan blocks: channel index, reported
-  value, raw pulse count, analog value) and keeps the reported intensities —
-  the values MassHunter writes to its CSV export. m/z labels are the real
-  isotope masses from `MSTS_XAddition.xml` (`ProductIonMZ`), falling back to
-  the per-channel `XValue` in `MSScan_XSpecific.bin` when that file is absent.
-  Verified end to end against the instrument's CSV export to 2.5e-8 relative
-  agreement (the residual is Agilent's ~8-significant-figure CSV rounding).
-  Decoding contributed by Jeremy Hourigan (UC Santa Cruz). Currently supports
-  time-resolved acquisitions with a single tune mode and one measurement per
-  isotope; multiple tune modes or measurements per isotope are not yet handled.
-- `tests/test_agilent.py::test_silver`: an Agilent 8900 ICP-MS fixture
-  (`silver.D`, two isotope channels) parsed end to end through the MassHunter
-  path, plus a new `docs/source/agilent/icpms.rst` documenting the format.
-- **`format` argument on `rb.read` and `rb.read_metadata`.** Forces the vendor
-  parser (`'agilent'` or `'waters'`), bypassing extension/content detection.
-- **Content-based vendor detection.** A data directory whose name lacks the
-  conventional `.D`/`.raw`/`.dx` suffix is now identified from its contents (an
-  `AcqData` subdirectory or a `.ch`/`.uv`/`.ms` file for Agilent; the
-  `_FUNCTNS.INF`/`_HEADER.TXT` manifests or `_FUNC###.DAT` files for Waters).
-  Suffixed paths are dispatched exactly as before - the content sniff runs only
-  when the extension matches nothing, so it can only make a previously
-  unreadable path readable, never change how an already-recognized path parses.
-- **Optional compiled accelerator for the Agilent `.ch` delta decode**
-  (`rainbow/agilent/_chdelta.pyx`). The CAD/ELSD/UV channel signal is a
-  sequential running-accumulator decode with a data-dependent stride, like the
-  `.uv` and `MSProfile.bin` decoders; the Cython inner loop is ~11x faster than
-  the pure-Python path and bit-identical. Like the other accelerators it is
-  optional, with a transparent pure-Python fallback when no compiler/Cython is
-  available.
+- **Agilent MassHunter ICP-MS support (issue #25).** ICP-MS `.D` directories
+  (e.g. Agilent 7700 / 8900) now parse via a new `parse_icpmsdata`, detected by
+  the presence of `MSScan_XSpecific.bin`. Single tune mode and one measurement
+  per isotope. Contributed by Jeremy Hourigan (UC Santa Cruz).
+- **`format` argument on `rb.read` and `rb.read_metadata`** to force the vendor
+  parser (`'agilent'` or `'waters'`), bypassing detection.
+- **Content-based vendor detection.** A directory whose name lacks a
+  `.D`/`.raw`/`.dx` suffix is identified from its contents; suffixed paths are
+  unaffected.
+- **Optional Cython accelerator for the Agilent `.ch` decode**
+  (`rainbow/agilent/_chdelta.pyx`) - ~11x faster, bit-identical, with a
+  transparent pure-Python fallback.
 
 ### Changed
-- **Faster MS spectrum parsing.** A shared vectorized binning helper
-  (`rainbow/_binning.py`) replaces the per-scan `np.unique`/`searchsorted`/
-  `np.add.at` loops in the Waters `_FUNC.DAT` and Agilent `.ms` decoders, and
-  the per-datapair exponentials use small lookup tables instead of `np.power`.
-  Output is unchanged (bit-identical); the local benchmark corpus parses ~2-3x
-  faster overall.
-- **Test suite migrated to pytest.** Added a `test` extra in `pyproject.toml`;
-  run the suite with `pytest` (`pip install -e .[test]`).
+- **Faster MS spectrum parsing.** Vectorized binning (shared
+  `rainbow/_binning.py`) and lookup-table exponentials replace the per-scan
+  loops in the Waters `_FUNC.DAT` and Agilent `.ms` decoders. Output unchanged;
+  ~2-3x faster.
+- **Test suite migrated to pytest** (added a `test` extra; run with `pytest`).
 
 ## [1.1.0] - 2026-06-17
 
