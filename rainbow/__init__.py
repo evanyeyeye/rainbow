@@ -4,7 +4,8 @@ from rainbow.datadirectory import DataDirectory
 from rainbow import agilent, waters
 
 
-def read(path, prec=0, hrms=False, requested_files=None, telemetry=False):
+def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
+         centroid=False):
     """
     Reads a chromatogram data directory. Main method of the package.
 
@@ -25,9 +26,11 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False):
     Args:
         path (str): Path of the directory.
         prec (int, optional): Number of decimals to round ylabels.
-        hrms (bool, optional): Flag for Agilent HRMS parsing.
+        hrms (bool, optional): Flag for Agilent HRMS (MSProfile.bin) parsing.
         requested_files (list, optional): List of filenames to parse.
         telemetry (bool, optional): Flag for Agilent .dx telemetry traces.
+        centroid (bool, optional): Flag for Agilent MassHunter centroid
+            (MSPeak.bin) parsing.
 
     Returns:
         DataDirectory representing the directory.
@@ -46,6 +49,9 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False):
     if not isinstance(hrms, bool):
         raise Exception(f"The hrms flag must be a boolean.")
 
+    if not isinstance(centroid, bool):
+        raise Exception(f"The centroid flag must be a boolean.")
+
     if requested_files is not None and not isinstance(requested_files, list):
         raise Exception(f"The requested_files argument must be a list.")
 
@@ -54,7 +60,8 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False):
 
     datadir = None
     if ext.upper() == '.D' or ext.lower() == '.dx':
-        datadir = agilent.read(path, prec, hrms, requested_files, telemetry)
+        datadir = agilent.read(
+            path, prec, hrms, requested_files, telemetry, centroid)
     elif ext.lower() == '.raw':
         datadir = waters.read(path, prec, requested_files)
 

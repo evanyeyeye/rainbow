@@ -4,16 +4,20 @@ from rainbow.agilent import chemstation
 from rainbow.datadirectory import DataDirectory
 
 
-def read(path, prec=0, hrms=False, requested_files=None, telemetry=False):
+def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
+         centroid=False):
     """
     Reads an Agilent .D directory or .dx archive.
 
     Args:
         path (str): Path of the directory or .dx file.
         prec (int, optional): Number of decimals to round masses.
-        hrms (bool, optional): Flag for HRMS parsing.
+        hrms (bool, optional): Flag for parsing the MassHunter profile
+            spectrum (MSProfile.bin).
         requested_files (list, optional): List of filenames to parse.
         telemetry (bool, optional): Flag for parsing .dx telemetry traces.
+        centroid (bool, optional): Flag for parsing the MassHunter centroid
+            spectrum (MSPeak.bin).
 
     Returns:
         DataDirectory representing the Agilent data.
@@ -25,14 +29,22 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False):
 
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(path, prec, requested_files))
-    if hrms:
+    if hrms or centroid:
         try:
             from rainbow.agilent import masshunter
-            datafiles.extend(masshunter.parse_allfiles(path))
+            datafiles.extend(
+                masshunter.parse_allfiles(path, prec, hrms, centroid))
         except ModuleNotFoundError:
             raise ModuleNotFoundError("You must install python-lzf to parse masshunter files.")
 
     metadata = chemstation.parse_metadata(path, datafiles)
+
+    # Surface unread MassHunter centroid data so the centroid flag is
+    # discoverable: a .D with MSPeak.bin holds a centroid spectrum that is only
+    # parsed when centroid=True.
+    if not centroid and os.path.isfile(
+            os.path.join(path, "AcqData", "MSPeak.bin")):
+        metadata['centroid_available'] = True
 
     return DataDirectory(path, datafiles, metadata)
 
