@@ -9,6 +9,16 @@ from lxml import etree
 
 from rainbow.agilent import masshunter
 
+# gold/copper have LZF-compressed MSProfile.bin (real TOF data), so decoding
+# them end to end needs python-lzf. The rest of the suite stays lzf-free (the
+# magenta/cyan profile fixtures are run-length encoded on purpose), so the
+# end-to-end gold/copper tests are skipped when python-lzf is not installed.
+try:
+    import lzf as _lzf  # noqa: F401
+    HAVE_LZF = True
+except ImportError:
+    HAVE_LZF = False
+
 
 # The `yellow` fixture is a MassHunter GC-MS acquisition whose AcqData folder
 # contains MSScan.xsd, MSScan.bin, and MSTS.xml (but no MSProfile.bin). It
@@ -312,6 +322,7 @@ class TestMasshunterMultiBlock(unittest.TestCase):
             self._complextypes(COPPER_D), None)
         self.assertEqual(len(records), 4)
 
+    @unittest.skipUnless(HAVE_LZF, "python-lzf required to decode LZF MSProfile.bin")
     def test_gold_parses_with_default_masscal(self):
         """ gold parses end to end to a profile grid with a sensible TOF m/z
         axis, calibrated from DefaultMassCal.xml (no MSMassCal.bin). """
@@ -340,6 +351,7 @@ class TestMasshunterMultiBlock(unittest.TestCase):
         np.testing.assert_allclose(
             rows[calib_id], per_scan[0], rtol=0, atol=1e-6)
 
+    @unittest.skipUnless(HAVE_LZF, "python-lzf required to decode LZF MSProfile.bin")
     def test_incomplete_acquisition_keeps_complete_scans(self):
         """ copper's MSScan.bin describes four scans but MSProfile.bin holds
         only three; parsing keeps the three complete scans rather than failing
