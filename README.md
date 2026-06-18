@@ -5,21 +5,18 @@
 
 *rainbow* provides programmatic access to the raw data encoded in chromatography and mass spectrometry binary files. This library supports the following vendors and detectors:
 
-**Agilent .D**
-* `.uv` - UV spectrum (supports incomplete files)
-* `.ch` - UV, FID, CAD, and ELSD channels
-* `.ms` - MS (supports incomplete files)
-* `MSProfile.bin` - HRMS profile spectrum (parse with `hrms=True`)
-* `MSPeak.bin` - centroid (peak-picked) spectrum (parse with `centroid=True`)
-
-**Agilent .dx (OpenLab CDS)**
-* `.UV` - DAD spectrum
-* `.CH` - single-wavelength UV/DAD signals
-* `.IT` - instrument telemetry, as analog data (parse with `telemetry=True`)
-
-**Waters .raw**
-* `CHRO` - CAD and ELSD, as well as miscellaneous analog data
-* `FUNC` - UV and MS 
+| Container | File | Data | Parse with |
+| --- | --- | --- | --- |
+| **Agilent `.D`** | `.uv` | UV spectrum (supports incomplete files) | |
+| | `.ch` | UV, FID, CAD, and ELSD channels | |
+| | `.ms` | MS (supports incomplete files) | |
+| | `MSProfile.bin` | HRMS profile spectrum | `hrms=True` |
+| | `MSPeak.bin` | centroid (peak-picked) spectrum | `centroid=True` |
+| **Agilent `.dx`** (OpenLab CDS) | `.UV` | DAD spectrum | |
+| | `.CH` | single-wavelength UV/DAD signals | |
+| | `.IT` | instrument telemetry, as analog data | `telemetry=True` |
+| **Waters `.raw`** | `CHRO` | CAD and ELSD, plus miscellaneous analog data | |
+| | `FUNC` | UV and MS | |
 
 There is [documentation](http://rainbow-api.readthedocs.io/) for *rainbow* that also details the structure of each [binary file format](https://rainbow-api.readthedocs.io/en/latest/formats.html).
 
@@ -60,25 +57,13 @@ There is a [tutorial](https://rainbow-api.readthedocs.io/en/latest/tutorial.html
 
 ## Performance
 
-A few decode loops dominate parsing time: each reads a long sequence of
-delta- or run-length-encoded values into a running accumulator, which is
-inherently sequential and cannot be vectorized with NumPy. *rainbow* ships
-optional compiled extensions (built with Cython) that run these inner loops in
-C, roughly **100&times; faster** while producing bit-identical results:
-
-* `rainbow/agilent/_uvdelta.pyx` &mdash; the Agilent diode-array (DAD) `.uv` decode.
-* `rainbow/agilent/_chdelta.pyx` &mdash; the Agilent `.ch` channel (CAD/ELSD/UV) decode.
-* `rainbow/agilent/_msprofile.pyx` &mdash; the MassHunter `MSProfile.bin` run-length decode.
-
-The accelerators are entirely optional:
-
-* Prebuilt wheels on PyPI already include them, so `pip install rainbow-api`
-  gives you the fast path with no compiler needed.
-* If you install from source without a compiler (or without Cython), the build
-  simply skips the extensions and *rainbow* falls back to pure-Python decoders
-  with identical output. You can check whether a given accelerator is active
-  with, e.g., `rainbow.agilent.chemstation._uvdelta_fast is not None`
-  (likewise `_chdelta_fast` and `rainbow.agilent.masshunter._msprofile_fast`).
+A few inherently-sequential decode loops are sped up by optional compiled
+(Cython) extensions &mdash; roughly **100&times; faster**, bit-identical, with a
+transparent pure-Python fallback when no compiler is available (prebuilt PyPI
+wheels include them). See the
+[Performance](https://rainbow-api.readthedocs.io/en/latest/performance.html)
+page in the documentation for the optimization strategies behind *rainbow* and
+the considerations for adding a new format.
 
 ## Contents
 * `rainbow/` contains the code of the Python library.

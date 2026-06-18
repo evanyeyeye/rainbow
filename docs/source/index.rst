@@ -18,3 +18,4 @@ The GitHub repository can be found `here <https://github.com/evanyeyeye/rainbow>
    Examples <examples>
    API <api>
    Formats <formats>
+   Performance <performance>
