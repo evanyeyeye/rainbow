@@ -9,7 +9,7 @@
 * `.uv` - UV spectrum (supports incomplete files)
 * `.ch` - UV, FID, CAD, and ELSD channels
 * `.ms` - MS (supports incomplete files)
-* `MSProfile.bin` - HRMS and ICP-MS profile spectrum (parse with `hrms=True`)
+* `MSProfile.bin` - HRMS profile spectrum (parse with `hrms=True`)
 * `MSPeak.bin` - centroid (peak-picked) spectrum (parse with `centroid=True`)
 
 **Agilent .dx (OpenLab CDS)**

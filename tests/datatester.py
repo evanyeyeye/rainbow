@@ -8,7 +8,7 @@ import numpy as np
 import rainbow as rb
 
 
-def assert_data_directory(color, ext, hrms=False, telemetry=False):
+def assert_data_directory(color, ext, telemetry=False):
     """
     Runs all checks for a DataDirectory after parsing.
 
@@ -45,7 +45,7 @@ def assert_data_directory(color, ext, hrms=False, telemetry=False):
             detector_to_names[detector] = [name]
 
     datadir_path = tests_path / "inputs" / (color + "." + ext)
-    datadir = rb.read(str(datadir_path), hrms=hrms, telemetry=telemetry)
+    datadir = rb.read(str(datadir_path), telemetry=telemetry)
 
     # Tests attributes of the DataDirectory.
     # Also tests classification of its DataFiles.

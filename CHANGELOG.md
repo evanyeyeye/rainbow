@@ -6,23 +6,6 @@ to [Semantic Versioning](https://semver.org/).
 ## [1.2.0] - 2026-06-18
 
 ### Added
-- **Agilent MassHunter ICP-MS support (issue #25).** MassHunter `.D`
-  directories from ICP-MS instruments (e.g. Agilent 7700 / 8900) are now
-  parsed. ICP-MS data is detected by the presence of `MSScan_XSpecific.bin`
-  and routed to a new `parse_icpmsdata`, which reads the *uncompressed*
-  `MSProfile.bin` (four parallel per-scan blocks: channel index, reported
-  value, raw pulse count, analog value) and keeps the reported intensities —
-  the values MassHunter writes to its CSV export. m/z labels are the real
-  isotope masses from `MSTS_XAddition.xml` (`ProductIonMZ`), falling back to
-  the per-channel `XValue` in `MSScan_XSpecific.bin` when that file is absent.
-  Verified end to end against the instrument's CSV export to 2.5e-8 relative
-  agreement (the residual is Agilent's ~8-significant-figure CSV rounding).
-  Decoding contributed by Jeremy Hourigan (UC Santa Cruz). Currently supports
-  time-resolved acquisitions with a single tune mode and one measurement per
-  isotope; multiple tune modes or measurements per isotope are not yet handled.
-- `tests/test_agilent.py::test_silver`: an Agilent 8900 ICP-MS fixture
-  (`silver.D`, two isotope channels) parsed end to end through the MassHunter
-  path, plus a new `docs/source/agilent/icpms.rst` documenting the format.
 - **`format` argument on `rb.read` and `rb.read_metadata`.** Forces the vendor
   parser (`'agilent'` or `'waters'`), bypassing extension/content detection.
 - **Content-based vendor detection.** A data directory whose name lacks the

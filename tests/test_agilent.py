@@ -16,28 +16,24 @@ from tests.datatester import assert_data_directory
 #   - green:  partial UV spectrum, 4 partial MS traces (LC format)
 #   - brown:  31-version UV spectrum, 4 30-version MS traces (LC format)
 #   - pink:   UV spectrum (131 OL format), 6 MS channels (179 OL format)
-#   - silver: Agilent 8900 ICP-MS spectrum (MassHunter MSProfile.bin,
-#             uncompressed); parsed with hrms=True to route through the
-#             MassHunter parser (issue #25).
 #   - teal:   Agilent OpenLab CDS .dx archive (DAD spectrum + 2 DAD signals +
 #             2 instrument telemetry traces); parsed with telemetry=True so the
 #             .IT analog traces are included.
 @pytest.mark.parametrize(
-    "color, ext, hrms, telemetry",
+    "color, ext, telemetry",
     [
-        ("red", "D", False, False),
-        ("orange", "D", False, False),
-        ("yellow", "D", False, False),
-        ("green", "D", False, False),
-        ("brown", "D", False, False),
-        ("pink", "D", False, False),
-        ("silver", "D", True, False),
-        ("teal", "dx", False, True),
+        ("red", "D", False),
+        ("orange", "D", False),
+        ("yellow", "D", False),
+        ("green", "D", False),
+        ("brown", "D", False),
+        ("pink", "D", False),
+        ("teal", "dx", True),
     ],
-    ids=["red", "orange", "yellow", "green", "brown", "pink", "silver", "teal"],
+    ids=["red", "orange", "yellow", "green", "brown", "pink", "teal"],
 )
-def test_agilent(color, ext, hrms, telemetry):
-    assert_data_directory(color, ext, hrms=hrms, telemetry=telemetry)
+def test_agilent(color, ext, telemetry):
+    assert_data_directory(color, ext, telemetry=telemetry)
 
 
 def test_teal_telemetry_off():
