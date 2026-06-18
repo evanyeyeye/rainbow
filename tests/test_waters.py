@@ -1,57 +1,31 @@
-import tests.datatester
+"""
+Unit tests for parsing Waters .raw directories.
+
+"""
+import pytest
+
+from tests.datatester import assert_data_directory
 
 
-class TestWaters(tests.datatester.DataTester):
-    """
-    Unit tests for parsing Waters .raw directories. 
-
-    """
-    def test_blue(self):
-        """
-        Tests a directory containing:
-            - UV spectrum 
-            - MS spectrum (8-byte format)
-            - CAD channel
-        
-        """
-        self._DataTester__test_data_directory("blue", "raw")
-
-    def test_indigo(self):
-        """
-        Tests a directory containing:
-            - MS trace (2-byte format)
-            - 2 analog channels
-        
-        """
-        self._DataTester__test_data_directory("indigo", "raw")
-
-    def test_violet(self):
-        """
-        Tests a directory containing:
-            - UV spectrum 
-            - 3 UV channels (analog)
-            - 2 MS spectra (6-byte format)
-            - ELSD channel
-
-        """
-        self._DataTester__test_data_directory("violet", "raw")
-
-    def test_white(self):
-        """
-        Tests a directory containing:
-            - 6 UV spectrum (4-byte format)
-            - 2 analog channels
-
-        """
-        self._DataTester__test_data_directory("white", "raw")
-
-    def test_turquoise(self):
-        """
-        Tests a Perkin-Elmer / TurboMass .raw export with
-        lowercase filenames and PE _extern.inf polarity format.
-
-        """
-        self._DataTester__test_data_directory("turquoise", "raw")
-
-if __name__ == '__main__':
-    unittest.main()
+# Each case is (color, ext). The docstrings of the former methods describe the
+# contents of each fixture:
+#   - blue:      UV spectrum, MS spectrum (8-byte format), CAD channel
+#   - indigo:    MS trace (2-byte format), 2 analog channels
+#   - violet:    UV spectrum, 3 UV channels (analog), 2 MS spectra (6-byte
+#                format), ELSD channel
+#   - white:     6 UV spectrum (4-byte format), 2 analog channels
+#   - turquoise: Perkin-Elmer / TurboMass .raw export with lowercase filenames
+#                and PE _extern.inf polarity format
+@pytest.mark.parametrize(
+    "color, ext",
+    [
+        ("blue", "raw"),
+        ("indigo", "raw"),
+        ("violet", "raw"),
+        ("white", "raw"),
+        ("turquoise", "raw"),
+    ],
+    ids=["blue", "indigo", "violet", "white", "turquoise"],
+)
+def test_waters(color, ext):
+    assert_data_directory(color, ext)
