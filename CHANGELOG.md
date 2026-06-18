@@ -3,6 +3,38 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **MassHunter HRMS profile data is parsed when scans also store centroids.**
+  When an acquisition writes `MSPeak.bin` alongside `MSProfile.bin`, each
+  `MSScan.bin` record carries two `SpectrumParamValues` blocks (a profile and a
+  centroid block; the schema element is `maxOccurs="unbounded"`) instead of one.
+  The reader assumed exactly one block, so after the first scan it mis-parsed
+  the centroid block as the next scan's fields and crashed (`struct.error`).
+  `rainbow` now reads each record at its true stride - taken from the MSTS.xml
+  scan count when consistent, otherwise inferred from the record geometry - and
+  reads the profile block. Validated on real Agilent Q-TOF (issue #27) and
+  TOF-MS datasets.
+- **HRMS calibration without `MSMassCal.bin`.** Some Q-TOF/TOF acquisitions omit
+  the per-scan `MSMassCal.bin` and keep only the default calibration in
+  `DefaultMassCal.xml`; the parser raised `FileNotFoundError` opening the former.
+  `rainbow` now falls back to reconstructing each scan's calibration row from
+  `DefaultMassCal.xml` (by `CalibrationID`). The per-scan refinement is sub-ppm,
+  so the m/z reproduce the per-scan values to <0.0001 Da (checked against the
+  `magenta`/`cyan` fixtures, which carry both files).
+- **Interrupted acquisitions no longer fail.** When `MSScan.bin` describes more
+  scans than `MSProfile.bin` actually contains (an aborted run, sometimes with a
+  stale `MSTS.xml` scan count), `rainbow` keeps the complete leading scans
+  instead of raising on the truncated segment.
+
+### Added
+- `tests/test_masshunter.py::TestMasshunterMultiBlock`: trimmed real TOF-MS
+  fixtures (`gold.D`, a 3-scan profile+centroid slice; `copper.D`, the same with
+  a truncated `MSProfile.bin`) covering the two-block record stride, the
+  `DefaultMassCal.xml` calibration fallback, geometry-based stride inference, and
+  incomplete-acquisition recovery.
+
 ## [1.0.16] - 2026-06-17
 
 ### Added
