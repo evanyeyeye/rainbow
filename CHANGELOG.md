@@ -3,7 +3,7 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0] - 2026-06-17
 
 ### Fixed
 - **MassHunter HRMS profile data is parsed when scans also store centroids.**
