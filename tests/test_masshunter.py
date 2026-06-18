@@ -34,6 +34,18 @@ CYAN_D = os.path.join("tests", "inputs", "cyan.D")
 # base peak), used to validate the mass calibration against ground truth.
 BIOCONFIRM_APEX_MZ = {MAGENTA_D: 734.4836, CYAN_D: 825.4221}
 
+# `gold` and `copper` are trimmed slices of a real Agilent TOF-MS acquisition
+# (10 Hz) whose scans store BOTH a profile block (MSProfile.bin) and a centroid
+# block (MSPeak.bin). Each ScanRecordType therefore carries two
+# SpectrumParamValues blocks - the schema element is maxOccurs="unbounded" -
+# which desynced the old fixed-size reader. Neither fixture has MSMassCal.bin,
+# so they also exercise the DefaultMassCal.xml calibration fallback.
+#   - gold:   3 complete scans; MSScan.bin, MSProfile.bin, MSPeak.bin all agree.
+#   - copper: MSScan.bin describes 4 scans but MSProfile.bin was truncated after
+#       3 (a deliberately interrupted/incomplete acquisition).
+GOLD_D = os.path.join("tests", "inputs", "gold.D")
+COPPER_D = os.path.join("tests", "inputs", "copper.D")
+
 
 class TestMasshunter(unittest.TestCase):
     """
@@ -236,6 +248,105 @@ class TestMasshunterProfile(unittest.TestCase):
         too_many = stream(0, 1, struct.pack('<b', 7) * 9)
         with self.assertRaises(ValueError):
             masshunter.decompress_inten_list(memoryview(too_many)[0:], 5)
+
+
+class TestMasshunterMultiBlock(unittest.TestCase):
+    """
+    Tests parsing MassHunter profile data whose scans also store centroids.
+
+    When an acquisition writes MSPeak.bin alongside MSProfile.bin, each
+    ScanRecordType holds a profile block *and* a centroid block. The reader must
+    step over the extra block at the true record stride (rather than mis-parsing
+    it as the next scan), recover the m/z calibration from DefaultMassCal.xml
+    when the per-scan MSMassCal.bin is absent, and keep the complete scans of an
+    interrupted acquisition whose trailing MSProfile.bin segments were never
+    written.
+    """
+    def _acqdata(self, directory):
+        return os.path.join(directory, "AcqData")
+
+    def _complextypes(self, directory):
+        return masshunter.parse_scan_xsd(
+            os.path.join(self._acqdata(directory), "MSScan.xsd"))
+
+    def test_type_size_matches_reader(self):
+        """ type_size predicts the bytes read_complextype consumes, which is
+        what lets read_scan_records reason about the record stride. """
+        ctd = self._complextypes(GOLD_D)
+        # SpectrumParamsType is the 64-byte block that repeats per scan.
+        self.assertEqual(masshunter.type_size(ctd, "SpectrumParamsType"), 64)
+
+        path = os.path.join(self._acqdata(GOLD_D), "MSScan.bin")
+        with open(path, 'rb') as f:
+            f.seek(0x58)
+            f.seek(struct.unpack('<I', f.read(4))[0])
+            start = f.tell()
+            masshunter.read_complextype(f, ctd, "ScanRecordType")
+            consumed = f.tell() - start
+        self.assertEqual(consumed, masshunter.type_size(ctd, "ScanRecordType"))
+
+    def test_fixtures_lack_msmasscal(self):
+        """ These fixtures intentionally have no per-scan MSMassCal.bin, so they
+        exercise the DefaultMassCal.xml fallback. """
+        for directory in (GOLD_D, COPPER_D):
+            self.assertFalse(os.path.exists(
+                os.path.join(self._acqdata(directory), "MSMassCal.bin")))
+
+    def test_two_block_records_read_at_correct_stride(self):
+        """ Two-block records are read one per scan, not mis-split into extra
+        single-block records, and carry monotonic scan times. """
+        acqdata = self._acqdata(GOLD_D)
+        records = masshunter.read_scan_records(
+            os.path.join(acqdata, "MSScan.bin"),
+            self._complextypes(GOLD_D), masshunter.count_scans(acqdata))
+        self.assertEqual(len(records), 3)
+        times = [r['ScanTime'] for r in records]
+        self.assertTrue(all(t2 >= t1 for t1, t2 in zip(times, times[1:])))
+
+    def test_stride_inferred_without_msts(self):
+        """ The two-block stride is recovered from the record geometry alone -
+        i.e. parsing still finds all four records if MSTS.xml is unavailable. """
+        acqdata = self._acqdata(COPPER_D)
+        records = masshunter.read_scan_records(
+            os.path.join(acqdata, "MSScan.bin"),
+            self._complextypes(COPPER_D), None)
+        self.assertEqual(len(records), 4)
+
+    def test_gold_parses_with_default_masscal(self):
+        """ gold parses end to end to a profile grid with a sensible TOF m/z
+        axis, calibrated from DefaultMassCal.xml (no MSMassCal.bin). """
+        datafile = masshunter.parse_allfiles(GOLD_D)[0]
+        self.assertEqual(datafile.data.shape[0], 3)               # 3 scans
+        self.assertEqual(datafile.xlabels.size, 3)
+        self.assertEqual(datafile.data.shape[1], datafile.ylabels.size)
+        self.assertGreater(datafile.ylabels.min(), 50)
+        self.assertLess(datafile.ylabels.max(), 2000)
+        self.assertTrue((datafile.ylabels[1:] > datafile.ylabels[:-1]).all())
+
+    def test_default_masscal_row_matches_msmasscal(self):
+        """ A DefaultMassCal.xml row reproduces the per-scan MSMassCal.bin row a
+        fixture with both stores, confirming it is a faithful stand-in. """
+        acqdata = os.path.join(MAGENTA_D, "AcqData")
+        rows = masshunter.read_default_masscal_rows(
+            os.path.join(acqdata, "DefaultMassCal.xml"))
+        records = masshunter.read_scan_records(
+            os.path.join(acqdata, "MSScan.bin"),
+            masshunter.parse_scan_xsd(os.path.join(acqdata, "MSScan.xsd")))
+        with open(os.path.join(acqdata, "MSMassCal.bin"), 'rb') as f:
+            per_scan = np.ndarray(
+                (len(records), 10), '<d', f.read()[0x4c:], 0, (84, 8))
+        calib_id = records[0].get('CalibrationID')
+        # The per-scan refinement is sub-ppm; everything else matches exactly.
+        np.testing.assert_allclose(
+            rows[calib_id], per_scan[0], rtol=0, atol=1e-6)
+
+    def test_incomplete_acquisition_keeps_complete_scans(self):
+        """ copper's MSScan.bin describes four scans but MSProfile.bin holds
+        only three; parsing keeps the three complete scans rather than failing
+        on the truncated segment. """
+        datafile = masshunter.parse_allfiles(COPPER_D)[0]
+        self.assertEqual(datafile.data.shape[0], 3)
+        self.assertEqual(datafile.xlabels.size, 3)
 
 
 if __name__ == '__main__':

@@ -109,7 +109,7 @@ def parse_msdata(path, prec=0):
     #   - the uncompressed length in bytes
     #   - the calibration id (selects a polynomial calibration; see below)
     scan_records = read_scan_records(
-        os.path.join(path, "MSScan.bin"), complextypes_dict)
+        os.path.join(path, "MSScan.bin"), complextypes_dict, count_scans(path))
     num_times = len(scan_records)
     data_info = [
         (rec['ScanTime'],
@@ -126,10 +126,28 @@ def parse_msdata(path, prec=0):
     #     time-of-flight clip bounds (left, right) and six polynomial
     #     coefficients. The polynomial is an optional refinement applied on top
     #     of the traditional calibration; see calibrate_mz.
-    f = open(os.path.join(path, "MSMassCal.bin"), 'rb')
-    f.seek(0x4c) # start offset
-    calib_vals = np.ndarray((num_times, 10), '<d', f.read(), 0, (84, 8))
-    f.close()
+    # MSMassCal.bin holds the per-scan refinement of these values. Some
+    #     acquisitions (e.g. older Q-TOF/TOF datasets) omit it and keep only the
+    #     default calibration in DefaultMassCal.xml; reconstruct each scan's row
+    #     from its CalibrationID then. The per-scan refinement is sub-ppm, so the
+    #     default values reproduce the reported m/z to <0.0001 Da.
+    masscal_path = os.path.join(path, "MSMassCal.bin")
+    if os.path.isfile(masscal_path):
+        f = open(masscal_path, 'rb')
+        f.seek(0x4c) # start offset
+        calib_vals = np.ndarray((num_times, 10), '<d', f.read(), 0, (84, 8))
+        f.close()
+    else:
+        default_rows = read_default_masscal_rows(
+            os.path.join(path, "DefaultMassCal.xml"))
+        if not default_rows:
+            raise FileNotFoundError(
+                "Cannot calibrate MSProfile.bin: neither MSMassCal.bin nor a "
+                f"usable DefaultMassCal.xml was found in {path}.")
+        fallback_row = next(iter(default_rows.values()))
+        calib_vals = np.array(
+            [default_rows.get(cid, fallback_row) for *_, cid in data_info],
+            dtype='<d')
 
     # DefaultMassCal.xml: per-calibration-id flags selecting which polynomial
     #     coefficients are active. Absent for older/LZF data, in which case
@@ -151,7 +169,9 @@ def parse_msdata(path, prec=0):
     #     UncompressedByteCount does not reliably distinguish the two (it is
     #     sometimes set, sometimes zero, for the RLE case), so we detect the
     #     RLE format from the segment's own header (see segment_is_rle).
-    f = open(os.path.join(path, "MSProfile.bin"), 'rb')
+    profile_path = os.path.join(path, "MSProfile.bin")
+    profile_size = os.path.getsize(profile_path)
+    f = open(profile_path, 'rb')
     twodoubles_unpack = struct.Struct('<dd').unpack
     times = np.empty(num_times)
     num_mz_per_time = np.empty(num_times)
@@ -159,6 +179,16 @@ def parse_msdata(path, prec=0):
     inten_arrs = []
     for i in range(num_times):
         time, num_mz, offset, comp_len, decomp_len, calib_id = data_info[i]
+
+        # An interrupted acquisition leaves MSScan.bin describing scans whose
+        # MSProfile.bin segment was never (fully) written. Stop at the first
+        # such scan and keep the complete prefix instead of failing the parse.
+        if offset + comp_len > profile_size:
+            num_times = i
+            times = times[:num_times]
+            num_mz_per_time = num_mz_per_time[:num_times]
+            break
+
         times[i] = time
         num_mz_per_time[i] = num_mz
 
@@ -196,6 +226,10 @@ def parse_msdata(path, prec=0):
         inten_arrs.append(inten)
 
     f.close()
+
+    if num_times == 0:
+        raise ValueError(
+            f"MSProfile.bin in {path} contains no complete scans.")
 
     # Concatenating the per-scan arrays avoids materializing a ~100M-element
     # Python list (and the numpy round-trip through it), which otherwise
@@ -292,6 +326,51 @@ def parse_default_masscal(xml_path):
                 use_flags = step.findtext("ValueUseFlags")
                 flags[int(calib_id)] = int(use_flags) if use_flags else 0
     return flags
+
+
+def read_default_masscal_rows(xml_path):
+    """
+    Reads the default per-calibration-id calibration rows from
+    DefaultMassCal.xml.
+
+    Used as the fallback when the per-scan MSMassCal.bin is absent. Each
+    ``DefaultCalibration`` provides a ``Traditional`` step (coeff, base) and,
+    optionally, a ``Polynomial`` step (left, right, then six coefficients).
+    Together these are the ten doubles MSMassCal.bin would otherwise store per
+    scan - ``[coeff, base, left, right, c0..c5]`` - so a row can stand in for a
+    MSMassCal.bin row directly (see :obj:`calibrate_mz`). The polynomial's
+    ValueUseFlags is read separately by :obj:`parse_default_masscal`.
+
+    Args:
+        xml_path (str): Path to DefaultMassCal.xml.
+
+    Returns:
+        Dictionary mapping calibration id (int) to a length-10 list of doubles.
+        Empty if the file does not exist or defines no traditional calibration.
+
+    """
+    if not os.path.exists(xml_path):
+        return {}
+    rows = {}
+    root = etree.parse(xml_path).getroot()
+    for calibration in root.iter("DefaultCalibration"):
+        calib_id = calibration.get("DefaultCalibrationID")
+        if calib_id is None:
+            continue
+        traditional, polynomial = [], []
+        for step in calibration.iter("Step"):
+            values = [float(v.text) for v in step.iter("Value")]
+            formula = step.findtext("CalibrationFormula")
+            if formula == "Traditional":
+                traditional = values
+            elif formula == "Polynomial":
+                polynomial = values
+        if len(traditional) < 2:
+            continue
+        row = list(traditional[:2]) + list(polynomial[:8])
+        row += [0.0] * (10 - len(row))
+        rows[int(calib_id)] = row[:10]
+    return rows
 
 
 def calibrate_mz(tof, calib_row, use_flags):
@@ -462,24 +541,69 @@ def parse_scan_xsd(xsd_path):
     return complextypes_dict
 
 
-def read_scan_records(msscan_path, complextypes_dict):
+# Byte sizes of the MSScan.xsd "simple" types (mirrors the readers in
+# read_type). Used to compute a record's on-disk size without reading it.
+_SIMPLE_TYPE_SIZES = {
+    'xs:byte': 1, 'xs:short': 2, 'xs:int': 4,
+    'xs:long': 8, 'xs:float': 4, 'xs:double': 8,
+}
+
+# A scan may store more than one SpectrumParamValues block; this bounds how many
+# we will consider when inferring the record stride (see read_scan_records).
+_MAX_SPECTRUM_BLOCKS = 8
+
+
+def type_size(complextypes_dict, name):
     """
-    Reads every scan record (ScanRecordType) from MSScan.bin until EOF.
+    Returns the on-disk byte size of one MSScan.bin record of the given type.
 
-    The records are contiguous and the file ends exactly on a record
-    boundary, so reading until EOF yields one record per retention time.
-    The length of the returned list is therefore the scan count, which was
-    historically read from MSTS.xml. Recovering it here removes that
-    dependency, so result folders that omit MSTS.xml (Agilent OpenLab
-    .rslt/.sirslt) can be parsed.
+    Mirrors :obj:`read_complextype`/:obj:`read_type`: each member is counted
+    once, so for ScanRecordType this is the size of a record with a single
+    SpectrumParamValues block. Lets read_scan_records reason about the record
+    stride without reading the file.
 
-    The exact members of each record depend on the instrument's MSScan.xsd;
-    callers extract whichever fields they need (e.g. parse_msdata pulls the
-    MSProfile.bin offsets and byte counts).
+    Args:
+        complextypes_dict (dict): Output of :obj:`parse_scan_xsd`.
+        name (str): A simple ("xs:int", ...) or complex type name.
+
+    Returns:
+        Size in bytes (int).
+
+    """
+    if name in _SIMPLE_TYPE_SIZES:
+        return _SIMPLE_TYPE_SIZES[name]
+    return sum(type_size(complextypes_dict, subtype)
+               for _, subtype in complextypes_dict[name.split(':')[-1]])
+
+
+def read_scan_records(msscan_path, complextypes_dict, num_records=None):
+    """
+    Reads the scan records (ScanRecordType) from MSScan.bin, one per retention
+    time.
+
+    Each record holds the scalar scan fields followed by one or more
+    ``SpectrumParamValues`` blocks - the schema element is
+    ``maxOccurs="unbounded"``. A profile-only acquisition writes a single block,
+    but an acquisition that also stores centroids (MSPeak.bin) writes a profile
+    block *and* a centroid block, making the record larger.
+    :obj:`read_complextype` reads only the first block, so reading records
+    back-to-back would mis-parse the trailing block(s) as the next record.
+
+    To stay aligned we read each record at the true record stride and skip to
+    the next. The stride is ``scalar + n * block`` for some block count ``n``;
+    it is taken from the MSTS.xml scan count when that is consistent, otherwise
+    inferred as the value of ``n`` that tiles the record region exactly. The
+    first block of each record is the profile spectrum, which is what
+    :obj:`parse_msdata` consumes. Only when no stride tiles the region (a record
+    truncated mid-write) do we fall back to reading single-block records to EOF.
 
     Args:
         msscan_path (str): Path to MSScan.bin.
         complextypes_dict (dict): Output of :obj:`parse_scan_xsd`.
+        num_records (int, optional): Scan count from MSTS.xml (:obj:`count_scans`),
+            used as a hint. May be None (OpenLab result folders omit MSTS.xml)
+            or stale (interrupted acquisitions); the stride is validated against
+            the file geometry either way.
 
     Returns:
         List of dictionaries, one per retention time, each mapping the
@@ -487,15 +611,68 @@ def read_scan_records(msscan_path, complextypes_dict):
 
     """
     file_size = os.path.getsize(msscan_path)
+    block = type_size(complextypes_dict, "SpectrumParamsType")
+    scalar = type_size(complextypes_dict, "ScanRecordType") - block
     records = []
     with open(msscan_path, 'rb') as f:
         f.seek(0x58)  # offset to the uint32 pointer at the start of records
-        f.seek(struct.unpack('<I', f.read(4))[0])
-        while f.tell() < file_size:
-            # "ScanRecordType" is always the name of the root "complex" type.
-            records.append(
-                read_complextype(f, complextypes_dict, "ScanRecordType"))
+        rec_start = struct.unpack('<I', f.read(4))[0]
+        body = file_size - rec_start
+
+        candidates = [scalar + n * block
+                      for n in range(1, _MAX_SPECTRUM_BLOCKS + 1)]
+        stride = None
+        # Trust the MSTS scan count when it implies a structurally valid stride.
+        if num_records and num_records > 0 and body % num_records == 0:
+            hinted = body // num_records
+            if hinted in candidates:
+                stride = hinted
+        # Otherwise infer it: the record size must tile the region exactly. If
+        # several block counts do, prefer the scan count nearest MSTS (a stale
+        # MSTS is still in the right range), else the fewest blocks.
+        if stride is None:
+            divisors = [s for s in candidates if body % s == 0]
+            if divisors:
+                stride = min(divisors, key=lambda s: (
+                    abs(body // s - num_records) if num_records else s))
+
+        if stride is not None:
+            for i in range(body // stride):
+                f.seek(rec_start + i * stride)
+                records.append(
+                    read_complextype(f, complextypes_dict, "ScanRecordType"))
+        else:
+            # No stride tiles the region (e.g. truncated mid-record): best-effort
+            # single-block read to EOF.
+            f.seek(rec_start)
+            while f.tell() < file_size:
+                records.append(
+                    read_complextype(f, complextypes_dict, "ScanRecordType"))
     return records
+
+
+def count_scans(acqdata_path):
+    """
+    Returns the total scan count from MSTS.xml, or None if MSTS.xml is absent.
+
+    MSTS.xml lists the number of scans per acquisition time segment
+    (``<NumOfScans>``); the total is their sum. Agilent OpenLab .rslt/.sirslt
+    result folders omit MSTS.xml, in which case :obj:`read_scan_records` infers
+    the scan count from the record geometry instead.
+
+    Args:
+        acqdata_path (str): Path to the AcqData subdirectory.
+
+    Returns:
+        Total scan count (int), or None if MSTS.xml does not exist.
+
+    """
+    msts_path = os.path.join(acqdata_path, "MSTS.xml")
+    if not os.path.isfile(msts_path):
+        return None
+    root = etree.parse(msts_path).getroot()
+    counts = [int(el.text) for el in root.iter("NumOfScans") if el.text]
+    return sum(counts) if counts else None
 
 
 def read_complextype(f, complextypes_dict, name):
