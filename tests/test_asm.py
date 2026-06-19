@@ -11,7 +11,10 @@ import json
 import pytest
 
 import rainbow as rb
-from rainbow import asm
+
+
+_SPECTRUM_KEY = "three-dimensional ultraviolet spectrum data cube"
+_CHROM_KEY = "chromatogram data cube"
 
 
 @pytest.fixture
@@ -19,9 +22,26 @@ def teal():
     return rb.read("tests/inputs/teal.dx")
 
 
+def _measurements(document):
+    return (document["liquid chromatography aggregate document"]
+            ["liquid chromatography document"][0]
+            ["measurement aggregate document"]["measurement document"])
+
+
+def _cube(measurement):
+    for key in (_CHROM_KEY, _SPECTRUM_KEY):
+        if key in measurement:
+            return measurement[key]
+    raise KeyError("measurement has no data cube")
+
+
+def _by_label(document):
+    return {_cube(m)["label"]: m for m in _measurements(document)}
+
+
 def test_to_asm_is_json_serializable(teal):
     document = teal.to_asm()
-    # Round-trips through JSON without error (no numpy scalars left behind).
+    # Round-trips through JSON (no numpy scalars or arrays left behind).
     assert json.loads(json.dumps(document)) == document
 
 
@@ -32,37 +52,36 @@ def test_to_asm_top_level(teal):
     assert "device system document" in aggregate
     lc_documents = aggregate["liquid chromatography document"]
     assert len(lc_documents) == 1
-    # analyst comes from the manifest operator.
     assert lc_documents[0]["analyst"] == "SYSTEM (SYSTEM)"
 
 
-def test_one_measurement_per_single_wavelength_channel(teal):
+def test_measurements_cover_all_uv_files(teal):
+    # teal has a DAD spectrum and two single-wavelength channels; with spectra
+    # on (the default) all three become measurements.
     document = teal.to_asm()
-    measurements = (document["liquid chromatography aggregate document"]
-                    ["liquid chromatography document"][0]
-                    ["measurement aggregate document"]["measurement document"])
-    # teal has a DAD spectrum (excluded) and two single-wavelength channels.
-    labels = sorted(m["chromatogram data cube"]["label"] for m in measurements)
-    assert labels == ["DAD1A.CH", "DAD1H.CH"]
+    assert sorted(_by_label(document)) == ["DAD1A.CH", "DAD1H.CH", "DAD1I.UV"]
+
+
+def test_spectra_off_excludes_the_spectrum(teal):
+    document = teal.to_asm(spectra=False)
+    labels = _by_label(document)
+    assert sorted(labels) == ["DAD1A.CH", "DAD1H.CH"]
+    assert all(_SPECTRUM_KEY not in m for m in _measurements(document))
 
 
 def test_chromatogram_cube_structure_and_data(teal):
     document = teal.to_asm()
-    measurements = (document["liquid chromatography aggregate document"]
-                    ["liquid chromatography document"][0]
-                    ["measurement aggregate document"]["measurement document"])
-    by_label = {m["chromatogram data cube"]["label"]: m for m in measurements}
-
-    measurement = by_label["DAD1A.CH"]
+    measurement = _by_label(document)["DAD1A.CH"]
     datafile = teal.get_file("DAD1A.CH")
 
-    cube = measurement["chromatogram data cube"]
+    cube = measurement[_CHROM_KEY]
     structure = cube["cube-structure"]
-    assert structure["dimensions"][0]["concept"] == "retention time"
-    assert structure["dimensions"][0]["unit"] == "s"
+    assert structure["dimensions"] == [
+        {"concept": "retention time", "unit": "s", "@componentDatatype": "double"}]
     assert structure["measures"][0]["concept"] == "absorbance"
 
-    times, absorbance = cube["data"]["dimensions"][0], cube["data"]["measures"][0]
+    times = cube["data"]["dimensions"][0]
+    absorbance = cube["data"]["measures"][0]
     assert len(times) == datafile.xlabels.size
     assert len(absorbance) == datafile.data.shape[0]
     # Retention time is converted from minutes to seconds.
@@ -70,27 +89,42 @@ def test_chromatogram_cube_structure_and_data(teal):
     assert absorbance[0] == pytest.approx(float(datafile.data[0, 0]))
 
 
-def test_detector_wavelength_setting(teal):
+def test_spectrum_cube_structure_and_data(teal):
     document = teal.to_asm()
-    measurements = (document["liquid chromatography aggregate document"]
-                    ["liquid chromatography document"][0]
-                    ["measurement aggregate document"]["measurement document"])
-    by_label = {m["chromatogram data cube"]["label"]: m for m in measurements}
+    measurement = _by_label(document)["DAD1I.UV"]
+    datafile = teal.get_file("DAD1I.UV")
+    rows, cols = datafile.data.shape
 
-    control = (by_label["DAD1A.CH"]["device control aggregate document"]
-               ["device control document"][0])
-    assert control["detector wavelength setting"] == {"value": 210.0, "unit": "nm"}
-    assert by_label["DAD1H.CH"]["device control aggregate document"][
-        "device control document"][0]["detector wavelength setting"] == {
-        "value": 330.0, "unit": "nm"}
+    cube = measurement[_SPECTRUM_KEY]
+    dims = cube["cube-structure"]["dimensions"]
+    assert [d["concept"] for d in dims] == ["retention time", "wavelength"]
+    assert [d["unit"] for d in dims] == ["s", "nm"]
+    assert cube["cube-structure"]["measures"][0]["concept"] == "absorbance"
+
+    data = cube["data"]
+    # Two dimension arrays (times, wavelengths) and one flattened measure grid.
+    assert len(data["dimensions"][0]) == rows
+    assert len(data["dimensions"][1]) == cols
+    assert data["dimensions"][1] == datafile.ylabels.astype(float).tolist()
+    flat = data["measures"][0]
+    assert len(flat) == rows * cols
+    # Flattened with wavelength varying fastest (C order): index r*cols + c.
+    assert flat[0] == pytest.approx(float(datafile.data[0, 0]))
+    assert flat[1] == pytest.approx(float(datafile.data[0, 1]))
+    assert flat[cols] == pytest.approx(float(datafile.data[1, 0]))
+
+
+def test_detector_wavelength_setting(teal):
+    by_label = _by_label(teal.to_asm())
+    for label, expected in (("DAD1A.CH", 210.0), ("DAD1H.CH", 330.0)):
+        control = (by_label[label]["device control aggregate document"]
+                   ["device control document"][0])
+        assert control["detector wavelength setting"] == {
+            "value": expected, "unit": "nm"}
 
 
 def test_sample_and_time_from_metadata(teal):
-    document = teal.to_asm()
-    measurement = (document["liquid chromatography aggregate document"]
-                   ["liquid chromatography document"][0]
-                   ["measurement aggregate document"]
-                   ["measurement document"][0])
+    measurement = _measurements(teal.to_asm())[0]
     # teal is a standby flush, so the sample name is empty -> default.
     assert measurement["sample document"]["sample identifier"] == "unknown"
     assert measurement["measurement time"] == teal.metadata["date"]
@@ -99,5 +133,4 @@ def test_sample_and_time_from_metadata(teal):
 def test_export_asm_writes_file(teal, tmp_path):
     out = tmp_path / "teal.asm.json"
     teal.export_asm(str(out))
-    written = json.loads(out.read_text())
-    assert written == teal.to_asm()
+    assert json.loads(out.read_text()) == teal.to_asm()

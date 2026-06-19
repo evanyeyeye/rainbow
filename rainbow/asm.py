@@ -9,15 +9,20 @@ This module builds an ASM liquid-chromatography document from a parsed
 DataDirectory. The mapping is direct, because rainbow's data model already is
 an ASM data cube:
 
-    DataFile.xlabels  ->  cube dimension "retention time" (converted to s)
-    DataFile.data     ->  cube measure   "absorbance"
+    single-wavelength UV channel  ->  chromatogram data cube
+        DataFile.xlabels  ->  dimension "retention time" (minutes -> s)
+        DataFile.data     ->  measure   "absorbance"
+
+    multi-wavelength DAD spectrum ->  three-dimensional UV spectrum data cube
+        DataFile.xlabels  ->  dimension "retention time" (minutes -> s)
+        DataFile.ylabels  ->  dimension "wavelength" (nm)
+        DataFile.data     ->  measure   "absorbance" (the flattened grid)
+
     directory/file metadata  ->  the surrounding measurement envelope
 
-This is a first, deliberately small cut. It emits a ``chromatogram data cube``
-for each single-wavelength UV channel; the multi-wavelength DAD spectrum (a
-3D UV spectrum cube) and strict JSON-Schema validation are not done here yet.
-The controlled-vocabulary terms and manifest below are reasonable but are not
-yet pinned against the published schema.
+This covers UV detectors from a ``.dx`` archive. Strict JSON-Schema validation
+against the published schema is a separate step, so the controlled-vocabulary
+terms and the manifest below, while drawn from the schema, are not yet pinned.
 
 Target schema:
 http://purl.allotrope.org/json-schemas/adm/liquid-chromatography/
@@ -33,26 +38,33 @@ _MANIFEST = ("http://purl.allotrope.org/manifests/"
 _SECONDS_PER_MINUTE = 60.0
 
 
-def to_asm(datadir):
+def to_asm(datadir, spectra=True):
     """
     Builds an ASM liquid-chromatography document from a DataDirectory.
 
-    Each single-wavelength UV channel becomes one measurement carrying a
-    chromatogram data cube. Returns a plain ``dict`` ready for ``json.dump``.
+    Each single-wavelength UV channel becomes a measurement carrying a
+    chromatogram data cube. Each multi-wavelength DAD spectrum becomes a
+    three-dimensional UV spectrum data cube unless ``spectra`` is False.
+    Returns a plain ``dict`` ready for ``json.dump``.
 
     Args:
         datadir (DataDirectory): A parsed directory (e.g. from ``rb.read``).
+        spectra (bool, optional): Include multi-wavelength DAD spectra as 3D
+            UV spectrum cubes. On by default.
 
     Returns:
         dict: The ASM document.
 
     """
     metadata = datadir.metadata
-    measurements = [
-        _chromatogram_measurement(datafile, metadata)
-        for datafile in datadir.datafiles
-        if datafile.detector == 'UV' and datafile.data.shape[1] == 1
-    ]
+    measurements = []
+    for datafile in datadir.datafiles:
+        if datafile.detector != 'UV':
+            continue
+        if datafile.data.shape[1] == 1:
+            measurements.append(_chromatogram_measurement(datafile, metadata))
+        elif spectra:
+            measurements.append(_spectrum_measurement(datafile, metadata))
     return {
         "$asm.manifest": _MANIFEST,
         "liquid chromatography aggregate document": {
@@ -69,9 +81,10 @@ def to_asm(datadir):
     }
 
 
-def to_asm_str(datadir, indent=2):
+def to_asm_str(datadir, spectra=True, indent=2):
     """Returns the ASM document as a JSON string."""
-    return json.dumps(to_asm(datadir), indent=indent, ensure_ascii=False)
+    return json.dumps(
+        to_asm(datadir, spectra), indent=indent, ensure_ascii=False)
 
 
 def _device_system(metadata):
@@ -84,13 +97,8 @@ def _device_system(metadata):
     }
 
 
-def _chromatogram_measurement(datafile, metadata):
-    """Builds one measurement document for a single-wavelength channel."""
-    control = {"device type": "ultraviolet absorbance detector"}
-    wavelength = datafile.metadata.get("wavelength")
-    if wavelength is not None:
-        control["detector wavelength setting"] = _quantity(wavelength, "nm")
-
+def _measurement(datafile, metadata, control, cube_key, cube):
+    """Wraps a data cube in the shared measurement envelope."""
     measurement = {
         "measurement identifier": datafile.name,
         "sample document": {
@@ -100,33 +108,80 @@ def _chromatogram_measurement(datafile, metadata):
             "device control document": [control],
         },
         "chromatography column document": {},
-        "chromatogram data cube": _chromatogram_cube(datafile),
+        cube_key: cube,
     }
     if "date" in metadata:
         measurement["measurement time"] = metadata["date"]
     return measurement
 
 
+def _chromatogram_measurement(datafile, metadata):
+    """A measurement for a single-wavelength UV channel."""
+    control = {"device type": "ultraviolet absorbance detector"}
+    wavelength = datafile.metadata.get("wavelength")
+    if wavelength is not None:
+        control["detector wavelength setting"] = _quantity(wavelength, "nm")
+    return _measurement(
+        datafile, metadata, control,
+        "chromatogram data cube", _chromatogram_cube(datafile))
+
+
+def _spectrum_measurement(datafile, metadata):
+    """A measurement for a multi-wavelength DAD spectrum."""
+    control = {"device type": "ultraviolet absorbance detector"}
+    return _measurement(
+        datafile, metadata, control,
+        "three-dimensional ultraviolet spectrum data cube",
+        _spectrum_cube(datafile))
+
+
 def _chromatogram_cube(datafile):
-    """Lays a single-wavelength trace into an ASM data cube."""
-    times_s = [float(t) * _SECONDS_PER_MINUTE for t in datafile.xlabels]
-    absorbance = [float(v) for v in datafile.data[:, 0]]
+    """Lays a single-wavelength trace into a 1D (retention time) data cube."""
+    unit = datafile.metadata.get("unit", "mAU")
+    return {
+        "label": datafile.name,
+        "cube-structure": {
+            "dimensions": [_component("retention time", "s")],
+            "measures": [_component("absorbance", unit)],
+        },
+        "data": {
+            "dimensions": [_retention_seconds(datafile)],
+            "measures": [datafile.data[:, 0].tolist()],
+        },
+    }
+
+
+def _spectrum_cube(datafile):
+    """
+    Lays a DAD spectrum into a 2D (retention time x wavelength) data cube.
+
+    ASM measure arrays are flat, so the (retention time, wavelength) grid is
+    flattened with wavelength varying fastest, which is numpy's C order.
+
+    """
     unit = datafile.metadata.get("unit", "mAU")
     return {
         "label": datafile.name,
         "cube-structure": {
             "dimensions": [
                 _component("retention time", "s"),
+                _component("wavelength", "nm"),
             ],
-            "measures": [
-                _component("absorbance", unit),
-            ],
+            "measures": [_component("absorbance", unit)],
         },
         "data": {
-            "dimensions": [times_s],
-            "measures": [absorbance],
+            "dimensions": [
+                _retention_seconds(datafile),
+                datafile.ylabels.astype(float).tolist(),
+            ],
+            "measures": [datafile.data.flatten().tolist()],
         },
     }
+
+
+def _retention_seconds(datafile):
+    """Retention times in seconds (rainbow stores minutes)."""
+    return (datafile.xlabels * _SECONDS_PER_MINUTE).tolist()
 
 
 def _component(concept, unit):

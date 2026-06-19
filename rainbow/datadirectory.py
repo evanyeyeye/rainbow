@@ -142,29 +142,35 @@ class DataDirectory:
         """
         self.get_file(filename).plot(label, **kwargs)
 
-    def to_asm(self):
+    def to_asm(self, spectra=True):
         """
         Returns an Allotrope Simple Model (ASM) document for this directory.
 
         ASM is an open, JSON-based standard for analytical data. See
         :mod:`rainbow.asm` for the scope of the current mapping.
 
+        Args:
+            spectra (bool, optional): Include multi-wavelength DAD spectra as
+                3D UV spectrum cubes. On by default.
+
         Returns:
             dict: The ASM document.
 
         """
         from rainbow import asm
-        return asm.to_asm(self)
+        return asm.to_asm(self, spectra)
 
-    def export_asm(self, filename, indent=2):
+    def export_asm(self, filename, spectra=True, indent=2):
         """
         Writes an Allotrope Simple Model (ASM) JSON document for this directory.
 
         Args:
             filename (str): Filename for the output JSON.
+            spectra (bool, optional): Include multi-wavelength DAD spectra as
+                3D UV spectrum cubes. On by default.
             indent (int, optional): Indentation for the output JSON.
 
         """
         from rainbow import asm
         with open(filename, 'w') as f:
-            f.write(asm.to_asm_str(self, indent))
+            f.write(asm.to_asm_str(self, spectra, indent))
