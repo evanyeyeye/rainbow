@@ -4,6 +4,7 @@ Methods for parsing Agilent Chemstation files.
 """
 
 import os
+import re
 import struct
 from collections import Counter
 import numpy as np
@@ -26,6 +27,37 @@ except ImportError:
 # Lookup table for the .ms intensity scale 8 ** (int_enc >> 14); the 2-bit
 # head field is 0..3, so indexing this beats np.power over every pair.
 _MS_INT_POW8 = np.array([1, 8, 64, 512], dtype=np.uint32)
+
+# Single-wavelength DAD/MWD/VWD channels encode their optics in the signal
+# description, e.g. "DAD1B, Sig=280.0,4.0  Ref=off" or
+# "DAD1A,Sig=210.0,4.0  Ref=360.0,100.0": the signal wavelength and bandwidth,
+# then (optionally) the reference wavelength and bandwidth, all in nm. Spectra
+# and other detectors have no Sig= clause. Shared with the OpenLab .dx parser.
+_SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
+_REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
+
+
+def parse_optics(description):
+    """
+    Extracts wavelength settings from a signal description, if present.
+
+    Returns a dict with any of ``wavelength``, ``bandwidth``,
+    ``reference_wavelength``, and ``reference_bandwidth`` (in nm), parsed from
+    the ``Sig=``/``Ref=`` clause of a single-wavelength channel. Descriptions
+    without such a clause (spectra, FID, telemetry, ``Ref=off``) yield an
+    empty or reference-free dict.
+
+    """
+    optics = {}
+    sig = _SIG_RE.search(description)
+    if sig:
+        optics['wavelength'] = float(sig.group(1))
+        optics['bandwidth'] = float(sig.group(2))
+    ref = _REF_RE.search(description)
+    if ref:
+        optics['reference_wavelength'] = float(ref.group(1))
+        optics['reference_bandwidth'] = float(ref.group(2))
+    return optics
 
 """
 MAIN PARSING METHODS
@@ -291,6 +323,8 @@ def parse_ch_other(path, head):
     if '=' in signal:
         ylabel = signal.split('=')[1].split(',')[0]
         detector = 'UV'
+        # Surface the wavelength settings (shared with the .dx parser).
+        metadata.update(parse_optics(signal))
     elif 'ADC' in signal:
         detector = 'ELSD' if 'CHANNEL' in signal else 'CAD'
     ylabels = np.array([ylabel])
@@ -906,6 +940,12 @@ def parse_metadata(path, datafiles):
     metadata = {}
     metadata['vendor'] = "Agilent"
 
+    dircontents = set(os.listdir(path))
+
+    # Read the sample name and operator from the directory's structured
+    # metadata files (reliable, unlike guessing header byte offsets).
+    metadata.update(read_sample_metadata(path, dircontents))
+
     # Scan each DataFile for the date and vial position.
     # These may be stored in multiple files but the values are constant.
     # In MS files, the time may be saved in a different format.
@@ -920,8 +960,7 @@ def parse_metadata(path, datafiles):
     if 'date' in metadata and 'vialpos' in metadata:
         return metadata
 
-    # Scan certain files for the vial position. 
-    dircontents = set(os.listdir(path))
+    # Scan certain files for the vial position.
 
     # sequence.acam_
     if "sequence.acam_" in dircontents:
@@ -987,6 +1026,60 @@ def parse_metadata(path, datafiles):
                 break
 
     return metadata
+
+
+def read_sample_metadata(path, dircontents):
+    """
+    Reads the sample name and operator from a .D directory's metadata files.
+
+    Classic Chemstation runs store these in ``SAMPLE.XML`` (UTF-16);
+    MassHunter runs store them as ``Field`` entries in
+    ``AcqData/sample_info.xml``. Both are optional and best-effort: a missing
+    file, an empty value, or a parse error simply yields nothing.
+
+    Args:
+        path (str): Path to the .D directory.
+        dircontents (set): Names in the directory (from ``os.listdir``).
+
+    Returns:
+        Dictionary with any of ``sample`` and ``operator``.
+
+    """
+    # Case-insensitive lookup, since filename case varies across platforms.
+    actual = {name.lower(): name for name in dircontents}
+    found = {}
+
+    # Classic Chemstation: SAMPLE.XML -> <Sample><Name>...</Name>.
+    if 'sample.xml' in actual:
+        try:
+            root = etree.parse(
+                os.path.join(path, actual['sample.xml'])).getroot()
+            name = root.findtext('Name')
+            if name and name.strip():
+                found['sample'] = name.strip()
+        except Exception:
+            pass
+
+    # MassHunter: AcqData/sample_info.xml -> <Field><Name>../<Value>../>.
+    if 'acqdata' in actual:
+        info_path = os.path.join(path, actual['acqdata'], 'sample_info.xml')
+        if os.path.exists(info_path):
+            try:
+                root = etree.parse(info_path).getroot()
+                fields = {}
+                for field in root.findall('.//Field'):
+                    name = field.findtext('Name')
+                    value = field.findtext('Value')
+                    if name and value and value.strip():
+                        fields[name.strip()] = value.strip()
+                if 'sample' not in found and fields.get('Sample Name'):
+                    found['sample'] = fields['Sample Name']
+                if fields.get('OperatorName'):
+                    found['operator'] = fields['OperatorName']
+            except Exception:
+                pass
+
+    return found
 
 
 def get_xml_vialnum(path):

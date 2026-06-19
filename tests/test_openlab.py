@@ -15,6 +15,7 @@ import zipfile
 import pytest
 
 from rainbow.agilent import openlab
+from rainbow.agilent import chemstation
 
 
 def _archive(acmd_bytes):
@@ -58,7 +59,7 @@ def _signal(trace_id, description, device='DAD', encoding='Signal179'):
 # --- _parse_optics ---------------------------------------------------------
 
 def test_parse_optics_full():
-    assert openlab._parse_optics("DAD1A,Sig=210.0,4.0  Ref=360.0,100.0") == {
+    assert chemstation.parse_optics("DAD1A,Sig=210.0,4.0  Ref=360.0,100.0") == {
         'wavelength': 210.0,
         'bandwidth': 4.0,
         'reference_wavelength': 360.0,
@@ -69,7 +70,7 @@ def test_parse_optics_full():
 def test_parse_optics_integer_values_and_no_reference():
     # Integer-style values still parse as floats; "Ref=off" has no numbers,
     # so the reference fields are omitted rather than guessed.
-    assert openlab._parse_optics("VWD1A,Sig=254,4  Ref=off") == {
+    assert chemstation.parse_optics("VWD1A,Sig=254,4  Ref=off") == {
         'wavelength': 254.0,
         'bandwidth': 4.0,
     }
@@ -82,7 +83,7 @@ def test_parse_optics_integer_values_and_no_reference():
     "",                      # no description at all
 ])
 def test_parse_optics_absent(description):
-    assert openlab._parse_optics(description) == {}
+    assert chemstation.parse_optics(description) == {}
 
 
 # --- _parse_manifest: run-level metadata -----------------------------------

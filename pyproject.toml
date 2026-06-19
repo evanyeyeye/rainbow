@@ -24,6 +24,10 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+# For the opt-in ASM schema-conformance test (see tests/test_asm_schema.py).
+# jsonschema >= 4.18 pulls in the `referencing` registry used to resolve the
+# Allotrope schema's cross-references.
+validate = ["jsonschema>=4.18"]
 
 [project.urls]
 Repository = "https://github.com/evanyeyeye/rainbow"
