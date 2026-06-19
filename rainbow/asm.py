@@ -35,6 +35,13 @@ import json
 _MANIFEST = ("http://purl.allotrope.org/manifests/"
              "liquid-chromatography/REC/2023/09")
 
+# The controlled-vocabulary terms below are verified to be real classes in the
+# Allotrope Foundation Ontology (AFO); see tests/test_asm_ontology.py:
+#   concepts:     retention time AFR_0001089, wavelength AFR_0001159,
+#                 absorbance AFR_0001157
+#   device types: liquid chromatograph AFE_0000808,
+#                 ultraviolet detector AFE_0000711
+
 _SECONDS_PER_MINUTE = 60.0
 
 
@@ -92,7 +99,7 @@ def _device_system(metadata):
     return {
         "asset management identifier": metadata.get("instrument", "unknown"),
         "device document": [
-            {"device type": "liquid chromatography device"},
+            {"device type": "liquid chromatograph"},
         ],
     }
 
@@ -117,7 +124,7 @@ def _measurement(datafile, metadata, control, cube_key, cube):
 
 def _chromatogram_measurement(datafile, metadata):
     """A measurement for a single-wavelength UV channel."""
-    control = {"device type": "ultraviolet absorbance detector"}
+    control = {"device type": "ultraviolet detector"}
     wavelength = datafile.metadata.get("wavelength")
     if wavelength is not None:
         control["detector wavelength setting"] = _quantity(wavelength, "nm")
@@ -128,7 +135,7 @@ def _chromatogram_measurement(datafile, metadata):
 
 def _spectrum_measurement(datafile, metadata):
     """A measurement for a multi-wavelength DAD spectrum."""
-    control = {"device type": "ultraviolet absorbance detector"}
+    control = {"device type": "ultraviolet detector"}
     return _measurement(
         datafile, metadata, control,
         "three-dimensional ultraviolet spectrum data cube",
