@@ -136,8 +136,35 @@ class DataDirectory:
         Shows a basic matplotlib plot for the specified DataFile and :code:`label`.
 
         Args:
-            filename (str): DataFile name. 
-            label (int/float): Ylabel to be plotted. 
-            **kwargs (optional): Keyword arguments for matplotlib. 
+            filename (str): DataFile name.
+            label (int/float): Ylabel to be plotted.
+            **kwargs (optional): Keyword arguments for matplotlib.
         """
         self.get_file(filename).plot(label, **kwargs)
+
+    def to_asm(self):
+        """
+        Returns an Allotrope Simple Model (ASM) document for this directory.
+
+        ASM is an open, JSON-based standard for analytical data. See
+        :mod:`rainbow.asm` for the scope of the current mapping.
+
+        Returns:
+            dict: The ASM document.
+
+        """
+        from rainbow import asm
+        return asm.to_asm(self)
+
+    def export_asm(self, filename, indent=2):
+        """
+        Writes an Allotrope Simple Model (ASM) JSON document for this directory.
+
+        Args:
+            filename (str): Filename for the output JSON.
+            indent (int, optional): Indentation for the output JSON.
+
+        """
+        from rainbow import asm
+        with open(filename, 'w') as f:
+            f.write(asm.to_asm_str(self, indent))
