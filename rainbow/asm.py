@@ -44,6 +44,10 @@ _MANIFEST = ("http://purl.allotrope.org/manifests/"
 
 _SECONDS_PER_MINUTE = 60.0
 
+# The two data-cube kinds rainbow reads and writes.
+_CHROMATOGRAM_CUBE = "chromatogram data cube"
+_SPECTRUM_CUBE = "three-dimensional ultraviolet spectrum data cube"
+
 
 def to_asm(datadir, spectra=True):
     """
@@ -130,7 +134,7 @@ def _chromatogram_measurement(datafile, metadata):
         control["detector wavelength setting"] = _quantity(wavelength, "nm")
     return _measurement(
         datafile, metadata, control,
-        "chromatogram data cube", _chromatogram_cube(datafile))
+        _CHROMATOGRAM_CUBE, _chromatogram_cube(datafile))
 
 
 def _spectrum_measurement(datafile, metadata):
@@ -138,8 +142,7 @@ def _spectrum_measurement(datafile, metadata):
     control = {"device type": "ultraviolet detector"}
     return _measurement(
         datafile, metadata, control,
-        "three-dimensional ultraviolet spectrum data cube",
-        _spectrum_cube(datafile))
+        _SPECTRUM_CUBE, _spectrum_cube(datafile))
 
 
 def _chromatogram_cube(datafile):
@@ -199,3 +202,79 @@ def _component(concept, unit):
 def _quantity(value, unit):
     """An ASM quantity value."""
     return {"value": float(value), "unit": unit}
+
+
+def from_asm(document, name="asm"):
+    """
+    Reconstructs a DataDirectory from an ASM liquid-chromatography document.
+
+    The inverse of :func:`to_asm`: each measurement's data cube becomes a
+    DataFile (retention time back from seconds to minutes, the measure back to
+    the data array) and the shared envelope becomes directory metadata. Only
+    the UV cubes that :func:`to_asm` writes are reconstructed.
+
+    Args:
+        document (dict): An ASM document (e.g. from ``json.load``).
+        name (str, optional): Name for the reconstructed DataDirectory.
+
+    Returns:
+        DataDirectory.
+
+    """
+    from rainbow.datadirectory import DataDirectory
+
+    aggregate = document["liquid chromatography aggregate document"]
+    metadata = {}
+    datafiles = []
+    for lc_document in aggregate["liquid chromatography document"]:
+        analyst = lc_document.get("analyst")
+        if analyst and analyst != "unknown":
+            metadata.setdefault("operator", analyst)
+        measurements = (lc_document["measurement aggregate document"]
+                        ["measurement document"])
+        for measurement in measurements:
+            # Lift the shared envelope fields up to the directory level.
+            sample = measurement.get(
+                "sample document", {}).get("sample identifier")
+            if sample and sample != "unknown":
+                metadata.setdefault("sample", sample)
+            if measurement.get("measurement time"):
+                metadata.setdefault("date", measurement["measurement time"])
+            datafiles.append(_datafile_from_measurement(measurement))
+
+    return DataDirectory(name, datafiles, metadata)
+
+
+def _datafile_from_measurement(measurement):
+    """Reconstructs one DataFile from an ASM measurement document."""
+    import numpy as np
+    from rainbow.datafile import DataFile
+
+    name = measurement.get("measurement identifier", "trace")
+    file_metadata = {}
+
+    control = (measurement.get("device control aggregate document", {})
+               .get("device control document", [{}])[0])
+    setting = control.get("detector wavelength setting")
+    wavelength = setting["value"] if setting else None
+
+    if _SPECTRUM_CUBE in measurement:
+        cube = measurement[_SPECTRUM_CUBE]["data"]
+        times, wavelengths = cube["dimensions"][0], cube["dimensions"][1]
+        xlabels = np.array(times, dtype=float) / _SECONDS_PER_MINUTE
+        ylabels = np.array(wavelengths, dtype=float)
+        # Un-flatten the grid (wavelength varied fastest, i.e. C order).
+        data = np.array(cube["measures"][0], dtype=float).reshape(
+            len(times), len(wavelengths))
+    else:
+        cube = measurement[_CHROMATOGRAM_CUBE]["data"]
+        xlabels = np.array(cube["dimensions"][0], dtype=float) \
+            / _SECONDS_PER_MINUTE
+        data = np.array(cube["measures"][0], dtype=float).reshape(-1, 1)
+        if wavelength is not None:
+            ylabels = np.array([wavelength])
+            file_metadata["wavelength"] = wavelength
+        else:
+            ylabels = np.array([''])
+
+    return DataFile(name, 'UV', xlabels, ylabels, data, file_metadata)

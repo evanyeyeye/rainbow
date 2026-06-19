@@ -3,6 +3,7 @@ import re
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 from rainbow import agilent, waters
+from rainbow.asm import from_asm
 
 
 # Vendor parsers that rainbow can dispatch to.
