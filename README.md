@@ -55,6 +55,23 @@ The raw UV data is contained in numpy arrays that are attributes of `datafile`. 
 
 There is a [tutorial](https://rainbow-api.readthedocs.io/en/latest/tutorial.html) available. There are also example [snippets](https://rainbow-api.readthedocs.io/en/latest/examples.html) for basic tasks. Or just check out the full [API](https://rainbow-api.readthedocs.io/en/latest/api.html). 
 
+## Open formats
+
+*rainbow* can export parsed data to, and read it back from, the
+[Allotrope Simple Model](https://www.allotrope.org/asm) (ASM), an open
+JSON-based standard for analytical data:
+
+```python
+import json
+
+datadir = rb.read("mydata.D")
+datadir.export_asm("mydata.asm.json")                       # rainbow -> ASM
+restored = rb.from_asm(json.load(open("mydata.asm.json")))  # ASM -> rainbow
+```
+
+See the [ASM Export](https://rainbow-api.readthedocs.io/en/latest/asm.html) page
+in the documentation.
+
 ## Performance
 
 A few inherently-sequential decode loops are sped up by optional compiled
