@@ -134,3 +134,18 @@ def test_export_asm_writes_file(teal, tmp_path):
     out = tmp_path / "teal.asm.json"
     teal.export_asm(str(out))
     assert json.loads(out.read_text()) == teal.to_asm()
+
+
+def test_to_asm_on_chemstation_d_directory():
+    # The same converter emits ASM for a classic .D directory, not just .dx.
+    document = rb.read("tests/inputs/red.D").to_asm()
+    by_label = _by_label(document)
+    # The CAD channel is excluded; the UV spectrum and two channels remain.
+    assert sorted(by_label) == ["DAD1.UV", "DAD1B.ch", "DAD1C.ch"]
+    # Sample name and per-channel wavelength come from the .D metadata.
+    channel = by_label["DAD1B.ch"]
+    assert channel["sample document"]["sample identifier"] == "usp"
+    control = (channel["device control aggregate document"]
+               ["device control document"][0])
+    assert control["detector wavelength setting"] == {
+        "value": 280.0, "unit": "nm"}
