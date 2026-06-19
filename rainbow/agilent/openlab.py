@@ -14,6 +14,7 @@ Learn more about this file format :ref:`here <dx>`.
 
 """
 import os
+import re
 import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
@@ -36,6 +37,14 @@ _ACMD_NS = {'a': 'urn:schemas-agilent-com:acmd20'}
 
 # Payload extensions that rainbow knows how to decode.
 _DATA_EXTS = ('.uv', '.ch', '.it')
+
+# Single-wavelength DAD/MWD/VWD channels encode their optics in the signal
+# description, e.g. "DAD1A,Sig=210.0,4.0  Ref=360.0,100.0": the signal
+# wavelength and bandwidth, then (optionally) the reference wavelength and
+# bandwidth, all in nm. Spectra ("DAD1I,DAD: Spectrum") and telemetry traces
+# carry no Sig= clause.
+_SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
+_REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
 
 
 def read(path, prec=0, requested_files=None, telemetry=False):
@@ -161,12 +170,14 @@ def _parse_manifest(archive):
         guid = _text(sig, 'TraceId').lower()
         if not guid:
             continue
-        signals[guid] = {
+        entry = {
             'encoding': _text(sig, 'Encoding'),
             'device': _text(sig, 'DeviceName'),
             'description': _text(sig, 'Description'),
             'unit': _text(sig, 'Units'),
         }
+        entry.update(_parse_optics(entry['description']))
+        signals[guid] = entry
 
     info = root.find('.//a:InjectionInfo', _ACMD_NS)
     if info is not None:
@@ -182,6 +193,27 @@ def _parse_manifest(archive):
         vialpos = _text(info, 'Location')
         if vialpos:
             dir_metadata['vialpos'] = vialpos
+        operator = _text(info, 'RunOperator')
+        if operator:
+            dir_metadata['operator'] = operator
+        seqline = _text(info, 'SequenceLine')
+        if seqline:
+            try:
+                dir_metadata['seqline'] = int(seqline)
+            except ValueError:
+                dir_metadata['seqline'] = seqline
+        # A standby/flush injection reports a volume of 0, which carries no
+        # information; only record a real injection volume.
+        volume = _text(info, 'InjectionVolume')
+        try:
+            volume = float(volume)
+        except ValueError:
+            volume = 0.0
+        if volume:
+            dir_metadata['injection_volume'] = volume
+            units = _text(info, 'InjectionVolumeUnits')
+            if units:
+                dir_metadata['injection_volume_unit'] = units
 
     return dir_metadata, signals
 
@@ -222,6 +254,28 @@ def _name_for(signal, guid, ext, used_names):
     return name
 
 
+def _parse_optics(description):
+    """
+    Extracts wavelength settings from a signal description, if present.
+
+    Returns a dict with any of ``wavelength``, ``bandwidth``,
+    ``reference_wavelength``, and ``reference_bandwidth`` (in nm), parsed from
+    the ``Sig=``/``Ref=`` clause of a single-wavelength channel. Spectra and
+    telemetry traces have no such clause and yield an empty dict.
+
+    """
+    optics = {}
+    sig = _SIG_RE.search(description)
+    if sig:
+        optics['wavelength'] = float(sig.group(1))
+        optics['bandwidth'] = float(sig.group(2))
+    ref = _REF_RE.search(description)
+    if ref:
+        optics['reference_wavelength'] = float(ref.group(1))
+        optics['reference_bandwidth'] = float(ref.group(2))
+    return optics
+
+
 def _file_metadata(signal):
     """Builds per-trace metadata from the manifest."""
     metadata = {}
@@ -229,6 +283,10 @@ def _file_metadata(signal):
         value = signal.get(key)
         if value:
             metadata[key] = value
+    for key in ('wavelength', 'bandwidth',
+                'reference_wavelength', 'reference_bandwidth'):
+        if key in signal:
+            metadata[key] = signal[key]
     return metadata
 
 
