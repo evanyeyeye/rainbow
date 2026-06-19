@@ -19,3 +19,5 @@ rainbow/agilent/_chdelta.c
 /3543_DC/
 /MK-1200_Reduction/
 /mcintosh data/
+# real vendor ASM exports (contain identifying info; never commit raw)
+/ASMs/

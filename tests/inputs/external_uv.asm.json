@@ -1,0 +1,64 @@
+{
+  "$asm.manifest": "http://purl.allotrope.org/manifests/liquid-chromatography/REC/2025/03/liquid-chromatography.manifest",
+  "liquid chromatography aggregate document": {
+    "data system document": {
+      "ASM converter name": "Example Allotrope Export",
+      "software name": "Example CDS",
+      "software version": "0.0"
+    },
+    "device system document": {
+      "device document": [
+        {
+          "device type": "diode array uv detector",
+          "product manufacturer": "Example Co",
+          "model number": "EX-100"
+        }
+      ]
+    },
+    "liquid chromatography document": [
+      {
+        "submitter": "Anonymous",
+        "analyst": "Anonymous",
+        "measurement aggregate document": {
+          "measurement document": [
+            {
+              "measurement identifier": "trace-uv",
+              "measurement time": "2020-01-01T00:00:00+00:00",
+              "chromatography column document": {"product manufacturer": "Example Co"},
+              "device control aggregate document": {
+                "device control document": [
+                  {
+                    "device type": "diode array uv detector",
+                    "equipment serial number": "REDACTED",
+                    "detector wavelength setting": {"value": 254.0, "unit": "nm"}
+                  }
+                ]
+              },
+              "sample document": {
+                "sample identifier": "Sample A",
+                "written name": "Sample A",
+                "sample role type": "unknown sample role",
+                "blank": false
+              },
+              "injection document": {
+                "injection identifier": "1",
+                "injection volume setting": {"value": 1.0, "unit": "uL"}
+              },
+              "chromatogram data cube": {
+                "label": "trace-uv",
+                "cube-structure": {
+                  "dimensions": [{"concept": "retention time", "unit": "s", "@componentDatatype": "double"}],
+                  "measures": [{"concept": "absorbance", "unit": "mAU", "@componentDatatype": "double"}]
+                },
+                "data": {"dimensions": [[0.0, 30.0, 60.0]], "measures": [[0.1, 5.0, 0.2]]}
+              },
+              "processed data aggregate document": {
+                "processed data document": [{"peak list": {"peak": []}}]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
