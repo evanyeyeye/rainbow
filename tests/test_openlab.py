@@ -197,3 +197,23 @@ def test_file_metadata_omits_absent_optics():
     }
     # No optics keys present, so none are invented.
     assert openlab._file_metadata(signal) == signal
+
+
+# --- _classify -------------------------------------------------------------
+
+_SIGNAL = 'Agilent.OpenLab.Rawdata/Signal179'
+_TELEMETRY = 'Agilent.OpenLab.Rawdata/InstrumentTrace179'
+
+
+@pytest.mark.parametrize("device, encoding, unit, expected", [
+    ('DAD', _SIGNAL, 'mAU', 'UV'),
+    ('MWD', _SIGNAL, 'mAU', 'UV'),
+    ('VWD', _SIGNAL, 'mAU', 'UV'),
+    ('FID', _SIGNAL, 'pA', 'FID'),
+    ('RID', _SIGNAL, 'nRIU', 'RID'),
+    ('PMP', _TELEMETRY, 'bar', None),   # telemetry is analog
+    ('XYZ', _SIGNAL, '', None),         # unknown device
+])
+def test_classify(device, encoding, unit, expected):
+    signal = {'device': device, 'encoding': encoding, 'unit': unit}
+    assert openlab._classify(signal) == expected

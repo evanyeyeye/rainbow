@@ -16,7 +16,7 @@ class DataDirectory:
         datafiles (list): DataFile objects with a detector. 
             This does not include miscellaneous analog data.
         detectors (set): String detector names in the DataDirectory.
-            Options: UV, MS, FID, CAD, ELSD.
+            Options: UV, MS, FID, CAD, ELSD, RID.
         by_name (dict): Maps filenames to DataFile objects.
         by_detector (dict): Maps detector names to lists of DataFile objects.
         analog (list): DataFile objects with miscellaneous analog data. 

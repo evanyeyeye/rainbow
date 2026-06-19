@@ -233,6 +233,8 @@ def _classify(signal):
         return 'UV'
     if device.startswith('FID'):
         return 'FID'
+    if device.startswith('RID'):
+        return 'RID'
     return None
 
 
