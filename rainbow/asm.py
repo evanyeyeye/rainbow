@@ -211,7 +211,9 @@ def from_asm(document, name="asm"):
     The inverse of :func:`to_asm`: each measurement's data cube becomes a
     DataFile (retention time back from seconds to minutes, the measure back to
     the data array) and the shared envelope becomes directory metadata. Only
-    the UV cubes that :func:`to_asm` writes are reconstructed.
+    the UV cubes that :func:`to_asm` writes are reconstructed; a measurement
+    carrying another cube kind (e.g. a mass chromatogram) is skipped, so
+    reading a document rainbow did not write is safe.
 
     Args:
         document (dict): An ASM document (e.g. from ``json.load``).
@@ -240,15 +242,26 @@ def from_asm(document, name="asm"):
                 metadata.setdefault("sample", sample)
             if measurement.get("measurement time"):
                 metadata.setdefault("date", measurement["measurement time"])
-            datafiles.append(_datafile_from_measurement(measurement))
+            datafile = _datafile_from_measurement(measurement)
+            if datafile is not None:
+                datafiles.append(datafile)
 
     return DataDirectory(name, datafiles, metadata)
 
 
 def _datafile_from_measurement(measurement):
-    """Reconstructs one DataFile from an ASM measurement document."""
+    """
+    Reconstructs one DataFile from an ASM measurement document.
+
+    Returns None if the measurement carries no cube kind that rainbow knows
+    how to reconstruct (currently the UV chromatogram and spectrum cubes).
+
+    """
     import numpy as np
     from rainbow.datafile import DataFile
+
+    if _SPECTRUM_CUBE not in measurement and _CHROMATOGRAM_CUBE not in measurement:
+        return None
 
     name = measurement.get("measurement identifier", "trace")
     file_metadata = {}

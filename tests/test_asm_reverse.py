@@ -78,6 +78,36 @@ def test_to_asm_from_asm_to_asm_is_stable():
         _all_numbers(redone), _all_numbers(document), rtol=1e-9, atol=1e-9)
 
 
+def test_from_asm_reads_external_uv_document():
+    # A document rainbow did not write (third-party converter, rich envelope
+    # with many extra fields) still reads: the UV chromatogram is reconstructed
+    # and the unfamiliar fields are ignored. Fixture is sanitized/synthetic.
+    with open("tests/inputs/external_uv.asm.json") as f:
+        document = json.load(f)
+    datadir = rb.from_asm(document)
+
+    assert len(datadir.datafiles) == 1
+    datafile = datadir.datafiles[0]
+    assert datafile.detector == 'UV'
+    np.testing.assert_allclose(
+        datafile.xlabels, np.array([0.0, 30.0, 60.0]) / 60.0)
+    np.testing.assert_allclose(datafile.data[:, 0], [0.1, 5.0, 0.2])
+    assert datafile.metadata.get("wavelength") == 254.0
+    assert datadir.metadata.get("sample") == "Sample A"
+
+
+def test_from_asm_skips_mass_chromatogram_keeps_uv():
+    # An LC-MS document mixes a mass chromatogram cube (which rainbow does not
+    # reconstruct) with a UV chromatogram cube. from_asm keeps the UV trace and
+    # skips the MS one rather than crashing.
+    with open("tests/inputs/external_lcms.asm.json") as f:
+        document = json.load(f)
+    datadir = rb.from_asm(document)
+
+    assert [df.name for df in datadir.datafiles] == ["trace-uv"]
+    assert datadir.datafiles[0].detector == 'UV'
+
+
 def _strip_numbers(node):
     """A copy of the structure with all floats/ints replaced by a placeholder."""
     if isinstance(node, dict):
