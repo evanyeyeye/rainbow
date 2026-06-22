@@ -22,8 +22,8 @@ jobs:
       matrix:
         python-version: ['3.8', '3.13']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install (compiles the optional accelerator)
@@ -35,7 +35,7 @@ jobs:
     name: Build wheel + sdist (no publish)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Builds a Linux wheel the same way the release does. cibuildwheel
       # creates a wheelhouse/ dir in the project root, so this catches the
@@ -46,7 +46,7 @@ jobs:
         env:
           CIBW_BUILD: cp312-manylinux_x86_64
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
       - name: Build + check sdist
