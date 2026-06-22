@@ -3,7 +3,7 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [1.2.0] - 2026-06-18
+## [1.2.0] - 2026-06-22
 
 ### Added
 - **Agilent MassHunter ICP-MS support (issue #25).** ICP-MS `.D` directories
