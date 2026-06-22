@@ -10,7 +10,7 @@
 | **Agilent `.D`** | `.uv` | UV spectrum (supports incomplete files) | |
 | | `.ch` | UV, FID, CAD, and ELSD channels | |
 | | `.ms` | MS (supports incomplete files) | |
-| | `MSProfile.bin` | HRMS profile spectrum | `hrms=True` |
+| | `MSProfile.bin` | HRMS and ICP-MS profile spectrum | `hrms=True` |
 | | `MSPeak.bin` | centroid (peak-picked) spectrum | `centroid=True` |
 | **Agilent `.dx`** (OpenLab CDS) | `.UV` | DAD spectrum | |
 | | `.CH` | single-wavelength UV/DAD signals | |
