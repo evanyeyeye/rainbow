@@ -3,7 +3,9 @@
 Agilent MSProfile.bin File Structure
 ====================================
 
-This file format contains Agilent HRMS data.
+This file format contains Agilent HRMS data. This page documents the byte-level
+layout; for how the decoded profile is represented (and why its m/z axis is
+per-scan rather than a single shared axis), see :ref:`hrms-data-model`.
 
 The HRMS data is encoded across several files in a subdirectory named AcqData:
 

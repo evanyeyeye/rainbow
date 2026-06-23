@@ -4,6 +4,9 @@ docs/_autosummary/*
 
 .DS_STORE
 
+# local docs build environment
+.venv-docs/
+
 # build artifacts
 *.egg-info/
 build/

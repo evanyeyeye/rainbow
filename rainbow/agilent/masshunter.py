@@ -4,6 +4,7 @@ Methods for parsing Agilent Masshunter files.
 """
 import os
 import struct
+import warnings
 import numpy as np
 from lxml import etree
 from rainbow import DataFile
@@ -22,8 +23,78 @@ except ImportError:
     _msprofile_fast = None
 
 
+class ProfileDataFile(DataFile):
+    """
+    A high-resolution profile spectrum whose m/z axis is per-scan.
+
+    Unlike a regular :class:`~rainbow.datafile.DataFile`, an HRMS profile has no
+    single m/z axis. Every scan is sampled on the same raw flight-time grid
+    (:attr:`tof`), so a column index is the same physical bin in every scan, but
+    the flight-time-to-m/z calibration drifts from scan to scan. The m/z of a
+    point therefore depends on both the scan and the point. Access a scan's m/z
+    with :meth:`mass_labels` or :meth:`scan`; reading ``ylabels`` raises, because
+    a single shared m/z axis does not exist (see :ref:`hrms-data-model`).
+
+    Attributes:
+        tof (numpy.ndarray): The shared flight-time axis, one value per column
+            of ``data``, identical for every scan.
+        data (numpy.ndarray): 2D intensities, shape ``(num_scans, num_points)``.
+            Rows are scans (retention times); columns are flight-time bins.
+        xlabels (numpy.ndarray): Retention time of each scan (row).
+        mz_decimals (int or None): Decimals to round reported m/z to; None keeps
+            full float precision.
+
+    """
+    def __init__(self, path, xlabels, tof, data, calib, use_flags, metadata,
+                 mz_decimals=4):
+        self.name = os.path.basename(path)
+        self.detector = 'MS'
+        self.xlabels = xlabels
+        self.tof = tof
+        self.data = data
+        self._calib = calib
+        self._use_flags = use_flags
+        self.mz_decimals = mz_decimals
+        self.metadata = metadata
+        warnings.filterwarnings("ignore", category=FutureWarning)
+
+    @property
+    def ylabels(self):
+        raise AttributeError(
+            "An HRMS profile has a per-scan m/z axis (it drifts with "
+            "calibration), so there is no single ylabels. Use "
+            ".mass_labels(scan_index) for one scan's m/z, or .scan(i).")
+
+    def mass_labels(self, i):
+        """ The calibrated m/z values for scan ``i`` (rounded to
+        :attr:`mz_decimals`). """
+        mz = calibrate_mz(self.tof, self._calib[i], self._use_flags[i])
+        if self.mz_decimals is not None:
+            mz = np.round(mz, self.mz_decimals)
+        return mz
+
+    def scan(self, i):
+        """ The native spectrum of scan ``i`` as ``(mass_labels, intensities)``,
+        i.e. the per-scan m/z axis and that scan's intensities, with no binning
+        and no inserted zeros. """
+        return self.mass_labels(i), self.data[i]
+
+    def get_info(self):
+        n, k = self.data.shape
+        return f"\n{'-' * len(self.name)}\n" \
+               f"{self.name}\n" \
+               f"{'-' * len(self.name)}\n" \
+               f"Detector: {self.detector}\n" \
+               f"Xlabels: {self.xlabels}\n" \
+               f"Profile: {n} scans x {k} points " \
+               f"(per-scan m/z; use scan(i)/mass_labels(i))\n" \
+               f"TOF axis: {self.tof}\n" \
+               f"Data: {self.data}\n" \
+               f"Metadata: {self.metadata}\n"
+
+
 """
-MAIN PARSING METHOD 
+MAIN PARSING METHOD
 
 """
 
@@ -80,9 +151,9 @@ MS PARSING METHODS
 
 """
 
-def parse_msdata(path, prec=0):
+def parse_msdata(path, prec=0, native=False):
     """
-    Parses Masshunter MS data. 
+    Parses Masshunter MS data.
 
     IMPORTANT: Masshunter MS data can be either stored in MSProfile.bin or \
         MSPeak.bin. This method only supports parsing MSProfile.bin.  
@@ -99,12 +170,24 @@ def parse_msdata(path, prec=0):
 
     Learn more about this file format :ref:`here <hrms>`.
 
+    By default the per-scan spectra are projected onto a single shared m/z grid
+    (rounded to ``prec`` decimals), which is convenient for extracted-ion
+    chromatograms and heatmaps but inserts zeros and loses resolution for
+    high-resolution data (see :ref:`hrms-data-model`). With ``native=True`` the
+    faithful per-scan representation is returned instead: a list of
+    :class:`ProfileDataFile` objects (one per flight-time grid), each keeping the
+    raw intensities and exposing the per-scan m/z via ``scan(i)``.
+
     Args:
         path (str): Path to the AcqData subdirectory.
-        prec (int, optional): Number of decimals to round mz values.
+        prec (int, optional): Number of decimals to round mz values (shared-grid
+            mode only).
+        native (bool, optional): Return the faithful per-scan representation (a
+            list of :class:`ProfileDataFile`) instead of the shared grid.
 
     Returns:
-        DataFile containing Masshunter MS data.
+        A :class:`~rainbow.datafile.DataFile` on the shared grid, or, when
+        ``native=True``, a list of :class:`ProfileDataFile` (one per grid).
 
     """
     # MSScan.xsd: Extract the file structure of MSScan.bin.
@@ -163,6 +246,8 @@ def parse_msdata(path, prec=0):
     num_mz_per_time = np.empty(num_times)
     mz_arrs = []
     inten_arrs = []
+    grid_keys = []        # (num_mz, start_mz, delta) per scan, for native mode
+    scan_calib_ids = []   # CalibrationID per scan, for native mode
     for i in range(num_times):
         time, num_mz, offset, comp_len, decomp_len, calib_id = data_info[i]
 
@@ -202,13 +287,18 @@ def parse_msdata(path, prec=0):
             start_mz, delta_mz = twodoubles_unpack(decomp_view[:16])
             inten = np.ndarray(num_mz, '<I', bytes(decomp_view[16:]))
 
-        # Calculate the calibrated mz values from the raw time-of-flight axis.
-        tof = np.arange(
-            start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
-        tof = tof[:num_mz]
-        mzs = calibrate_mz(tof, calib_vals[i], calib_flags.get(calib_id))
-
-        mz_arrs.append(mzs)
+        if native:
+            # The native path keeps the raw per-scan intensities and recovers
+            # m/z per scan on demand, so it skips the calibration here.
+            grid_keys.append((num_mz, start_mz, delta_mz))
+            scan_calib_ids.append(calib_id)
+        else:
+            # Calculate the calibrated mz values from the raw flight-time axis.
+            tof = np.arange(
+                start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
+            tof = tof[:num_mz]
+            mzs = calibrate_mz(tof, calib_vals[i], calib_flags.get(calib_id))
+            mz_arrs.append(mzs)
         inten_arrs.append(inten)
 
     f.close()
@@ -216,6 +306,11 @@ def parse_msdata(path, prec=0):
     if num_times == 0:
         raise ValueError(
             f"MSProfile.bin in {path} contains no complete scans.")
+
+    if native:
+        return _build_native_profiles(
+            times, inten_arrs, grid_keys, calib_vals[:num_times],
+            scan_calib_ids, calib_flags)
 
     # Concatenating the per-scan arrays avoids materializing a ~100M-element
     # Python list (and the numpy round-trip through it), which otherwise
@@ -226,6 +321,55 @@ def parse_msdata(path, prec=0):
     mz_ylabels, data = bin_to_grid(mz_arr, intensities, rows, num_times, prec)
 
     return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
+
+
+def _build_native_profiles(times, inten_arrs, grid_keys, calib_vals,
+                           scan_calib_ids, calib_flags, mz_decimals=4):
+    """
+    Builds the native per-scan profile representation (see :obj:`parse_msdata`
+    with ``native=True``).
+
+    Scans that share a flight-time grid (same point count, start, and delta)
+    have an index-aligned intensity rectangle, so each such group becomes one
+    :class:`ProfileDataFile`. The m/z is not stored per point; instead each file
+    keeps the shared flight-time axis plus the per-scan calibration and
+    recomputes m/z on demand, which is exact and compact (the only thing that
+    varies scan to scan is the calibration).
+
+    Args:
+        times (np.ndarray): Retention time of each (kept) scan.
+        inten_arrs (list): Per-scan uint32 intensity arrays.
+        grid_keys (list): ``(num_mz, start_mz, delta)`` flight-time grid of each
+            scan.
+        calib_vals (np.ndarray): ``(num_scans, 10)`` calibration rows.
+        scan_calib_ids (list): CalibrationID of each scan.
+        calib_flags (dict): Maps CalibrationID to polynomial ValueUseFlags.
+
+    Returns:
+        A list of :class:`ProfileDataFile`, largest grid first.
+
+    """
+    groups = {}
+    for idx, key in enumerate(grid_keys):
+        groups.setdefault(key, []).append(idx)
+
+    profiles = []
+    for seg, (key, idxs) in enumerate(
+            sorted(groups.items(), key=lambda kv: -len(kv[1]))):
+        num_mz, start_mz, delta_mz = key
+        tof = np.arange(
+            start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
+        tof = tof[:num_mz]
+        data = np.stack([inten_arrs[i] for i in idxs]).astype(np.uint32)
+        xlabels = times[idxs]
+        calib = calib_vals[idxs]
+        use_flags = [calib_flags.get(scan_calib_ids[i]) for i in idxs]
+        # One grid keeps the canonical name; extra grids are suffixed.
+        name = "MSProfile.bin" if seg == 0 else f"MSProfile.bin.{seg + 1}"
+        profiles.append(ProfileDataFile(
+            name, xlabels, tof, data, calib, use_flags, {},
+            mz_decimals=mz_decimals))
+    return profiles
 
 
 def parse_icpmsdata(path, prec=0):
