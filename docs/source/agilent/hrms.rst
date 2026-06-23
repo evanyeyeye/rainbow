@@ -3,7 +3,7 @@
 Agilent MSProfile.bin File Structure
 ====================================
 
-This file format contains Agilent HRMS data. 
+This file format contains Agilent HRMS data.
 
 The HRMS data is encoded across several files in a subdirectory named AcqData:
 
@@ -94,7 +94,7 @@ Each data segment begins with 2 doubles that hold the smallest mz value and the 
 The intensities that follow the 2-double header are stored in one of two ways, depending on the instrument:
 
 - **LZF compression.** The whole segment, header included, is compressed with the `LZF algorithm <http://home.schmorp.de/marc/liblzf.html>`_. The decompressed length (``UncompressedByteCount`` in MSScan.bin) is required for decompression. This path needs the optional ``python-lzf`` dependency.
-- **Run-length encoding (RLE).** Q-TOF profile acquisitions leave the 2-double header raw and follow it with an RLE intensity stream. The stream starts with a 4-byte word whose low 3 bytes are the point count and whose high byte is a fixed ``0x90`` marker; **rainbow** uses this signature to recognize the format. Two little-endian ``int32`` values follow (both stored negated): an initial run of zero intensities, and a width flag (1, 2, 3, or 4, mapping to a 1-, 2-, 4-, or 8-byte signed integer) for the values that come next. Each subsequent value is read at the current width: a non-negative value is a literal intensity, while a negative value ``-v`` encodes ``divmod(v, 4)`` — the quotient is a run of zero intensities and the remainder is the new width flag to switch to. Trailing zero intensities are not stored. This path does not require ``python-lzf``.
+- **Run-length encoding (RLE).** Q-TOF profile acquisitions leave the 2-double header raw and follow it with an RLE intensity stream. The stream starts with a 4-byte word whose low 3 bytes are the point count and whose high byte is a fixed ``0x90`` marker; **rainbow** uses this signature to recognize the format. A single little-endian ``int32`` follows (stored negated): the initial run of zero intensities. The token stream then begins, opening at a width of 4 bytes (signed). Each value is read at the current width: a non-negative value is a literal intensity, while a negative value ``-v`` encodes ``divmod(v, 4)``, where the quotient is a run of zero intensities to emit and the remainder is the new width flag (1, 2, 3 map to 1-, 2-, 4-byte; 4 maps to 8-byte) to switch to for the values that follow. Most scans open with an ``0xffffffff`` token, which reads as ``-1`` at the 4-byte starting width and switches the stream to 1-byte values; high-signal scans instead open with a literal 4-byte intensity. Trailing zero intensities are not stored. This path does not require ``python-lzf``.
 
 Let :code:`t` be the raw time-of-flight value of a point and :code:`coeff`, :code:`base` its scan's first two MSMassCal.bin numbers. The traditional calibration is :code:`mz = (coeff * (t - base))^2`.
 

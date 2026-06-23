@@ -716,15 +716,22 @@ def decompress_inten_list(comp_view, num_mz):
     intensities this way instead of LZF-compressing them (issue #27).
 
     The stream begins with a 4-byte point-count word (low 3 bytes) and a fixed
-    0x90 marker (high byte), then two little-endian int32s: an initial count of
-    leading zero intensities and a width flag (both stored negated). The width
-    flag is 1, 2, 3 or 4, mapping to a 1-, 2-, 4- or 8-byte signed integer. The
-    remaining values are then read at the current width:
+    0x90 marker (high byte), then a negated little-endian int32 giving the
+    count of leading zero intensities. The token stream follows, opening at a
+    width of 4 bytes (signed). Each value is read at the current width:
 
     - A non-negative value is a literal intensity.
     - A negative value -v encodes ``divmod(v, 4)``: the quotient is a run
       of zero intensities to emit, and the remainder is the new width flag
-      to switch to for subsequent values.
+      (1, 2, 3 -> 1-, 2-, 4-byte; 4 -> 8-byte) to switch to for subsequent
+      values.
+
+    Most scans open with an ``0xffffffff`` token, read as -1 at the 4-byte
+    starting width, which emits no zeros and switches to 1-byte values; this is
+    why the opening width is rarely seen directly. High-signal scans instead
+    open with a literal 4-byte intensity. (Issue #27: an earlier reading
+    mistook that first token for a separate "width flag" field, which decoded
+    identically for the common case but failed on the literal-first scans.)
 
     Trailing zero intensities are not stored, so the output is pre-filled with
     zeros to length ``num_mz``.
@@ -749,9 +756,8 @@ def decompress_inten_list(comp_view, num_mz):
     }
     sizes = {1: 1, 2: 2, 3: 4, 4: 8}
 
-    init_zero_repeat, width_flag = struct.unpack('<ii', comp_view[4:12])
+    init_zero_repeat = struct.unpack('<i', comp_view[4:8])[0]
     cur_idx = -init_zero_repeat
-    width_flag = -width_flag
     # cur_idx only ever advances, so once it starts non-negative it stays in
     # range and out-of-bounds literals raise IndexError below. A positive
     # init_zero_repeat would make it start negative (and silently wrap), so
@@ -763,11 +769,13 @@ def decompress_inten_list(comp_view, num_mz):
             "Malformed MSProfile.bin RLE segment: negative initial index.")
 
     inten = np.zeros(num_mz, dtype=np.uint32)
-    offset = 12
+    # The token stream begins right after the leading-zero count, at an initial
+    # width of 4 bytes (width flag 3); a control value switches it thereafter.
+    offset = 8
     end = len(comp_view)
     try:
-        cur_size = sizes[width_flag]
-        cur_unpack = unpackers[width_flag]
+        cur_size = sizes[3]
+        cur_unpack = unpackers[3]
         while offset < end:
             value = cur_unpack(comp_view[offset:offset + cur_size])[0]
             offset += cur_size

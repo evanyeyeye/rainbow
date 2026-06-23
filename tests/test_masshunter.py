@@ -243,28 +243,61 @@ def test_polynomial_calibration_matches_bioconfirm(directory, truth):
     assert abs(apex - truth) < abs(apex_primary - truth)
 
 
+def _rle_segment(num_mz, leading_zeros, tokens):
+    """ Build a MSProfile.bin RLE segment body (the bytes after the 16-byte mz
+    header): the 4-byte point-count word, the negated leading-zero count, then
+    the already-packed `tokens` stream (which opens at 4-byte width). """
+    return (struct.pack('<I', num_mz | (0x90 << 24))
+            + struct.pack('<i', -leading_zeros) + tokens)
+
+
+def test_profile_stream_opens_at_four_byte_width():
+    """ Issue #27 follow-up: the token stream opens at 4-byte width, so a scan
+    whose first stored intensity is a literal (a high-signal scan, with no
+    leading width-switch control) decodes correctly. The previous reader read a
+    separate "width flag" field that did not exist, which decoded identically
+    whenever the first token was a width switch (the common case) but raised
+    "Malformed MSProfile.bin RLE segment" on a literal-first scan. """
+    tokens = (
+        struct.pack('<i', 70000)    # 4-byte literal             -> inten[1]
+        + struct.pack('<i', 80000)  # 4-byte literal             -> inten[2]
+        + struct.pack('<i', -1)     # control @4B: 0 zeros, -> 1-byte width
+        + struct.pack('<b', 5)      # 1-byte literal             -> inten[3]
+        + struct.pack('<b', -2)     # control @1B: 0 zeros, -> 2-byte width
+        + struct.pack('<h', 1000)   # 2-byte literal             -> inten[4]
+    )
+    body = _rle_segment(8, leading_zeros=1, tokens=tokens)
+    expected = [0, 70000, 80000, 5, 1000, 0, 0, 0]
+
+    out = masshunter.decompress_inten_list(memoryview(body), 8)
+    assert out.tolist() == expected
+    assert out.dtype == np.uint32
+    # The compiled accelerator must decode the literal opening identically.
+    if masshunter._msprofile_fast is not None:
+        fast = masshunter._msprofile_fast.decompress_inten_list(
+            memoryview(body), 8)
+        assert fast.tolist() == expected
+
+
 def test_malformed_rle_raises_valueerror():
     """ A corrupt RLE stream raises a clear ValueError, not a cryptic
     KeyError/struct.error/silent wraparound. """
-    # 4-byte point-count word, then negated (init_zero_repeat, width_flag).
-    def stream(init_zero_repeat, width_flag, tail):
-        return (struct.pack('<I', 5 | (0x90 << 24))
-                + struct.pack('<ii', -init_zero_repeat, -width_flag) + tail)
-
-    # Token -4 -> divmod(4, 4) = (1, 0): a zero-width switch is invalid.
-    bad_width = stream(0, 1, struct.pack('<b', -4))
+    # A control token whose remainder is 0 is a zero-width switch -> invalid.
+    # Opening at 4-byte width, -4 -> divmod(4, 4) = (1 zero, width flag 0).
+    bad_width = _rle_segment(5, 0, struct.pack('<i', -4))
     with pytest.raises(ValueError):
-        masshunter.decompress_inten_list(memoryview(bad_width)[0:], 5)
+        masshunter.decompress_inten_list(memoryview(bad_width), 5)
 
     # A positive initial zero-repeat would start the write index negative.
-    neg_index = stream(-3, 1, b"")
+    neg_index = _rle_segment(5, -3, b"")
     with pytest.raises(ValueError):
-        masshunter.decompress_inten_list(memoryview(neg_index)[0:], 5)
+        masshunter.decompress_inten_list(memoryview(neg_index), 5)
 
-    # More literals than the point count must not overflow silently.
-    too_many = stream(0, 1, struct.pack('<b', 7) * 9)
+    # More literals than the point count must not overflow silently: switch to
+    # 1-byte width, then emit more 1-byte literals than there are points.
+    too_many = _rle_segment(5, 0, struct.pack('<i', -1) + struct.pack('<b', 7) * 9)
     with pytest.raises(ValueError):
-        masshunter.decompress_inten_list(memoryview(too_many)[0:], 5)
+        masshunter.decompress_inten_list(memoryview(too_many), 5)
 
 
 # ---------------------------------------------------------------------------

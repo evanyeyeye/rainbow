@@ -161,7 +161,10 @@ def test_msprofile_fast_matches_pure_python(fixture):
 def test_msprofile_malformed_input_raises():
     """A bad width flag raises ValueError, like the pure-Python path."""
     import struct
+    # Point-count word, negated leading-zero count, then a token stream that
+    # opens at 4-byte width. A control with remainder 0 (-4 -> width flag 0) is
+    # an invalid zero-width switch.
     bad = (struct.pack('<I', 5 | (0x90 << 24))
-           + struct.pack('<ii', 0, -1) + struct.pack('<b', -4))
+           + struct.pack('<i', 0) + struct.pack('<i', -4))
     with pytest.raises(ValueError):
         mh._msprofile_fast.decompress_inten_list(memoryview(bad), 5)
