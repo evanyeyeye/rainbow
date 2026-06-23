@@ -4,115 +4,144 @@ HRMS Profile Data Model (m/z is per-scan)
 =========================================
 
 This page explains how **rainbow** represents high-resolution mass-spectrometry
-(HRMS) profile data, and why that representation is unusual. The byte-level
-layout of the file itself is documented separately in :ref:`MSProfile.bin <hrms>`.
+(HRMS) profile data, and why that representation is unusual. We will see (1) what
+profile data is, (2) why a high-resolution time-of-flight instrument gives every
+scan its *own* m/z sampling, and (3) why forcing all the scans onto one shared
+m/z axis loses data. The byte-level layout of the file is documented separately
+in :ref:`MSProfile.bin <hrms>`.
 
-A few terms first
------------------
+A few terms
+-----------
 
 - **Scan**: one spectrum, measured at one instant during a run. A run is a
   sequence of scans, indexed by ``i`` (``i`` increases with time).
 - **Spectrum**: a curve of **intensity** (how much signal was seen) versus
-  **m/z** (mass-to-charge ratio, the instrument's mass-like x-axis, measured in
-  daltons, ``Da``, a unit of mass).
+  **m/z** (mass-to-charge ratio, a mass-like x-axis, measured in daltons,
+  ``Da``, a unit of mass).
 - **Point index** ``j``: within one scan the measured values are a list of
   length ``k``, indexed by ``j`` from ``0`` to ``k-1``.
-- **Profile vs. centroid**: a *profile* scan stores the whole curve (~100,000
-  points), a quasi-continuous trace. A *centroid* scan stores only the handful
-  of detected peak positions, so it is short. This page is about profile data;
-  centroids are covered briefly at the end.
 
-The intensities are a clean rectangle
--------------------------------------
+Profile vs. centroid
+--------------------
 
-For profile data the intensities line up into a 2-D array: one row per scan
-``i``, one column per point ``j``.
+A scan can be stored in two forms. A **profile** scan keeps the whole measured
+curve, roughly 100,000 points (about 105,000 in the worked example below),
+sampled densely across the m/z range. A **centroid** scan keeps only the handful
+of detected peak positions, so it is short. This page is about **profile** data;
+centroids are revisited at the end.
 
-.. figure:: figures/data_rectangle.svg
-   :width: 48%
-   :align: center
+Why each scan has its own m/z
+-----------------------------
 
-   Each cell holds one intensity value, ``data[i][j]``.
+A mass spectrometer reports intensity as a function of m/z, but *how* it arrives
+at the m/z axis depends on the instrument, and that difference is the whole reason
+profile data is awkward.
 
-So the *intensities* fit a normal table. The difficulty is the m/z.
+A **time-of-flight** (TOF) instrument does not measure m/z directly. It gives
+every ion the same energy and times how long each takes to reach the detector:
+lighter ions arrive sooner, heavier ones later. So what it actually records is
+intensity at a ladder of **flight times**, fixed by the instrument clock. Flight
+time ``j`` is the *same physical measurement* in every scan, the same tick
+``tof[j]``. To convert a flight time into an m/z, the instrument applies a few
+fitted numbers, a **calibration**, and it re-fits that calibration every scan to
+track conditions such as temperature.
 
-The m/z depends on the scan, not just the point
------------------------------------------------
+Because the calibration changes slightly from scan to scan, the same flight tick
+``j`` is converted to a slightly different m/z in different scans. Stated
+carefully, this is **not** that any mass moves (a 100 Da ion is always 100 Da);
+it is that **different scans collect their data at different m/z positions**: one
+scan happens to sample near 100.00 Da, a later scan near 100.05 Da. There is no
+m/z value that every scan lands on.
 
-The principle rainbow follows is general: **when a scan's m/z values are not
-reproducible from one scan to the next, no single m/z axis is correct for every
-scan.** The m/z is then a function of *both* indices, the scan ``i`` and the
-point ``j``, and (next section) forcing every scan onto one shared axis loses
-data.
-
-On the high-resolution **time-of-flight** (TOF) instruments this page is about,
-that is exactly what happens. Every scan is sampled on the same raw instrument
-clock, the flight time, so point ``j`` is the *same physical measurement*
-``tof[j]`` in every scan. But to turn a flight time into an m/z, the instrument
-uses a few fitted numbers, a **calibration**, and it re-fits that calibration for
-each scan. **Drift** is the slow change, over the course of a run, in the m/z
-that the calibration assigns to a fixed measurement. Because of it, the *same*
-point ``j`` is given a slightly *different* m/z in different scans.
+**Drift** is the slow, roughly linear change, over a run, in the m/z that the
+calibration assigns to a fixed flight time.
 
 .. figure:: figures/mz_drift.svg
    :width: 62%
    :align: center
 
-   The m/z assigned to one fixed point index, plotted as the change from the
-   start of the run. The drift (~0.024 Da, red) is larger than the spacing to the
-   neighbouring point (~0.016 Da, grey), so the point's m/z slides past where its
-   neighbour started. There is no single m/z axis that fits every scan.
+   The m/z assigned to one fixed flight time, across the run. It moves by about
+   0.024 Da, more than the ~0.016 Da gap between adjacent points in a scan, so
+   successive scans sample noticeably different m/z positions.
 
-.. note::
+A **unit-resolution** instrument such as a **quadrupole** or **triple quadrupole**
+(QQQ) works the opposite way. It is *commanded* to transmit a chosen m/z and
+steps through a fixed list of m/z targets, usually every integer mass, and every
+scan uses that same list. Its m/z axis is decided up front and is identical for
+all scans, so a single shared axis is already correct and none of the problems
+below arise. The trade-off is resolution: it only separates masses about a whole
+unit apart. A high-resolution TOF buys fine mass accuracy at the cost of giving
+each scan its own m/z sampling.
 
-   This applies to high-resolution profile data. **Unit-resolution instruments,
-   such as a triple quadrupole (QQQ), do not have this problem**: they report m/z
-   on a fixed grid that every scan already shares, so a single axis is correct
-   for them and the zeros described below never arise.
+So the principle rainbow follows is: **when different scans collect their data at
+different m/z positions, no single m/z axis is correct for every scan.** The m/z
+is then a function of *both* indices, the scan ``i`` and the point ``j``.
 
-rainbow therefore does not store an m/z for every cell. It keeps the shared
-flight-time axis ``tof`` (one value per point, identical for all scans) plus each
-scan's short list of calibration numbers, and computes a scan's m/z on demand.
-Only one of those calibration numbers changes from scan to scan, so this is both
-exact and tiny: instead of a full m/z for all ~100,000 points of every scan, it
-stores one flight-time array plus a few numbers per scan.
+Intensities are a full rectangle; m/z is not shared
+---------------------------------------------------
+
+The *intensities* are the easy part: every scan has the same number of points
+``k``, so they form a **full rectangle**, one row per scan and one column per
+point, with no ragged rows of differing length.
+
+.. figure:: figures/data_rectangle.svg
+   :width: 66%
+   :align: center
+
+   The intensities line up into a full rectangle. But the m/z that labels a given
+   column is *not* shared: scan 0 and scan 1200 read different m/z at the same
+   column. That mismatch is what the rest of this page is about.
+
+rainbow does not store an m/z for every cell. It keeps the shared flight-time
+axis ``tof`` (one value per point, identical for all scans) plus each scan's
+short list of calibration numbers, and computes a scan's m/z on demand. Only one
+of those calibration numbers changes from scan to scan, so this is both exact and
+tiny: instead of a full m/z for all ~105,000 points of every scan, it stores one
+flight-time array plus a few numbers per scan.
 
 Why one shared m/z axis loses data
 ----------------------------------
 
 You may still want a single shared m/z axis, so that every scan lines up into one
-rectangle you can index by m/z, for example to pull out the signal at one m/z
-over time (the signal-at-one-m/z-over-time plot is an *extracted-ion
-chromatogram*), draw a heatmap, or sum the scans in a time window. To build it you
-must round every m/z onto a common grid of **bins**, so that nearby values from
-different scans fall in the same bin. That rounding inserts **zeros**, for two
-reasons.
+rectangle you can index by m/z (for example to pull out the signal at one m/z over
+time, draw a heatmap, or sum the scans in a time window). To build it, rainbow
+rounds each scan's m/z values onto a common grid of evenly spaced **bins** (0.01
+Da wide by default) and keeps **only the bins that at least one scan lands in**.
+The shared axis is the **union** of every scan's occupied bins; bins that no scan
+ever fills are not created.
 
-First, the bins are **evenly spaced**, but the real points are **not**, and the
-bins are narrower than the spacing between points. So within a single scan, some
-bins fall *between* the real points and receive nothing. A bin that no point
-lands in is filled with intensity 0, a value that was never actually measured.
+That last detail rules out the gaps *within* a single scan as a source of zeros.
+The points in one scan sit about 0.016 Da apart, wider than the 0.01 Da bins, so
+consecutive points land in **non-adjacent** bins, leaving an empty bin or two
+between them. (A point never falls "between" bins; every point lands in some bin.
+The empty bins are the ones *between* the occupied ones.) But because rainbow
+drops bins that no scan occupies, those within-scan gaps never reach the output.
+If every scan sampled the same m/z positions, the union would equal one scan's
+bins and the rectangle would have **no zeros at all**.
+
+The zeros come from one thing: **drift**. Because different scans sample at
+different m/z positions, they occupy *different* bins, and the union of all of
+them has many more bins than any single scan fills. Each scan then reads **0** in
+the bins that only *other* scans occupied.
 
 .. figure:: figures/shared_grid_zeros.svg
-   :width: 68%
+   :width: 70%
    :align: center
 
-   Binning one scan's points onto a uniform 0.01 Da grid. Top: each measured
-   point (blue) rounds to its nearest bin. Bottom: the binned result; bins that
-   received no point become inserted zeros (red).
+   Two scans sample at slightly different m/z (top), so they occupy different bins
+   of the shared grid (bottom). Each scan reads 0 (red) in the bins only the other
+   scan filled.
 
-Second, **drift** puts the same point in different bins in different scans. So the
-shared axis has to include every bin that *any* scan uses (the **union** of all
-the scans' occupied bins), which is far more bins than any single scan fills. On
-one real dataset a scan has ~105,000 points, but the union over 1256 drifting
-scans is ~249,000 bins, so any single scan is ``1 - 105,000 / 249,000``, about
-**58% zeros**.
+On one real dataset a scan has about 105,000 occupied bins, but the union over
+1256 drifting scans is about 249,000 bins, so a single scan is
+``1 - 105,000 / 249,000``, about **58% zeros**.
 
-The counter-intuitive part: a **finer** grid makes this **worse**, not better.
-Narrower bins mean fewer scans share a bin, so the union grows and the rows get
-emptier. No bin width avoids it: a coarse grid loses resolution by merging nearby
-peaks, a fine grid floods the rows with zeros. The zeros come from
-forcing one shared axis, not from the data.
+A **finer** grid makes this worse, and it is the same effect, not a new one:
+narrower bins mean a given drift more often pushes a point into a different bin
+than its counterpart in another scan, so the scans share fewer bins, the union
+grows, and the rows get emptier. No bin width escapes the trade-off; a coarse grid
+merges real peaks and a fine grid floods the rows with zeros, because the zeros
+come from forcing one axis onto scans that never shared one.
 
 How rainbow represents profile data
 -----------------------------------
@@ -124,13 +153,13 @@ that is only approximately right for a given scan:
 
 .. code-block:: python
 
-   df.scan(i)         # -> (m/z array, intensity array) for scan i
-   df.mass_labels(i)  # -> the m/z array for scan i
-   df.tof             # the shared flight-time axis (same for every scan)
-   df.data            # the 2-D intensities, shape (num_scans, k)
+   profile.scan(i)         # -> (m/z array, intensity array) for scan i
+   profile.mass_labels(i)  # -> the m/z array for scan i
+   profile.tof             # the shared flight-time axis (same for every scan)
+   profile.data            # the 2-D intensities, shape (num_scans, k)
 
-There is deliberately **no** ``df.ylabels`` (the attribute other rainbow files
-use for their single y-axis). A profile has no single m/z axis, so reading
+There is deliberately **no** ``profile.ylabels`` (the attribute other rainbow
+files use for their single y-axis). A profile has no single m/z axis, so reading
 ``ylabels`` raises an error that points you to ``mass_labels(i)`` / ``scan(i)``
 rather than returning something subtly wrong.
 
@@ -141,8 +170,8 @@ lossy projection (it inserts the zeros above and merges nearby points).
 Choosing precision
 ------------------
 
-``prec`` is the number of decimal places m/z is rounded to. It is used in two
-different places that must not be confused:
+``prec`` (the number of decimal places m/z is rounded to) appears in two
+**unrelated** places, which must not be confused:
 
 .. list-table::
    :widths: 26 14 60
