@@ -5,7 +5,7 @@ from rainbow.datadirectory import DataDirectory
 
 
 def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
-         centroid=False):
+         centroid=False, binned=True):
     """
     Reads an Agilent .D directory or .dx archive.
 
@@ -18,6 +18,10 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
         telemetry (bool, optional): Flag for parsing .dx telemetry traces.
         centroid (bool, optional): Flag for parsing the MassHunter centroid
             spectrum (MSPeak.bin).
+        binned (bool, optional): For the HRMS profile, project onto the shared
+            m/z grid (the default) or, when False, keep the per-scan
+            representation (one :class:`~rainbow.agilent.masshunter.ProfileDataFile`
+            per flight-time grid).
 
     Returns:
         DataDirectory representing the Agilent data.
@@ -33,7 +37,7 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
         try:
             from rainbow.agilent import masshunter
             datafiles.extend(
-                masshunter.parse_allfiles(path, prec, hrms, centroid))
+                masshunter.parse_allfiles(path, prec, hrms, centroid, binned))
         except ModuleNotFoundError:
             raise ModuleNotFoundError("You must install python-lzf to parse masshunter files.")
 

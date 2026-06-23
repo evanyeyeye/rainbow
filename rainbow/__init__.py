@@ -86,7 +86,7 @@ def _resolve_vendor(path, format):
 
 
 def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
-         centroid=False, format=None):
+         centroid=False, format=None, binned=True):
     """
     Reads a chromatogram data directory. Main method of the package.
 
@@ -119,6 +119,9 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
             (MSPeak.bin) parsing.
         format (str, optional): Force the vendor parser ('agilent' or
             'waters'), bypassing extension/content detection.
+        binned (bool, optional): For Agilent HRMS profile data, project onto
+            the shared m/z grid (the default) or, when False, keep the faithful
+            per-scan representation (see :ref:`hrms-data-model`).
 
     Returns:
         DataDirectory representing the directory.
@@ -142,6 +145,9 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
     if not isinstance(centroid, bool):
         raise Exception(f"The centroid flag must be a boolean.")
 
+    if not isinstance(binned, bool):
+        raise Exception(f"The binned flag must be a boolean.")
+
     if requested_files is not None and not isinstance(requested_files, list):
         raise Exception(f"The requested_files argument must be a list.")
 
@@ -151,7 +157,7 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
     datadir = None
     if vendor == 'agilent':
         datadir = agilent.read(
-            path, prec, hrms, requested_files, telemetry, centroid)
+            path, prec, hrms, requested_files, telemetry, centroid, binned)
     elif vendor == 'waters':
         datadir = waters.read(path, prec, requested_files)
 

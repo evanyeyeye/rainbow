@@ -354,6 +354,22 @@ def test_per_scan_profile_has_no_shared_ylabels():
         profile.ylabels
 
 
+def test_binned_false_reachable_through_read():
+    """ binned=False is threaded through the public rb.read API. """
+    datadir = rb.read(MAGENTA_D, hrms=True, binned=False)
+    profiles = [df for df in datadir.datafiles
+                if isinstance(df, masshunter.ProfileDataFile)]
+    assert len(profiles) >= 1
+    mz, inten = profiles[0].scan(0)
+    assert mz.shape == inten.shape == (profiles[0].data.shape[1],)
+    # The default (binned=True) still yields a single shared-grid DataFile.
+    default = rb.read(MAGENTA_D, hrms=True)
+    profile_files = [df for df in default.datafiles
+                     if df.name.startswith("MSProfile")]
+    assert len(profile_files) == 1
+    assert not isinstance(profile_files[0], masshunter.ProfileDataFile)
+
+
 # ---------------------------------------------------------------------------
 # Parsing MassHunter profile data whose scans also store centroids.
 #

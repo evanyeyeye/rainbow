@@ -98,7 +98,7 @@ MAIN PARSING METHOD
 
 """
 
-def parse_allfiles(path, prec=0, hrms=False, centroid=False):
+def parse_allfiles(path, prec=0, hrms=False, centroid=False, binned=True):
     """
     Finds and parses Agilent Masshunter MS data files.
 
@@ -113,6 +113,9 @@ def parse_allfiles(path, prec=0, hrms=False, centroid=False):
         prec (int, optional): Number of decimals to round ylabels.
         hrms (bool, optional): Parse the profile spectrum (MSProfile.bin).
         centroid (bool, optional): Parse the centroid spectrum (MSPeak.bin).
+        binned (bool, optional): For the profile, project onto the shared m/z
+            grid (the default) or, when False, keep the per-scan
+            representation (:class:`ProfileDataFile`); see :obj:`parse_msdata`.
 
     Returns:
         List containing a DataFile for each parsed file.
@@ -141,7 +144,12 @@ def parse_allfiles(path, prec=0, hrms=False, centroid=False):
             if centroid and "MSPeak.bin" in acqdata_files:
                 datafiles.append(parse_mspeakdata(acqdata_path, prec))
             if hrms and "MSProfile.bin" in acqdata_files:
-                datafiles.append(parse_msdata(acqdata_path, prec))
+                if binned:
+                    datafiles.append(parse_msdata(acqdata_path, prec))
+                else:
+                    # The per-scan form is one ProfileDataFile per grid.
+                    datafiles.extend(
+                        parse_msdata(acqdata_path, prec, binned=False))
 
     return datafiles
 
