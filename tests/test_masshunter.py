@@ -301,11 +301,11 @@ def test_malformed_rle_raises_valueerror():
 
 
 # ---------------------------------------------------------------------------
-# Native per-scan profile representation (parse_msdata native=True).
+# Per-scan profile representation (parse_msdata binned=False).
 #
 # An HRMS profile has a per-scan m/z axis: every scan shares the flight-time
 # grid but the calibration drifts, so the m/z of a point depends on the scan
-# too. native=True returns ProfileDataFile objects that keep the raw
+# too. binned=False returns ProfileDataFile objects that keep the raw
 # intensities and expose the per-scan m/z via scan(i)/mass_labels(i), instead
 # of projecting onto one shared grid (which inserts zeros). See the
 # "HRMS profile data model" docs page.
@@ -313,10 +313,10 @@ def test_malformed_rle_raises_valueerror():
 
 @pytest.mark.parametrize(
     "directory", [MAGENTA_D, CYAN_D], ids=["magenta", "cyan"])
-def test_native_profile_is_faithful_per_scan(directory):
-    """ native=True keeps raw per-scan intensities and exact per-scan m/z. """
+def test_per_scan_profile_is_faithful(directory):
+    """ binned=False keeps raw per-scan intensities and exact per-scan m/z. """
     acqdata = os.path.join(directory, "AcqData")
-    profiles = masshunter.parse_msdata(acqdata, native=True)
+    profiles = masshunter.parse_msdata(acqdata, binned=False)
     assert isinstance(profiles, list) and len(profiles) >= 1
 
     records = _profile_records(acqdata)
@@ -345,11 +345,11 @@ def test_native_profile_is_faithful_per_scan(directory):
             records[i]['SpectrumParamValues']['MaxY'])
 
 
-def test_native_profile_has_no_shared_ylabels():
+def test_per_scan_profile_has_no_shared_ylabels():
     """ A profile has no single m/z axis, so ylabels raises with guidance
     rather than returning a silently-approximate array. """
     profile = masshunter.parse_msdata(
-        os.path.join(MAGENTA_D, "AcqData"), native=True)[0]
+        os.path.join(MAGENTA_D, "AcqData"), binned=False)[0]
     with pytest.raises(AttributeError, match="mass_labels"):
         profile.ylabels
 

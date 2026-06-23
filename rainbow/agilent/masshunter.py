@@ -74,7 +74,7 @@ class ProfileDataFile(DataFile):
         return mz
 
     def scan(self, i):
-        """ The native spectrum of scan ``i`` as ``(mass_labels, intensities)``,
+        """ The decoded spectrum of scan ``i`` as ``(mass_labels, intensities)``,
         i.e. the per-scan m/z axis and that scan's intensities, with no binning
         and no inserted zeros. """
         return self.mass_labels(i), self.data[i]
@@ -151,7 +151,7 @@ MS PARSING METHODS
 
 """
 
-def parse_msdata(path, prec=0, native=False):
+def parse_msdata(path, prec=0, binned=True):
     """
     Parses Masshunter MS data.
 
@@ -173,21 +173,22 @@ def parse_msdata(path, prec=0, native=False):
     By default the per-scan spectra are projected onto a single shared m/z grid
     (rounded to ``prec`` decimals), which is convenient for extracted-ion
     chromatograms and heatmaps but inserts zeros and loses resolution for
-    high-resolution data (see :ref:`hrms-data-model`). With ``native=True`` the
+    high-resolution data (see :ref:`hrms-data-model`). With ``binned=False`` the
     faithful per-scan representation is returned instead: a list of
     :class:`ProfileDataFile` objects (one per flight-time grid), each keeping the
     raw intensities and exposing the per-scan m/z via ``scan(i)``.
 
     Args:
         path (str): Path to the AcqData subdirectory.
-        prec (int, optional): Number of decimals to round mz values (shared-grid
+        prec (int, optional): Number of decimals to round mz values (binned
             mode only).
-        native (bool, optional): Return the faithful per-scan representation (a
-            list of :class:`ProfileDataFile`) instead of the shared grid.
+        binned (bool, optional): When False, return the faithful per-scan
+            representation (a list of :class:`ProfileDataFile`, one per
+            flight-time grid) instead of projecting onto the shared grid.
 
     Returns:
         A :class:`~rainbow.datafile.DataFile` on the shared grid, or, when
-        ``native=True``, a list of :class:`ProfileDataFile` (one per grid).
+        ``binned=False``, a list of :class:`ProfileDataFile` (one per grid).
 
     """
     # MSScan.xsd: Extract the file structure of MSScan.bin.
@@ -246,8 +247,8 @@ def parse_msdata(path, prec=0, native=False):
     num_mz_per_time = np.empty(num_times)
     mz_arrs = []
     inten_arrs = []
-    grid_keys = []        # (num_mz, start_mz, delta) per scan, for native mode
-    scan_calib_ids = []   # CalibrationID per scan, for native mode
+    grid_keys = []        # (num_mz, start_mz, delta) per scan, unbinned mode
+    scan_calib_ids = []   # CalibrationID per scan, unbinned mode
     for i in range(num_times):
         time, num_mz, offset, comp_len, decomp_len, calib_id = data_info[i]
 
@@ -287,9 +288,9 @@ def parse_msdata(path, prec=0, native=False):
             start_mz, delta_mz = twodoubles_unpack(decomp_view[:16])
             inten = np.ndarray(num_mz, '<I', bytes(decomp_view[16:]))
 
-        if native:
-            # The native path keeps the raw per-scan intensities and recovers
-            # m/z per scan on demand, so it skips the calibration here.
+        if not binned:
+            # The per-scan path keeps the raw intensities and recovers m/z per
+            # scan on demand, so it skips the calibration here.
             grid_keys.append((num_mz, start_mz, delta_mz))
             scan_calib_ids.append(calib_id)
         else:
@@ -307,8 +308,8 @@ def parse_msdata(path, prec=0, native=False):
         raise ValueError(
             f"MSProfile.bin in {path} contains no complete scans.")
 
-    if native:
-        return _build_native_profiles(
+    if not binned:
+        return _build_per_scan_profiles(
             times, inten_arrs, grid_keys, calib_vals[:num_times],
             scan_calib_ids, calib_flags)
 
@@ -323,11 +324,11 @@ def parse_msdata(path, prec=0, native=False):
     return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
 
 
-def _build_native_profiles(times, inten_arrs, grid_keys, calib_vals,
-                           scan_calib_ids, calib_flags, mz_decimals=4):
+def _build_per_scan_profiles(times, inten_arrs, grid_keys, calib_vals,
+                             scan_calib_ids, calib_flags, mz_decimals=4):
     """
-    Builds the native per-scan profile representation (see :obj:`parse_msdata`
-    with ``native=True``).
+    Builds the per-scan profile representation (see :obj:`parse_msdata` with
+    ``binned=False``).
 
     Scans that share a flight-time grid (same point count, start, and delta)
     have an index-aligned intensity rectangle, so each such group becomes one
