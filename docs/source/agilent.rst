@@ -14,7 +14,7 @@ exports instead use a single :ref:`.dx archive <dx>`.
    Agilent .ch (FID) <agilent/ch_fid>
    Agilent .ch (other) <agilent/ch_other>
    Agilent MSProfile.bin <agilent/hrms>
-   HRMS profile data model <agilent/hrms_data_model>
+   Agilent HRMS Data Model <agilent/hrms_data_model>
    Agilent ICP-MS MSProfile.bin <agilent/icpms>
    Agilent OpenLab CDS (.dx) <agilent/dx>
 

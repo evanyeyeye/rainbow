@@ -5,21 +5,26 @@ from rainbow.waters import masslynx
 from rainbow.datadirectory import DataDirectory
 
 
-def read(path, prec=0, requested_files=None):
+def read(path, precision='auto', requested_files=None):
     """
-    Reads a Waters .raw directory. 
+    Reads a Waters .raw directory.
 
     Args:
         path (str): Path of the directory.
-        prec (int, optional): Number of decimals to round ylabels.
+        precision (int or 'auto', optional): Number of decimals to round ylabels.
+            ``'auto'`` means whole numbers: rainbow applies one calibration per
+            function (no per-scan drift is modelled), so Waters MS is treated as
+            unit-resolution here.
         requested_files (list, optional): List of filenames to parse.
 
     Returns:
-        DataDirectory representing the Waters .raw directory. 
+        DataDirectory representing the Waters .raw directory.
 
     """
+    if precision == 'auto':
+        precision = 0
     datafiles = []
-    datafiles.extend(masslynx.parse_spectrum(path, prec, requested_files))
+    datafiles.extend(masslynx.parse_spectrum(path, precision, requested_files))
     datafiles.extend(masslynx.parse_analog(path, requested_files))
 
     metadata = masslynx.parse_metadata(path)

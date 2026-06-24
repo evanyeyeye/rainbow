@@ -11,7 +11,7 @@ a scan. This module provides one vectorized implementation of that step.
 import numpy as np
 
 
-def bin_datapairs(keys, values, pair_counts, prec, data_dtype=np.int64):
+def bin_datapairs(keys, values, pair_counts, precision, data_dtype=np.int64):
     """
     Bins (key, value) data pairs into a (retention time x ylabel) matrix.
 
@@ -19,7 +19,7 @@ def bin_datapairs(keys, values, pair_counts, prec, data_dtype=np.int64):
     from the flat :obj:`keys`/:obj:`values` arrays. Pairs that share a ylabel
     within the same scan are summed.
 
-    The keys must already be rounded to :obj:`prec` decimals and be
+    The keys must already be rounded to :obj:`precision` decimals and be
     non-negative (m/z or wavelength), so the unique ylabels and each pair's
     column are found with an integer histogram in O(n) instead of sorting every
     pair with ``np.unique``/``np.searchsorted``. The values are accumulated into
@@ -27,10 +27,10 @@ def bin_datapairs(keys, values, pair_counts, prec, data_dtype=np.int64):
     behavior - the caller's prior per-scan ``np.add.at`` loop used).
 
     Args:
-        keys (np.ndarray): Flat ylabels, rounded to :obj:`prec`, non-negative.
+        keys (np.ndarray): Flat ylabels, rounded to :obj:`precision`, non-negative.
         values (np.ndarray): Flat values paired with :obj:`keys`.
         pair_counts (np.ndarray): Number of pairs at each retention time.
-        prec (int): Number of decimals the keys were rounded to.
+        precision (int): Number of decimals the keys were rounded to.
         data_dtype (np.dtype, optional): dtype of the output matrix.
 
     Returns:
@@ -47,7 +47,7 @@ def bin_datapairs(keys, values, pair_counts, prec, data_dtype=np.int64):
 
     # Map each rounded key onto a non-negative integer bin so the unique
     # ylabels and per-pair columns come from a histogram, not a sort.
-    scale = 10 ** prec if prec > 0 else 1
+    scale = 10 ** precision if precision > 0 else 1
     int_keys = np.rint(keys * scale).astype(np.int64)
     int_keys -= int_keys.min()
 

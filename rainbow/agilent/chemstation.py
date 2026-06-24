@@ -33,20 +33,24 @@ MAIN PARSING METHODS
 """
 
 
-def parse_allfiles(path, prec=0, requested_files=None):
+def parse_allfiles(path, precision='auto', requested_files=None):
     """
     Finds and parses Agilent Chemstation data files \
         with a .ch, .uv, or .ms extension from a .D directory.
     
     Args:
         path (str): Path to the .D directory.
-        prec (int, optional): Number of decimals to round mz values.
+        precision (int, optional): Number of decimals to round mz values.
         requested_files (list, optional): List of filenames to parse.
 
     Returns:
-        List with a DataFile for each parsed data file. 
+        List with a DataFile for each parsed data file.
 
     """
+    # Chemstation data (UV, GC/quadrupole .ms) is unit-resolution, so 'auto'
+    # precision means whole numbers.
+    if precision == 'auto':
+        precision = 0
     datafiles = []
     # Sort for a deterministic parse order across platforms: os.listdir returns
     # entries in filesystem order, which differs between macOS and Linux. The
@@ -56,13 +60,13 @@ def parse_allfiles(path, prec=0, requested_files=None):
     for name in sorted(os.listdir(path)):
         if requested_files and name.lower() not in requested_files:
             continue
-        datafile = parse_file(os.path.join(path, name), prec)
+        datafile = parse_file(os.path.join(path, name), precision)
         if datafile:
             datafiles.append(datafile)
     return datafiles
 
 
-def parse_file(path, prec=0):
+def parse_file(path, precision=0):
     """
     Parses an Agilent Chemstation data file. 
     
@@ -70,7 +74,7 @@ def parse_file(path, prec=0):
 
     Args:
         path (str): Path to the data file.
-        prec (int, optional): Number of decimals to round mz values.
+        precision (int, optional): Number of decimals to round mz values.
     
     Returns:
         DataFile representing the file, if it can be parsed. Otherwise, None.
@@ -82,7 +86,7 @@ def parse_file(path, prec=0):
     elif ext == '.uv':
         return parse_uv(path)
     elif ext == '.ms':
-        return parse_ms(path, prec)
+        return parse_ms(path, precision)
     return None
 
 
@@ -647,7 +651,7 @@ def parse_uv_partial(path):
 """
 
 
-def parse_ms(path, prec=0):
+def parse_ms(path, precision=0):
     """
     Parses an Agilent .ms file.
 
@@ -657,7 +661,7 @@ def parse_ms(path, prec=0):
 
     Args:
         path (str): Path to Agilent .ms file.
-        prec (int, optional): Number of decimals to round mz values. 
+        precision (int, optional): Number of decimals to round mz values. 
     
     Returns:
         DataFile with MS data, if the file can be parsed. Otherwise, None.
@@ -679,7 +683,7 @@ def parse_ms(path, prec=0):
     head = int_unpack(f.read(4))[0]
     if head != 0x01320000:
         f.close()
-        return parse_ms_partial(path, prec)
+        return parse_ms_partial(path, precision)
 
     # Determine the type of .ms file based on header.
     # Read the number of retention times from different offsets by type.
@@ -717,7 +721,7 @@ def parse_ms(path, prec=0):
 
     # Calculate the mz values. 
     mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4)
-    mzs = np.round(mzs / 20, prec)
+    mzs = np.round(mzs / 20, precision)
 
     # Calculate the intensity values. 
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -728,7 +732,7 @@ def parse_ms(path, prec=0):
 
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
     ylabels, data = bin_datapairs(
-        mzs, int_values, pair_counts, prec, data_dtype=np.uint32)
+        mzs, int_values, pair_counts, precision, data_dtype=np.uint32)
     del mzs, int_values, pair_counts
 
     # Read file metadata.
@@ -742,7 +746,7 @@ def parse_ms(path, prec=0):
     return DataFile(path, 'MS', times, ylabels, data, metadata)
 
 
-def parse_ms_partial(path, prec=0):
+def parse_ms_partial(path, precision=0):
     """
     Parses a partial Agilent .ms file. 
 
@@ -752,7 +756,7 @@ def parse_ms_partial(path, prec=0):
 
     Args:
         path (str): Path to the partial .ms file.
-        prec (int, optional): Number of decimal to round mz values.
+        precision (int, optional): Number of decimal to round mz values.
 
     Returns:
         DataFile with MS data, if the file can be parsed. Otherwise, None.
@@ -804,7 +808,7 @@ def parse_ms_partial(path, prec=0):
 
     # Calculate the mz values. 
     mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4)
-    mzs = np.round(mzs / 20, prec)
+    mzs = np.round(mzs / 20, precision)
 
     # Calculate the intensity values.
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -815,7 +819,7 @@ def parse_ms_partial(path, prec=0):
 
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
     ylabels, data = bin_datapairs(
-        mzs, int_values, pair_counts, prec, data_dtype=np.uint32)
+        mzs, int_values, pair_counts, precision, data_dtype=np.uint32)
     del mzs, int_values, pair_counts
 
     # Read file metadata.

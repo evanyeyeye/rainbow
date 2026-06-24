@@ -1,209 +1,328 @@
 .. _hrms-data-model:
 
-HRMS Profile Data Model (m/z is per-scan)
-=========================================
+HRMS Profile Data: Why Each Scan Has Its Own m/z
+================================================
 
-This page explains how **rainbow** represents high-resolution mass-spectrometry
-(HRMS) profile data, and why that representation is unusual. We will see (1) what
-profile data is, (2) why a high-resolution time-of-flight instrument gives every
-scan its *own* m/z sampling, and (3) why forcing all the scans onto one shared
-m/z axis loses data. The byte-level layout of the file is documented separately
-in :ref:`MSProfile.bin <hrms>`.
+In an LC-MS experiment, one collects a series of MS spectra as a function of
+retention time. In most cases, the data matrix shares a common set of mass
+labels. This document covers an exception with Agilent Q-TOF data (MassHunter),
+where successive scans often have *different* mass labels. This page explains why
+the exception exists, how *rainbow* stores these data, and how to work with the
+results.
 
-A few terms
------------
+Some Terminology
+----------------
 
-- **Scan**: one spectrum, measured at one instant during a run. A run is a
-  sequence of scans, indexed by ``i`` (``i`` increases with time).
-- **Spectrum**: a curve of **intensity** (how much signal was seen) versus
-  **m/z** (mass-to-charge ratio, a mass-like x-axis, measured in daltons,
-  ``Da``, a unit of mass).
-- **Point index** ``j``: within one scan the measured values are a list of
-  length ``k``, indexed by ``j`` from ``0`` to ``k-1``.
+A mass spectrometer reports **intensity** (how much signal was seen) as a
+function of *m/z*. One spectrum is a **scan**; a run is a sequence of scans
+indexed by ``i``. (You can think of ``i`` as retention time.) Within a scan,
+intensity is recorded at ``k`` points, indexed by ``j`` (from 0 to ``k`` - 1);
+``k`` is the same in every scan.
 
-Profile vs. centroid
---------------------
+Most MS instruments have unit resolution (i.e., 1 Da) and use quadrupoles to
+select one *m/z* to pass through at a time. Since the same *m/z* values are selected
+on every scan, the array labels (``ylabels``) are the same throughout. In this
+document, we will call this **per-array labeling**.
 
-A scan can be stored in two forms. A **profile** scan keeps the whole measured
-curve, roughly 100,000 points (about 105,000 in the worked example below),
-sampled densely across the m/z range. A **centroid** scan keeps only the handful
-of detected peak positions, so it is short. This page is about **profile** data;
-centroids are revisited at the end.
+In Q-TOF instruments, each ion is accelerated through the same voltage to give
+it the same amount of kinetic energy. Ions of equal charge then separate by mass:
+lighter ones travel faster and reach the detector sooner, heavier ones later.
+The instrument records intensity against the **flight time** each ion takes,
+on a ladder of times fixed by its clock, and *m/z* is *computed* from each flight
+time afterward. That computation is redone every scan, so each scan has its own
+*m/z* labels. We will call this **per-scan labeling**.
 
-Why each scan has its own m/z
------------------------------
+.. note::
 
-A mass spectrometer reports intensity as a function of m/z, but *how* it arrives
-at the m/z axis depends on the instrument, and that difference is the whole reason
-profile data is awkward.
+   This is the high-resolution data Agilent MassHunter stores in
+   :ref:`MSProfile.bin <hrms>`.
 
-A **time-of-flight** (TOF) instrument does not measure m/z directly. It gives
-every ion the same energy and times how long each takes to reach the detector:
-lighter ions arrive sooner, heavier ones later. So what it actually records is
-intensity at a ladder of **flight times**, fixed by the instrument clock. Flight
-time ``j`` is the *same physical measurement* in every scan, the same tick
-``tof[j]``. To convert a flight time into an m/z, the instrument applies a few
-fitted numbers, a **calibration**, and it re-fits that calibration every scan to
-track conditions such as temperature.
+Centroid vs profile
+-------------------
 
-Because the calibration changes slightly from scan to scan, the same flight tick
-``j`` is converted to a slightly different m/z in different scans. Stated
-carefully, this is **not** that any mass moves (a 100 Da ion is always 100 Da);
-it is that **different scans collect their data at different m/z positions**: one
-scan happens to sample near 100.00 Da, a later scan near 100.05 Da. There is no
-m/z value that every scan lands on.
+High-resolution instruments like Q-TOFs create a lot of data, so it is common to
+offer two storage options. A **profile** dataset keeps all the
+points from each scan, whereas a **centroid** dataset only keeps the peaks. One must
+consider the per-array vs. per-scan issue for both dataset formats.
 
-**Drift** is the slow, roughly linear change, over a run, in the m/z that the
-calibration assigns to a fixed flight time.
+.. _fig-centroid-profile:
+
+.. figure:: figures/centroid_vs_profile.svg
+   :width: 90%
+   :align: center
+
+   One real Q-TOF peak (``cyan.D``, scan 0), stored two ways. (a) The profile
+   keeps every sampled point of the curve; (b) the centroid keeps a single
+   ``(m/z, intensity)`` for that same peak.
+
+
+Why Do Mass Labels Change With Time? Drift.
+-------------------------------------------
+
+As batches of ions go through the flight tube, the instrument counts ions on
+an evenly spaced ladder of flight times (microseconds). These flight times
+are converted to *m/z* ratios by a process called *calibration* (see below).
+The calibration changes from scan to scan ("drift"), and thus, the *m/z* labels
+are scan-dependent (:numref:`fig-drift`).
+
+.. _fig-drift:
 
 .. figure:: figures/mz_drift.svg
-   :width: 62%
+   :width: 92%
    :align: center
 
-   The m/z assigned to one fixed flight time, across the run. It moves by about
-   0.024 Da, more than the ~0.016 Da gap between adjacent points in a scan, so
-   successive scans sample noticeably different m/z positions.
+   Drift causes *m/z* labels to be scan-dependent. Because the drift is small
+   relative to the flight time spacing, the combs do not overlap.
 
-A **unit-resolution** instrument such as a **quadrupole** or **triple quadrupole**
-(QQQ) works the opposite way. It is *commanded* to transmit a chosen m/z and
-steps through a fixed list of m/z targets, usually every integer mass, and every
-scan uses that same list. Its m/z axis is decided up front and is identical for
-all scans, so a single shared axis is already correct and none of the problems
-below arise. The trade-off is resolution: it only separates masses about a whole
-unit apart. A high-resolution TOF buys fine mass accuracy at the cost of giving
-each scan its own m/z sampling.
 
-So the principle rainbow follows is: **when different scans collect their data at
-different m/z positions, no single m/z axis is correct for every scan.** The m/z
-is then a function of *both* indices, the scan ``i`` and the point ``j``.
+Calibration functions
+----------------------
 
-Intensities are a full rectangle; m/z is not shared
----------------------------------------------------
+The conversion from flight time to *m/z* is a **calibration function**, a
+polynomial fitted per scan. Its core is a quadratic in the flight time :math:`t`,
 
-The *intensities* are the easy part: every scan has the same number of points
-``k``, so they form a **full rectangle**, one row per scan and one column per
-point, with no ragged rows of differing length.
+.. math::
+
+   m/z \;=\; \bigl(A\,(t - t_0)\bigr)^2 ,
+
+so *m/z* grows with the *square* of the flight time, with two fitted numbers
+:math:`A` and :math:`t_0` per scan. A small **polynomial correction** (up to six
+more coefficients :math:`c_n`, evaluated with :func:`numpy.polyval`) is then
+subtracted on top so the result reproduces the masses Agilent MassHunter reports.
+Writing the whole conversion out for scan
+:math:`i` at flight time :math:`t_j = \mathrm{tof}[j]`:
+
+.. math::
+
+   \mathrm{mass\_labels}(i)[j]
+   \;=\; \bigl(A_i\,(t_j - t_{0,i})\bigr)^2
+   \;-\; \sum_{n} c_{n,i}\, t_j^{\,n} .
+
+The flight-time ladder :math:`\mathrm{tof}` is shared by every scan; only the
+coefficients :math:`A_i, t_{0,i}, c_{n,i}` belong to a particular scan. So
+*rainbow* never stores a full *m/z* value for every point of every scan, which
+would be enormous. It keeps the one shared :math:`\mathrm{tof}` array plus each
+scan's handful of coefficients and recomputes a scan's *m/z* on demand: small,
+exact, and drift is just those coefficients changing from scan to scan.
+
+.. note::
+
+   In practice, the calibration usually changes only a little between scans.
+   However, any of the coefficients *could* change, so *rainbow* stores all of
+   them.
+
+The data matrix: same index, different m/z
+------------------------------------------
+
+With per-scan labels, the intensities are stored as a matrix ``data[i][j]``:
+
+- row ``i`` is the scan
+- column ``j`` is the point (one of the ``k`` points in that scan)
+
+The matrix is rectangular, but **a column does not carry a single m/z**
+(:numref:`fig-data-matrix`). Each column ``j`` is a fixed *flight time*, but the
+per-scan calibration assigns it a different *m/z* in each scan, so ``data[5][j]``
+and ``data[1200][j]`` are intensities at *different* masses even though they sit
+in the same column.
+
+.. _fig-data-matrix:
 
 .. figure:: figures/data_rectangle.svg
-   :width: 66%
+   :width: 92%
    :align: center
 
-   The intensities line up into a full rectangle. But the m/z that labels a given
-   column is *not* shared: scan 0 and scan 1200 read different m/z at the same
-   column. That mismatch is what the rest of this page is about.
+   (a) A normal rainbow file: each column **is** an *m/z* (per-array mass labels,
+   ``ylabels``), shared by every scan (one colour, repeated above and below the
+   matrix). (b) An HRMS profile: columns are a shared flight time ``tof[j]`` and
+   the *m/z* is per-scan ``mass_labels(i)`` (the top strip ``mass_labels(0)`` and
+   bottom strip ``mass_labels(1200)`` carry different labels), so there is no
+   single ``ylabels``.
 
-rainbow does not store an m/z for every cell. It keeps the shared flight-time
-axis ``tof`` (one value per point, identical for all scans) plus each scan's
-short list of calibration numbers, and computes a scan's m/z on demand. Only one
-of those calibration numbers changes from scan to scan, so this is both exact and
-tiny: instead of a full m/z for all ~105,000 points of every scan, it stores one
-flight-time array plus a few numbers per scan.
+Reading an HRMS file
+--------------------
 
-Why one shared m/z axis loses data
-----------------------------------
+To read a MassHunter profile dataset:
 
-You may still want a single shared m/z axis, so that every scan lines up into one
-rectangle you can index by m/z (for example to pull out the signal at one m/z over
-time, draw a heatmap, or sum the scans in a time window). To build it, rainbow
-rounds each scan's m/z values onto a common grid of evenly spaced **bins** (0.01
-Da wide by default) and keeps **only the bins that at least one scan lands in**.
-The shared axis is the **union** of every scan's occupied bins; bins that no scan
-ever fills are not created.
+.. code-block:: python
 
-That last detail rules out the gaps *within* a single scan as a source of zeros.
-The points in one scan sit about 0.016 Da apart, wider than the 0.01 Da bins, so
-consecutive points land in **non-adjacent** bins, leaving an empty bin or two
-between them. (A point never falls "between" bins; every point lands in some bin.
-The empty bins are the ones *between* the occupied ones.) But because rainbow
-drops bins that no scan occupies, those within-scan gaps never reach the output.
-If every scan sampled the same m/z positions, the union would equal one scan's
-bins and the rectangle would have **no zeros at all**.
+   import rainbow as rb
+   datadir = rb.read("example.D", hrms=True, precision=4)
+   profile = datadir.get_file("MSProfile.bin")
 
-The zeros come from one thing: **drift**. Because different scans sample at
-different m/z positions, they occupy *different* bins, and the union of all of
-them has many more bins than any single scan fills. Each scan then reads **0** in
-the bins that only *other* scans occupied.
-
-.. figure:: figures/shared_grid_zeros.svg
-   :width: 70%
-   :align: center
-
-   Two scans sample at slightly different m/z (top), so they occupy different bins
-   of the shared grid (bottom). Each scan reads 0 (red) in the bins only the other
-   scan filled.
-
-On one real dataset a scan has about 105,000 occupied bins, but the union over
-1256 drifting scans is about 249,000 bins, so a single scan is
-``1 - 105,000 / 249,000``, about **58% zeros**.
-
-A **finer** grid makes this worse, and it is the same effect, not a new one:
-narrower bins mean a given drift more often pushes a point into a different bin
-than its counterpart in another scan, so the scans share fewer bins, the union
-grows, and the rows get emptier. No bin width escapes the trade-off; a coarse grid
-merges real peaks and a fine grid floods the rows with zeros, because the zeros
-come from forcing one axis onto scans that never shared one.
-
-How rainbow represents profile data
------------------------------------
-
-**Per-scan and unbinned, by default.** rainbow keeps the intensity rectangle
-``data[i][j]`` as-is (no rounding, no inserted zeros) and exposes the m/z through
-methods that **require a scan index**, so you can never accidentally read an m/z
-that is only approximately right for a given scan:
+This requests the **per-scan** representation (with ``precision=4`` the *m/z*
+labels are rounded to four decimals; the default ``precision='auto'`` also picks
+four for Q-TOF data). To access those data:
 
 .. code-block:: python
 
    profile.scan(i)         # -> (m/z array, intensity array) for scan i
-   profile.mass_labels(i)  # -> the m/z array for scan i
+   profile.mass_labels(i)  # -> the m/z array for scan i (its own, per scan)
    profile.tof             # the shared flight-time axis (same for every scan)
    profile.data            # the 2-D intensities, shape (num_scans, k)
 
-There is deliberately **no** ``profile.ylabels`` (the attribute other rainbow
-files use for their single y-axis). A profile has no single m/z axis, so reading
-``ylabels`` raises an error that points you to ``mass_labels(i)`` / ``scan(i)``
-rather than returning something subtly wrong.
+Note that there is deliberately **no** ``profile.ylabels``. (If you try to access
+``ylabels``, you will be scolded.)
 
-**The shared grid is still available, but opt-in.** When you genuinely want the
-rectangular m/z-by-time matrix, you ask for it explicitly and accept that it is a
-lossy projection (it inserts the zeros above and merges nearby points).
+If you must have one *m/z* axis
+-------------------------------
 
-Choosing precision
-------------------
+Per-array mass labels are convenient: one *m/z* axis you can index, slice, and
+stack. Per-scan mass labels are faithful: every point on its own correct axis.
+What if you want both: one shared axis you can index, that still covers every
+point the per-scan form keeps?
 
-``prec`` (the number of decimal places m/z is rounded to) appears in two
-**unrelated** places, which must not be confused:
+The answer is the **common grid**: pass a ``bin_width`` to ``rb.read``:
+
+.. code-block:: python
+
+   import rainbow as rb
+   datadir = rb.read("example.D", hrms=True, precision=4, bin_width=0.01)
+   profile = datadir.get_file("MSProfile.bin")   # a shared-grid DataFile
+   profile.ylabels                               # one m/z axis you can index
+
+Binning is performed as follows:
+
+- lay down a grid of evenly spaced **bins**, each ``bin_width`` wide, across the
+  *m/z* range
+- drop each scan's intensity into the bin its *m/z* falls in
+- **throw away every bin that stayed empty in all scans** (:numref:`fig-binning`)
+
+The surviving bins become the columns: the union of the bins the scans occupied.
+(In *rainbow* this is implemented by the ``bin_to_grid`` function in
+``rainbow/agilent/masshunter.py``.)
+
+.. _fig-binning:
+
+.. figure:: figures/shared_grid_zeros.svg
+   :width: 82%
+   :align: center
+
+   Building the common grid. (a) Scan A drops its intensities into 0.01 Da bins.
+   (b) Scan B has drifted, filling some of A's bins and some new ones. (c) Stacked
+   onto the union: a **shared** bin fills both rows; a **drifted** bin reads 0
+   (red) for the scan that missed it; and a bin **empty in every scan** (100.05
+   here) is dropped, so it never becomes a column. Shaded boxes represent non-zero
+   intensities.
+
+Note that there are **no all-zero columns**. If there is no intensity in a given bin
+for any scan, it is dropped. However, there can be many sparse columns. We can see this
+effect in ``cyan.D``.
+
+At a fine ``bin_width`` of 0.0001 Da, the scans almost never land in the same bin,
+so **every one of the ~315,000 columns holds exactly one nonzero entry** and two thirds
+of every row is zero. Coarsening ``bin_width`` pools the drifting scans, trading
+resolution for fewer zeros. Once a bin is wider than the drift it catches all the scans
+at once, and the zeros vanish (:numref:`fig-realign`).
 
 .. list-table::
-   :widths: 26 14 60
    :header-rows: 1
+   :widths: 34 33 33
 
-   * - Where
-     - Default
-     - Why
-   * - Per-scan m/z labels
-     - 4 decimals
-     - Sets only how many digits ``mass_labels(i)`` reports. Each scan keeps its
-       own labels, so rounding them never forces two scans to share a bin; it
-       cannot create zeros or merge points. Four decimals reflects how precisely
-       the instrument knows each mass.
-   * - Opt-in shared grid
-     - 0.01 Da
-     - The bin width of the projected matrix. It does not remove the zeros
-       (nothing does); it is a common compromise, narrow enough to keep most real
-       peaks in separate bins, wide enough to keep the number of bins manageable.
+   * - ``bin_width``
+     - columns
+     - zeros (per row)
+   * - 0.0001 Da
+     - ~315,000
+     - 67%
+   * - 0.001 Da
+     - ~297,000
+     - 65%
+   * - 0.01 Da
+     - ~147,000
+     - 29%
+   * - 0.05 Da
+     - ~48,000
+     - 0%
 
-Do not round the shared grid to whole numbers (``prec=0``, "nominal mass", i.e.
-m/z rounded to the nearest integer): that merges distinct high-resolution peaks.
-And do not make it very fine (such as 0.0001 Da): that is the zero-flooding case
-above. The 4-decimal default belongs to the per-scan labels, not to the grid.
+.. _fig-realign:
 
-A note on centroids
--------------------
+.. figure:: figures/bin_realign.svg
+   :width: 80%
+   :align: center
 
-Centroids are already short lists of peaks, so binning them onto a shared grid is
-reasonable, and combining peaks across scans onto one axis is a normal operation
-(a merged spectrum, or one peak's chromatogram over time). But binning still
-rounds each peak's m/z to the bin width, and the default whole-number precision
-would round high-resolution peaks to integer mass and merge real ones. So prefer
-the raw per-scan peak lists for centroids too, and treat binning as an explicit
-choice with a precision finer than nominal mass.
+   Effectiveness of the common grid. (a) A bin narrower than
+   the drift puts the three in separate bins: three columns, two thirds zeros. (b)
+   A bin wider than the drift catches all three in one bin: one column, no zeros.
+
+.. note::
+
+   ``bin_width`` is unrelated to ``precision``. ``bin_width`` controls how
+   aggressively scans are pooled onto the common grid; ``precision`` only controls
+   how the *m/z* labels are rounded. If ``precision`` is too coarse to give every
+   bin a distinct label, *rainbow* warns but still bins at the requested
+   ``bin_width``.
+
+Centroids
+---------
+
+Since centroid data are merely generated from profile data, both formats are
+subject to drift, and both bin the same way, producing the same zeros. The only
+difference is how many points sit under a peak: a profile spends **many** (a wide
+row of staircases, :numref:`fig-centroid-zeros` a), a centroid spends **one** (a
+single staircase, :numref:`fig-centroid-zeros` b). Both are about two-thirds
+zeros, but the centroid's matrix is far smaller, so binning it is cheap.
+
+.. _fig-centroid-zeros:
+
+.. figure:: figures/centroid_zeros.svg
+   :width: 90%
+   :align: center
+
+   The same two peaks, binned on a fine grid. Every measured point becomes a
+   3-column staircase, one bin per scan, and empty bins between are dropped
+   (``//``). (a) A profile spends many points on each peak, so each peak is a wide
+   row of staircases. (b) A centroid spends one point per peak, so each peak is a
+   single staircase, far fewer columns. Both are about two-thirds zeros.
+
+A worked example
+----------------
+
+We can now put the pieces together on a real run. ``amber.D`` is a 500-scan
+Q-TOF acquisition, windowed to the *m/z* region around 825.42 to keep the fixture
+small. Read it per-scan (the default), then bin onto a shared grid, once finely
+and once coarsely, and view each as a heatmap:
+
+.. code-block:: python
+
+   import numpy as np
+   import matplotlib.pyplot as plt
+   from matplotlib.colors import LogNorm
+   import rainbow as rb
+
+   # Per-scan (the default): each of the 500 scans keeps its own m/z axis.
+   profile = rb.read("tests/inputs/amber.D", hrms=True).get_file("MSProfile.bin")
+
+   # Pass a bin_width to project onto one shared grid (a DataFile with ylabels).
+   fine = rb.read("tests/inputs/amber.D", hrms=True,
+                  bin_width=0.005).get_file("MSProfile.bin")
+   coarse = rb.read("tests/inputs/amber.D", hrms=True,
+                    bin_width=0.05).get_file("MSProfile.bin")
+
+   # fine.data / coarse.data are (num_scans, num_bins): plot either as a heatmap.
+   grid = fine                                     # or coarse
+   cmap = plt.get_cmap("viridis").copy()
+   cmap.set_bad("0.85")                            # render the masked zeros as grey
+   plt.imshow(np.ma.masked_equal(grid.data, 0),    # mask zeros so the gaps show
+              aspect="auto", cmap=cmap, norm=LogNorm(),
+              extent=[grid.ylabels[0], grid.ylabels[-1], grid.data.shape[0], 0])
+   plt.xlabel("m/z (Da)"); plt.ylabel("scan (retention time)")
+   plt.colorbar(label="intensity"); plt.show()
+
+:numref:`fig-worked` shows both grids. On the fine grid each scan samples a comb
+of *m/z* positions, so most cells are 0 (grey): the zeros from binning, drifting
+slowly down the run. On a grid wider than the drift the comb closes up and the
+scans realign. The bright horizontal band is the analyte eluting off the column at
+one retention time. Centroids bin the same way but are far sparser
+(:numref:`fig-centroid-zeros`).
+
+.. _fig-worked:
+
+.. figure:: figures/worked_example.svg
+   :width: 95%
+   :align: center
+
+   ``amber.D`` (a 500-scan Q-TOF run) binned near *m/z* 825.42, as heatmaps: rows
+   are scans (retention time), columns are *m/z*, log colour is intensity, and
+   **grey is 0**. (a) A fine grid (0.005 Da) leaves a comb of grey gaps, the
+   zeros. (b) A grid wider than the drift (0.05 Da) fills them in (realigned). The
+   bright band is the analyte eluting.

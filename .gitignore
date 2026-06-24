@@ -19,6 +19,8 @@ rainbow/agilent/_chdelta.c
 
 # local benchmark datasets (not part of the repo)
 /data/
+# exported ASM documents from real samples (never commit; real pharma data)
+/ASMs/
 /3543_DC/
 /MK-1200_Reduction/
 /mcintosh data/

@@ -38,7 +38,7 @@ _ACMD_NS = {'a': 'urn:schemas-agilent-com:acmd20'}
 _DATA_EXTS = ('.uv', '.ch', '.it')
 
 
-def read(path, prec=0, requested_files=None, telemetry=False):
+def read(path, precision='auto', requested_files=None, telemetry=False):
     """
     Reads an Agilent OpenLab CDS .dx archive.
 
@@ -49,7 +49,7 @@ def read(path, prec=0, requested_files=None, telemetry=False):
 
     Args:
         path (str): Path of the .dx file.
-        prec (int, optional): Number of decimals to round ylabels.
+        precision (int, optional): Number of decimals to round ylabels.
         requested_files (list, optional): Lowercased names to parse.
         telemetry (bool, optional): Flag for parsing .IT telemetry traces.
 
@@ -57,6 +57,9 @@ def read(path, prec=0, requested_files=None, telemetry=False):
         DataDirectory representing the .dx archive, or None if it is empty.
 
     """
+    # .dx archives hold UV / unit-resolution data, so 'auto' means whole numbers.
+    if precision == 'auto':
+        precision = 0
     with zipfile.ZipFile(path) as archive:
         dir_metadata, signals = _parse_manifest(archive)
 

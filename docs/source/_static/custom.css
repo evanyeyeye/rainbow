@@ -1,0 +1,13 @@
+/* The RTD theme sets page headings in Roboto Slab, which has a tall line-box.
+   In browsers that load that web font, the line-box adds extra space under an
+   <h1>, so the gap between the page title and the first paragraph looks large
+   (it renders tight only when a shorter fallback font is substituted). Pinning a
+   tight line-height removes that font-dependent space so the spacing is the same
+   everywhere. */
+.rst-content h1,
+.rst-content h2,
+.rst-content h3,
+.rst-content h4 {
+    line-height: 1.15;
+    margin-bottom: 16px;
+}
