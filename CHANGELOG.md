@@ -3,6 +3,61 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-06-24
+
+### Changed
+- **Agilent HRMS profile data is now per-scan by default. Breaking:**
+  `rb.read(path, hrms=True)` returns the faithful per-scan representation (a
+  `rainbow.agilent.masshunter.ProfileDataFile` per flight-time grid) instead of
+  the shared-grid `DataFile`. A Q-TOF/TOF `MSProfile.bin` has a per-scan m/z
+  axis (the flight-time-to-m/z calibration drifts between scans), so projecting
+  every scan onto one shared grid inserts zeros and merges peaks. Pass a
+  `bin_width` to opt into the shared grid.
+- **`prec` renamed to `precision`** on `rb.read` (and the vendor parsers).
+  **Breaking:** code passing `prec=` must now pass `precision=`.
+- **`precision` now defaults to `'auto'` and is resolved per file from the
+  actual data type:** 4 decimals for high-resolution data (the HRMS profile and
+  TOF centroids) and 0 (whole numbers) for unit-resolution data (UV,
+  GC/quadrupole MS, ICP-MS, Waters). Previously the default was a flat `0`,
+  which silently reduced high-resolution m/z to nominal mass. Pass an explicit
+  integer to override (including `0`).
+
+### Added
+- **Per-scan (unbinned) HRMS profile representation** (now the default; see
+  Changed). `ProfileDataFile` exposes `scan(i)`, `mass_labels(i)`, the shared
+  `tof` axis, and the raw `data` matrix. It has no single `ylabels`, and the
+  `DataFile` operations that need one shared m/z axis (`ylabels`,
+  `extract_traces`, `to_csvstr`, `export_csv`, `plot`) raise a clear error
+  pointing at `scan(i)`/`mass_labels(i)` and the documentation. New
+  documentation page, "HRMS Profile Data"
+  (`docs/source/agilent/hrms_data_model.rst`).
+- **`bin_width` argument on `rb.read`** is the single switch for HRMS
+  shared-grid binning: omit it for the per-scan representation, pass a width (in
+  daltons) to project onto one shared grid. It is fully independent of
+  `precision` (which only rounds the reported m/z labels and has no effect on the
+  grid). A `bin_width` finer than `10**-precision` is allowed but warns, since
+  two bins may then round to the same m/z label.
+
+### Fixed
+- **`MSProfile.bin` RLE segments whose first scan opens with a literal run
+  (#27).** The run-length-encoded intensity stream is `[point-count word]
+  [negated leading-zero count][token stream]`, with the token stream opening at
+  4-byte width. The reader instead read a second int32 as a "width flag", which
+  happened to decode correctly only when the first token was a width switch
+  (the common case) but raised `Malformed MSProfile.bin RLE segment` on
+  high-signal scans that open with a literal 4-byte intensity. Fixed in both the
+  pure-Python `decompress_inten_list` and the Cython accelerator
+  (`_msprofile.pyx`); validated on two real Agilent Q-TOF datasets (every scan's
+  decoded maximum matches the independently stored `MaxY`, 0 mismatches across
+  all 1256 scans of each).
+- **Shared-grid binning no longer emits all-zero columns.** A column of the
+  shared grid is meant to be a bin some scan actually filled (empty bins are
+  dropped), but the sparse-path branch of `bin_to_grid` keyed its columns off
+  point presence rather than nonzero intensity, so points whose recorded
+  intensity is `0` produced phantom all-zero columns (about 90 of ~315,000 on
+  the default fine grid). The sparse path now drops zero-sum columns, matching
+  the dense path.
+
 ## [1.2.0] - 2026-06-22
 
 ### Added

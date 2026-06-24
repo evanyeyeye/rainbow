@@ -4,20 +4,26 @@ from rainbow.agilent import chemstation
 from rainbow.datadirectory import DataDirectory
 
 
-def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
-         centroid=False):
+def read(path, precision='auto', hrms=False, requested_files=None,
+         telemetry=False, centroid=False, bin_width=None):
     """
     Reads an Agilent .D directory or .dx archive.
 
     Args:
         path (str): Path of the directory or .dx file.
-        prec (int, optional): Number of decimals to round masses.
+        precision (int or 'auto', optional): Number of decimals to round masses.
+            ``'auto'`` picks 4 for high-resolution data and 0 otherwise, per file.
         hrms (bool, optional): Flag for parsing the MassHunter profile
             spectrum (MSProfile.bin).
         requested_files (list, optional): List of filenames to parse.
         telemetry (bool, optional): Flag for parsing .dx telemetry traces.
         centroid (bool, optional): Flag for parsing the MassHunter centroid
             spectrum (MSPeak.bin).
+        bin_width (float, optional): Shared-grid bin width in daltons for the
+            HRMS profile. Omit it (the default) to keep the per-scan
+            representation (one
+            :class:`~rainbow.agilent.masshunter.ProfileDataFile` per flight-time
+            grid); pass a width to project onto the shared m/z grid.
 
     Returns:
         DataDirectory representing the Agilent data.
@@ -25,15 +31,15 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
     """
     if os.path.splitext(path)[1].lower() == '.dx':
         from rainbow.agilent import openlab
-        return openlab.read(path, prec, requested_files, telemetry)
+        return openlab.read(path, precision, requested_files, telemetry)
 
     datafiles = []
-    datafiles.extend(chemstation.parse_allfiles(path, prec, requested_files))
+    datafiles.extend(chemstation.parse_allfiles(path, precision, requested_files))
     if hrms or centroid:
         try:
             from rainbow.agilent import masshunter
-            datafiles.extend(
-                masshunter.parse_allfiles(path, prec, hrms, centroid))
+            datafiles.extend(masshunter.parse_allfiles(
+                path, precision, hrms, centroid, bin_width))
         except ModuleNotFoundError:
             raise ModuleNotFoundError("You must install python-lzf to parse masshunter files.")
 

@@ -20,10 +20,16 @@ language = 'en'
 master_doc = 'index'
 source_suffix = '.rst'
 
+# Number figures (Fig. 1, Fig. 2, ...) so the text can cross-reference them by
+# number with :numref: instead of "the figure below".
+numfig = True
+
 templates_path = ['_templates']
 exclude_patterns = ['Thumbs.db', '.DS_Store']
 html_theme = 'sphinx_rtd_theme'
 html_favicon = '_static/favicon.ico'
+html_static_path = ['_static']
+html_css_files = ['custom.css']
 
 add_module_names = False
 html_show_sourcelink = False
@@ -32,7 +38,8 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
-    'sphinx.ext.viewcode'
+    'sphinx.ext.viewcode',
+    'sphinx.ext.mathjax'
 ]
  
 #######################################

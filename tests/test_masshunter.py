@@ -41,6 +41,14 @@ YELLOW_ACQDATA = os.path.join("tests", "inputs", "yellow.D", "AcqData")
 MAGENTA_D = os.path.join("tests", "inputs", "magenta.D")
 CYAN_D = os.path.join("tests", "inputs", "cyan.D")
 
+# `amber` is a 500-scan slice of the same real Q-TOF run cyan is a 3-scan slice
+# of, but kept long (so per-scan drift accumulates across the run) and windowed in
+# m/z to ~823.8-827.2 (each scan's MSProfile.bin segment re-encoded to that
+# flight-time range) so the fixture stays small (~0.6 MB). It is the only
+# many-scan HRMS fixture and backs the documentation's real-world binning heatmap
+# (docs/source/agilent/figures/make_figures.py). Run-length encoded, so no lzf.
+AMBER_D = os.path.join("tests", "inputs", "amber.D")
+
 # Apex m/z that BioConfirm reports for each fixture's first scan (its main-peak
 # base peak), used to validate the mass calibration against ground truth.
 BIOCONFIRM_APEX_MZ = {MAGENTA_D: 734.4836, CYAN_D: 825.4221}
@@ -56,6 +64,19 @@ BIOCONFIRM_APEX_MZ = {MAGENTA_D: 734.4836, CYAN_D: 825.4221}
 #       3 (a deliberately interrupted/incomplete acquisition).
 GOLD_D = os.path.join("tests", "inputs", "gold.D")
 COPPER_D = os.path.join("tests", "inputs", "copper.D")
+
+# `silver` is an Agilent ICP-MS acquisition; its isotope channels form a
+# unit-resolution m/z axis (read through parse_icpmsdata). The Waters `.raw`
+# fixtures below carry unit-resolution quadrupole MS m/z axes. Both are used to
+# check that precision='auto' resolves to whole-number m/z labels for the
+# non-HRMS parsers. teal.dx is a UV-only flush with no m/z axis, so the OpenLab
+# .dx reader is not covered here (no usable fixture).
+SILVER_ACQDATA = os.path.join("tests", "inputs", "silver.D", "AcqData")
+# Waters .raw fixtures that actually carry an MS m/z axis (white.raw has none).
+WATERS_MS_RAW = [
+    os.path.join("tests", "inputs", name)
+    for name in ("blue.raw", "indigo.raw", "turquoise.raw", "violet.raw")
+]
 
 
 def _msts_scan_count(acqdata):
@@ -141,7 +162,8 @@ def _profile_records(acqdata):
 def _assert_decodes(directory):
     """ Parses the fixture and checks each scan's decoded maximum
     intensity against the MaxY field stored independently in MSScan.bin. """
-    datafiles = masshunter.parse_allfiles(directory, hrms=True)
+    datafiles = masshunter.parse_allfiles(
+        directory, hrms=True, bin_width=0.0001)
     assert len(datafiles) == 1
     datafile = datafiles[0]
 
@@ -191,7 +213,8 @@ def test_rle_not_confused_with_lzf():
 
 def test_mass_calibration_in_range():
     """ The calibrated mz axis spans a sensible HRMS range. """
-    datafile = masshunter.parse_allfiles(CYAN_D, hrms=True)[0]
+    datafile = masshunter.parse_allfiles(
+        CYAN_D, hrms=True, bin_width=0.0001)[0]
     assert datafile.ylabels.min() > 100
     assert datafile.ylabels.max() < 5000
     assert (datafile.ylabels[1:] > datafile.ylabels[:-1]).all()
@@ -243,28 +266,132 @@ def test_polynomial_calibration_matches_bioconfirm(directory, truth):
     assert abs(apex - truth) < abs(apex_primary - truth)
 
 
+def _rle_segment(num_mz, leading_zeros, tokens):
+    """ Build a MSProfile.bin RLE segment body (the bytes after the 16-byte mz
+    header): the 4-byte point-count word, the negated leading-zero count, then
+    the already-packed `tokens` stream (which opens at 4-byte width). """
+    return (struct.pack('<I', num_mz | (0x90 << 24))
+            + struct.pack('<i', -leading_zeros) + tokens)
+
+
+def test_profile_stream_opens_at_four_byte_width():
+    """ Issue #27 follow-up: the token stream opens at 4-byte width, so a scan
+    whose first stored intensity is a literal (a high-signal scan, with no
+    leading width-switch control) decodes correctly. The previous reader read a
+    separate "width flag" field that did not exist, which decoded identically
+    whenever the first token was a width switch (the common case) but raised
+    "Malformed MSProfile.bin RLE segment" on a literal-first scan. """
+    tokens = (
+        struct.pack('<i', 70000)    # 4-byte literal             -> inten[1]
+        + struct.pack('<i', 80000)  # 4-byte literal             -> inten[2]
+        + struct.pack('<i', -1)     # control @4B: 0 zeros, -> 1-byte width
+        + struct.pack('<b', 5)      # 1-byte literal             -> inten[3]
+        + struct.pack('<b', -2)     # control @1B: 0 zeros, -> 2-byte width
+        + struct.pack('<h', 1000)   # 2-byte literal             -> inten[4]
+    )
+    body = _rle_segment(8, leading_zeros=1, tokens=tokens)
+    expected = [0, 70000, 80000, 5, 1000, 0, 0, 0]
+
+    out = masshunter.decompress_inten_list(memoryview(body), 8)
+    assert out.tolist() == expected
+    assert out.dtype == np.uint32
+    # The compiled accelerator must decode the literal opening identically.
+    if masshunter._msprofile_fast is not None:
+        fast = masshunter._msprofile_fast.decompress_inten_list(
+            memoryview(body), 8)
+        assert fast.tolist() == expected
+
+
 def test_malformed_rle_raises_valueerror():
     """ A corrupt RLE stream raises a clear ValueError, not a cryptic
     KeyError/struct.error/silent wraparound. """
-    # 4-byte point-count word, then negated (init_zero_repeat, width_flag).
-    def stream(init_zero_repeat, width_flag, tail):
-        return (struct.pack('<I', 5 | (0x90 << 24))
-                + struct.pack('<ii', -init_zero_repeat, -width_flag) + tail)
-
-    # Token -4 -> divmod(4, 4) = (1, 0): a zero-width switch is invalid.
-    bad_width = stream(0, 1, struct.pack('<b', -4))
+    # A control token whose remainder is 0 is a zero-width switch -> invalid.
+    # Opening at 4-byte width, -4 -> divmod(4, 4) = (1 zero, width flag 0).
+    bad_width = _rle_segment(5, 0, struct.pack('<i', -4))
     with pytest.raises(ValueError):
-        masshunter.decompress_inten_list(memoryview(bad_width)[0:], 5)
+        masshunter.decompress_inten_list(memoryview(bad_width), 5)
 
     # A positive initial zero-repeat would start the write index negative.
-    neg_index = stream(-3, 1, b"")
+    neg_index = _rle_segment(5, -3, b"")
     with pytest.raises(ValueError):
-        masshunter.decompress_inten_list(memoryview(neg_index)[0:], 5)
+        masshunter.decompress_inten_list(memoryview(neg_index), 5)
 
-    # More literals than the point count must not overflow silently.
-    too_many = stream(0, 1, struct.pack('<b', 7) * 9)
+    # More literals than the point count must not overflow silently: switch to
+    # 1-byte width, then emit more 1-byte literals than there are points.
+    too_many = _rle_segment(5, 0, struct.pack('<i', -1) + struct.pack('<b', 7) * 9)
     with pytest.raises(ValueError):
-        masshunter.decompress_inten_list(memoryview(too_many)[0:], 5)
+        masshunter.decompress_inten_list(memoryview(too_many), 5)
+
+
+# ---------------------------------------------------------------------------
+# Per-scan profile representation (parse_msdata with no bin_width).
+#
+# An HRMS profile has a per-scan m/z axis: every scan shares the flight-time
+# grid but the calibration drifts, so the m/z of a point depends on the scan
+# too. With no bin_width, parse_msdata returns ProfileDataFile objects that keep
+# the raw intensities and expose the per-scan m/z via scan(i)/mass_labels(i),
+# instead of projecting onto one shared grid (which inserts zeros). See the
+# "HRMS profile data model" docs page.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "directory", [MAGENTA_D, CYAN_D], ids=["magenta", "cyan"])
+def test_per_scan_profile_is_faithful(directory):
+    """ The per-scan form keeps raw intensities and exact per-scan m/z. """
+    acqdata = os.path.join(directory, "AcqData")
+    profiles = masshunter.parse_msdata(acqdata)
+    assert isinstance(profiles, list) and len(profiles) >= 1
+
+    records = _profile_records(acqdata)
+    calib, flags = masshunter._load_calibration(
+        acqdata, [r.get('CalibrationID') for r in records])
+
+    profile = profiles[0]
+    assert isinstance(profile, masshunter.ProfileDataFile)
+    n, k = profile.data.shape           # rows are scans, columns flight-time bins
+    assert profile.xlabels.size == n
+    assert profile.tof.size == k
+
+    for i in range(n):
+        mz, inten = profile.scan(i)
+        # The per-scan m/z is the exact calibration of the shared flight-time
+        # axis (rounded to the reported precision), not a shared rounded grid.
+        truth = np.round(
+            masshunter.calibrate_mz(
+                profile.tof, calib[i],
+                flags.get(records[i].get('CalibrationID'))),
+            profile.mz_decimals)
+        np.testing.assert_array_equal(mz, truth)
+        # Intensities are the raw decoded values: the per-scan maximum matches
+        # the MaxY stored independently in MSScan.bin.
+        assert int(inten.max()) == int(
+            records[i]['SpectrumParamValues']['MaxY'])
+
+
+def test_per_scan_profile_has_no_shared_ylabels():
+    """ A profile has no single m/z axis, so ylabels raises with guidance
+    rather than returning a silently-approximate array. """
+    profile = masshunter.parse_msdata(
+        os.path.join(MAGENTA_D, "AcqData"))[0]
+    with pytest.raises(AttributeError, match="mass_labels"):
+        profile.ylabels
+
+
+def test_default_is_per_scan():
+    """ With no bin_width the public rb.read API gives the per-scan
+    representation; passing a bin_width opts into the shared grid. """
+    datadir = rb.read(MAGENTA_D, hrms=True)
+    profiles = [f for f in datadir.datafiles
+                if isinstance(f, masshunter.ProfileDataFile)]
+    assert len(profiles) >= 1
+    mz, inten = profiles[0].scan(0)
+    assert mz.shape == inten.shape == (profiles[0].data.shape[1],)
+    # Opt in to the shared grid: a single non-profile DataFile with ylabels.
+    binned = rb.read(MAGENTA_D, hrms=True, bin_width=0.01)
+    profile_files = [f for f in binned.datafiles
+                     if f.name.startswith("MSProfile")]
+    assert len(profile_files) == 1
+    assert not isinstance(profile_files[0], masshunter.ProfileDataFile)
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +467,8 @@ def test_stride_inferred_without_msts():
 def test_gold_parses_with_default_masscal():
     """ gold parses end to end to a profile grid with a sensible TOF m/z
     axis, calibrated from DefaultMassCal.xml (no MSMassCal.bin). """
-    datafile = masshunter.parse_allfiles(GOLD_D, hrms=True)[0]
+    datafile = masshunter.parse_allfiles(
+        GOLD_D, hrms=True, bin_width=0.0001)[0]
     assert datafile.data.shape[0] == 3               # 3 scans
     assert datafile.xlabels.size == 3
     assert datafile.data.shape[1] == datafile.ylabels.size
@@ -373,7 +501,8 @@ def test_incomplete_acquisition_keeps_complete_scans():
     """ copper's MSScan.bin describes four scans but MSProfile.bin holds
     only three; parsing keeps the three complete scans rather than failing
     on the truncated segment. """
-    datafile = masshunter.parse_allfiles(COPPER_D, hrms=True)[0]
+    datafile = masshunter.parse_allfiles(
+        COPPER_D, hrms=True, bin_width=0.0001)[0]
     assert datafile.data.shape[0] == 3
     assert datafile.xlabels.size == 3
 
@@ -447,3 +576,200 @@ def test_centroid_truncation_is_graceful():
     centroid = masshunter.parse_mspeakdata(os.path.join(COPPER_D, "AcqData"))
     assert centroid.name == "MSPeak.bin"
     assert centroid.data.shape[0] >= 3
+
+
+# ---------------------------------------------------------------------------
+# precision='auto', bin_width, the per-scan default, and the error surface
+# (1.3). precision is a label precision (decimals), bin_width is the shared-grid
+# bin width in daltons; the two are independent. The HRMS default is per-scan.
+# ---------------------------------------------------------------------------
+
+def test_precision_auto_profile_is_four_decimals():
+    """ 'auto' precision rounds HRMS profile labels to 4 decimals (not nominal
+    mass), on the shared grid. """
+    prof = rb.read(MAGENTA_D, hrms=True,
+                   bin_width=0.0001).get_file("MSProfile.bin")
+    yl = prof.ylabels
+    assert np.allclose(yl, np.round(yl, 4))
+    assert not np.allclose(yl, np.round(yl))      # genuinely sub-integer
+
+
+def test_precision_explicit_overrides_auto():
+    """ An explicit integer overrides the 'auto' default (labels only; the grid
+    is the separate bin_width). """
+    prof = rb.read(MAGENTA_D, hrms=True, precision=1,
+                   bin_width=0.1).get_file("MSProfile.bin")
+    assert np.allclose(prof.ylabels, np.round(prof.ylabels, 1))
+
+
+def test_precision_auto_gc_centroid_is_integer():
+    """ GC-quadrupole centroids (no calibration) auto-resolve to whole numbers,
+    matching the unit-resolution data.ms axis. """
+    dd = rb.read("tests/inputs/yellow.D", centroid=True)
+    cen = dd.get_file("MSPeak.bin")
+    assert np.array_equal(cen.ylabels, np.round(cen.ylabels))
+    assert np.array_equal(cen.ylabels, dd.get_file("data.ms").ylabels)
+
+
+def test_bin_width_presence_toggles_binning():
+    """ bin_width is the only binning switch: omit it for the per-scan list,
+    pass a width for the single shared-grid DataFile. """
+    acqdata = os.path.join(MAGENTA_D, "AcqData")
+    per_scan = masshunter.parse_msdata(acqdata)
+    assert isinstance(per_scan, list)
+    assert all(isinstance(p, masshunter.ProfileDataFile) for p in per_scan)
+    grid = masshunter.parse_msdata(acqdata, bin_width=0.01)
+    assert isinstance(grid, masshunter.DataFile)
+    assert not isinstance(grid, masshunter.ProfileDataFile)
+
+
+def test_precision_does_not_affect_the_grid():
+    """ At a fixed bin_width, precision changes only the label rounding, never
+    which scans share a column: the data and (here) the labels are identical. """
+    fine = rb.read(MAGENTA_D, hrms=True, precision=4,
+                   bin_width=0.01).get_file("MSProfile.bin")
+    coarse = rb.read(MAGENTA_D, hrms=True, precision=2,
+                     bin_width=0.01).get_file("MSProfile.bin")
+    assert np.array_equal(fine.data, coarse.data)
+    assert np.array_equal(fine.ylabels, coarse.ylabels)
+
+
+def test_bin_width_decouples_from_precision():
+    """ At the same label precision, a coarser bin_width yields fewer columns. """
+    fine = rb.read(MAGENTA_D, hrms=True, precision=2,
+                   bin_width=0.01).get_file("MSProfile.bin")
+    coarse = rb.read(MAGENTA_D, hrms=True, precision=2,
+                     bin_width=0.1).get_file("MSProfile.bin")
+    assert coarse.ylabels.size < fine.ylabels.size
+
+
+def test_bin_width_finer_than_labels_warns():
+    """ precision and bin_width are independent, so a bin_width finer than the
+    labels is allowed; it only WARNS (labels may collide), it does not raise, and
+    it still produces a grid. """
+    with pytest.warns(UserWarning, match="may collide"):
+        out = rb.read(MAGENTA_D, hrms=True, precision=2, bin_width=0.001)
+    assert out.get_file("MSProfile.bin").data.shape[1] > 0
+
+
+def test_bin_width_finer_than_labels_warns_direct():
+    """ The warning fires at the direct (non-rb.read) entry point too. """
+    acqdata = os.path.join(MAGENTA_D, "AcqData")
+    with pytest.warns(UserWarning, match="may collide"):
+        masshunter.parse_msdata(acqdata, precision=2, bin_width=0.001)
+
+
+def test_bin_width_invalid_value_rejected():
+    with pytest.raises(Exception, match="Invalid bin_width"):
+        rb.read(MAGENTA_D, hrms=True, bin_width=0)
+
+
+def test_profile_shared_axis_ops_raise_with_pointer():
+    """ The per-scan profile has no shared m/z axis, so ylabels and the DataFile
+    operations that need one raise, pointing at scan(i)/mass_labels(i) and the
+    documentation. """
+    prof = rb.read(MAGENTA_D, hrms=True).get_file("MSProfile.bin")
+    assert isinstance(prof, masshunter.ProfileDataFile)
+    ops = [lambda: prof.ylabels,
+           lambda: prof.extract_traces(),
+           lambda: prof.to_csvstr(),
+           lambda: prof.export_csv("unused.csv"),
+           lambda: prof.plot(100.0)]
+    for op in ops:
+        with pytest.raises(AttributeError, match="readthedocs"):
+            op()
+
+
+def test_precision_rejects_bool():
+    """ bool is not a valid precision even though it is an int subclass. """
+    with pytest.raises(Exception, match="Invalid precision"):
+        rb.read(MAGENTA_D, hrms=True, precision=True)
+
+
+def test_precision_auto_tof_centroid_is_four_decimals():
+    """ A TOF-calibrated centroid (gold.D) auto-resolves to 4 decimals, unlike
+    the unit-resolution GC centroid that resolves to whole numbers. """
+    centroid = masshunter.parse_mspeakdata(os.path.join(GOLD_D, "AcqData"))
+    yl = centroid.ylabels
+    assert np.allclose(yl, np.round(yl, 4))
+    assert not np.array_equal(yl, np.round(yl))   # genuinely sub-integer
+
+
+def test_mass_labels_are_per_scan_and_drift():
+    """ Each scan's m/z is its own: mass_labels(i) is exactly scan(i)'s axis, and
+    the same column j carries a different m/z in different scans (drift). """
+    profile = rb.read(CYAN_D, hrms=True).get_file("MSProfile.bin")
+    num_scans, k = profile.data.shape
+    for i in (0, num_scans - 1):
+        mz, _ = profile.scan(i)
+        np.testing.assert_array_equal(profile.mass_labels(i), mz)
+    j = k // 2
+    first = profile.mass_labels(0)[j]
+    last = profile.mass_labels(num_scans - 1)[j]
+    assert first != last                          # the column drifts across scans
+
+
+def test_tof_axis_is_shared_and_monotonic():
+    """ tof is the one flight-time axis shared by every scan: it indexes the
+    columns and is strictly increasing. """
+    profile = rb.read(CYAN_D, hrms=True).get_file("MSProfile.bin")
+    assert profile.tof.size == profile.data.shape[1]
+    assert (profile.tof[1:] > profile.tof[:-1]).all()
+
+
+def test_amber_is_a_long_windowed_run():
+    """ amber.D is the many-scan fixture: 500 scans over a narrow m/z window, with
+    per-scan drift accumulating across the run (more than a fine bin). """
+    profile = rb.read(AMBER_D, hrms=True).get_file("MSProfile.bin")
+    n, k = profile.data.shape
+    assert n == 500
+    mz0 = profile.mass_labels(0)
+    assert 823 < mz0.min() and mz0.max() < 828        # windowed in m/z
+    drift = float(np.median(np.abs(profile.mass_labels(n - 1) - mz0)))
+    assert drift > 0.002                               # drifts across the run
+    # It bins like any profile: a fine grid leaves zeros, a coarse grid does not.
+    fine = rb.read(AMBER_D, hrms=True, bin_width=0.005).get_file("MSProfile.bin")
+    coarse = rb.read(AMBER_D, hrms=True, bin_width=0.5).get_file("MSProfile.bin")
+    assert (fine.data == 0).mean() > 0.3
+    assert (coarse.data == 0).mean() == 0
+
+
+@pytest.mark.parametrize("bin_width", [0.0001, 0.01])
+def test_binned_grid_has_no_all_zero_columns(bin_width):
+    """ Every column of the shared grid is a bin some scan actually filled, so no
+    column is all zeros. This holds on a fine grid (the sparse code path, which
+    must drop bins that hold only zero-intensity points) and on a coarser grid
+    (the dense path). """
+    binned = rb.read(CYAN_D, hrms=True, bin_width=bin_width)
+    data = binned.get_file("MSProfile.bin").data
+    assert data.shape[1] > 0
+    assert (data.sum(axis=0) == 0).sum() == 0
+
+
+# precision='auto' resolves to 0 (whole-number m/z labels) for the
+# unit-resolution, non-HRMS parsers. Each test reads with the default precision
+# and checks the per-array mass labels equal their rounded-to-integer values.
+
+def test_icpms_auto_precision_is_whole_numbers():
+    """ ICP-MS isotope channels are unit-resolution, so the default precision
+    yields whole-number m/z labels. """
+    datafile = masshunter.parse_icpmsdata(SILVER_ACQDATA)
+    ylabels = datafile.ylabels
+    assert ylabels.size > 0
+    np.testing.assert_array_equal(ylabels, np.round(ylabels))
+
+
+@pytest.mark.parametrize(
+    "path", WATERS_MS_RAW,
+    ids=[os.path.basename(p) for p in WATERS_MS_RAW])
+def test_waters_auto_precision_is_whole_numbers(path):
+    """ Waters quadrupole MS m/z axes are unit-resolution, so the default
+    precision yields whole-number m/z labels. """
+    datadir = rb.read(path)
+    ms_files = [datafile for datafile in datadir.datafiles
+                if datafile.detector == 'MS']
+    assert ms_files
+    for datafile in ms_files:
+        ylabels = datafile.ylabels
+        assert ylabels.size > 0
+        np.testing.assert_array_equal(ylabels, np.round(ylabels))

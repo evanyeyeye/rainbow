@@ -62,7 +62,7 @@ SPECTRUM PARSING METHODS
 """
 
 
-def parse_spectrum(path, prec=0, requested_files=None):
+def parse_spectrum(path, precision=0, requested_files=None):
     """
     Finds and parses Waters UV and MS spectra from a .raw directory.
 
@@ -72,7 +72,7 @@ def parse_spectrum(path, prec=0, requested_files=None):
 
     Args:
         path (str): Path to the .raw directory. 
-        prec (int, optional): Number of decimals to round ylabels.
+        precision (int, optional): Number of decimals to round ylabels.
         requested_files (list, optional): List of filenames to parse.
     
     Returns:
@@ -145,12 +145,12 @@ def parse_spectrum(path, prec=0, requested_files=None):
             polarity = polarities[funcdat_index]
             if funcdat_index < len(calib_nums):
                 calib = calib_nums[funcdat_index]
-        datafile = parse_function(os.path.join(path, funcdat_file), prec, polarity, calib)
+        datafile = parse_function(os.path.join(path, funcdat_file), precision, polarity, calib)
         datafiles.append(datafile)
     return datafiles
 
 
-def parse_function(path, prec=0, polarity=None, calib=None):
+def parse_function(path, precision=0, polarity=None, calib=None):
     """
     Parses data for a Waters function. 
 
@@ -163,7 +163,7 @@ def parse_function(path, prec=0, polarity=None, calib=None):
 
     Args:
         path (str): Path to the _FUNC .DAT file.
-        prec (int, optional): Number of decimals to round ylabels.
+        precision (int, optional): Number of decimals to round ylabels.
         polarity (str, optional): Polarity of the spectrum.
         calib (list, optional): Float calibration values of the spectrum.
     
@@ -192,7 +192,7 @@ def parse_function(path, prec=0, polarity=None, calib=None):
         parse_funcdat = parse_funcdat8
     elif bytes_per_pair == 4:
         parse_funcdat = parse_funcdat4
-    ylabels, data = parse_funcdat(path, pair_counts, prec, calib)
+    ylabels, data = parse_funcdat(path, pair_counts, precision, calib)
 
     # Spectra without an assigned polarity always contain UV data.
     detector = 'MS' if polarity else 'UV'
@@ -240,7 +240,7 @@ def parse_funcidx(path):
     return times, pair_counts, bytes_per_pair
 
 
-def parse_funcdat2(path, pair_counts, prec=0, calib=None):
+def parse_funcdat2(path, pair_counts, precision=0, calib=None):
     """
     Parses a Waters _FUNC .DAT file with the 2-bytes format. 
 
@@ -252,7 +252,7 @@ def parse_funcdat2(path, pair_counts, prec=0, calib=None):
         path (str): Path to the _FUNC .DAT file. 
         pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        prec (int, optional): Number of decimals to round ylabels. 
+        precision (int, optional): Number of decimals to round ylabels. 
         calib (list, optional): Float calibration values of the spectrum.
     
     Returns: 
@@ -287,7 +287,7 @@ def parse_funcdat2(path, pair_counts, prec=0, calib=None):
     return ylabels, data
 
 
-def parse_funcdat4(path, pair_counts, prec=0, calib=None):
+def parse_funcdat4(path, pair_counts, precision=0, calib=None):
     """
     Parses a Waters _FUNC .DAT file with the 4-bytes format.
 
@@ -299,7 +299,7 @@ def parse_funcdat4(path, pair_counts, prec=0, calib=None):
         path (str): Path to the Waters _FUNC .DAT file.
         pair_counts (np.ndarray):
             1D array with the number of data pairs at each retention time.
-        prec (int, optional): Number of decimals to round ylabels.
+        precision (int, optional): Number of decimals to round ylabels.
         calib (list, optional): Float calibration values of the spectrum.
 
     Returns:
@@ -369,7 +369,7 @@ def parse_funcinf(path):
     return mzs
 
 
-def parse_funcdat6(path, pair_counts, prec=0, calib=None):
+def parse_funcdat6(path, pair_counts, precision=0, calib=None):
     """
     Parses a Waters _FUNC .DAT file with the 6-bytes format. 
 
@@ -381,7 +381,7 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
         path (str): Path to the Waters _FUNC .DAT file. 
         pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        prec (int, optional): Number of decimals to round ylabels. 
+        precision (int, optional): Number of decimals to round ylabels. 
         calib (list, optional): Float calibration values of the spectrum.
     
     Returns: 
@@ -409,17 +409,17 @@ def parse_funcdat6(path, pair_counts, prec=0, calib=None):
         keys = calibrate(keys, calib)
 
     # Then round the keys to the nearest whole number.
-    keys = np.round(keys, prec)
+    keys = np.round(keys, precision)
 
     # Calculate the `values` from each 6-byte segment.
     val_bases = np.ndarray(num_datapairs, '<h', raw_bytes, 0, 6)
     values = val_bases * _FUNC6_VAL_POW4[raw_values & 0xF]
     del val_bases, raw_values, raw_bytes
 
-    return bin_datapairs(keys, values, pair_counts, prec)
+    return bin_datapairs(keys, values, pair_counts, precision)
 
 
-def parse_funcdat8(path, pair_counts, prec=0, calib=None):
+def parse_funcdat8(path, pair_counts, precision=0, calib=None):
     """
     Parses a Waters _FUNC .DAT file with the 8-bytes format. 
 
@@ -431,7 +431,7 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
         path (str): Path to the _FUNC .DAT file. 
         pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        prec (int, optional): Number of decimals to round ylabels. 
+        precision (int, optional): Number of decimals to round ylabels. 
         calib (list, optional): Float calibration values of the spectrum.
     
     Returns: 
@@ -471,7 +471,7 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     del keyints, keyfracs
 
     # Round the keys to the nearest whole number. 
-    keys = np.round(keys, prec)
+    keys = np.round(keys, precision)
 
     # Find the integers that need to be scaled via left shift. 
     # This is based on the number of bits allocated for each integer.
@@ -495,7 +495,7 @@ def parse_funcdat8(path, pair_counts, prec=0, calib=None):
     values = valints + valfracs
     del valints, valfracs
 
-    return bin_datapairs(keys, values, pair_counts, prec)
+    return bin_datapairs(keys, values, pair_counts, precision)
 
 
 def calibrate(mzs, calib_nums):

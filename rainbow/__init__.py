@@ -85,8 +85,8 @@ def _resolve_vendor(path, format):
     return _detect_vendor(path)
 
 
-def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
-         centroid=False, format=None):
+def read(path, precision='auto', hrms=False, requested_files=None,
+         telemetry=False, centroid=False, format=None, bin_width=None):
     """
     Reads a chromatogram data directory. Main method of the package.
 
@@ -111,7 +111,12 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
 
     Args:
         path (str): Path of the directory.
-        prec (int, optional): Number of decimals to round ylabels.
+        precision (int or 'auto', optional): Number of decimals to round
+            reported m/z (and other ylabels) to. The default ``'auto'`` chooses
+            per file: 4 for high-resolution data (the Agilent HRMS profile and
+            TOF centroids) and 0 (whole numbers) for unit-resolution data (UV,
+            GC/quadrupole MS, Waters). Pass an explicit integer to override
+            (including ``0`` to force nominal mass).
         hrms (bool, optional): Flag for Agilent HRMS (MSProfile.bin) parsing.
         requested_files (list, optional): List of filenames to parse.
         telemetry (bool, optional): Flag for Agilent .dx telemetry traces.
@@ -119,6 +124,14 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
             (MSPeak.bin) parsing.
         format (str, optional): Force the vendor parser ('agilent' or
             'waters'), bypassing extension/content detection.
+        bin_width (float, optional): Width in daltons of each shared-grid bin
+            for Agilent HRMS profile data. Omit it (the default) to keep the
+            per-scan representation; pass a width to project the scans onto one
+            shared m/z grid (see :ref:`hrms-data-model`). This is the grid's only
+            control and is fully independent of ``precision`` (which only rounds
+            the reported m/z labels, never the grid). A ``bin_width`` finer than
+            ``10**-precision`` is allowed but warns, since two bins may then round
+            to the same m/z label.
 
     Returns:
         DataDirectory representing the directory.
@@ -133,14 +146,36 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
     elif not isinstance(path, str) or not os.path.isdir(path):
         raise Exception(f"{path} is not a directory.")
 
-    if not isinstance(prec, int) or prec < 0:
-        raise Exception(f"Invalid precision: {prec}.")
+    if precision != 'auto' and (
+            isinstance(precision, bool) or not isinstance(precision, int)
+            or precision < 0):
+        raise Exception(
+            f"Invalid precision: {precision!r}. Use 'auto' or a non-negative "
+            f"integer.")
 
     if not isinstance(hrms, bool):
         raise Exception(f"The hrms flag must be a boolean.")
 
     if not isinstance(centroid, bool):
         raise Exception(f"The centroid flag must be a boolean.")
+
+    # precision is a label precision (decimals for reported m/z). 'auto' is
+    # finalized per file inside each parser, where the data type is actually
+    # known: high-resolution data (the HRMS profile, and TOF centroids) resolves
+    # to 4 decimals; unit-resolution data (UV, GC/quadrupole MS, Waters) to whole
+    # numbers.
+    #
+    # bin_width is the width of the shared HRMS profile grid, and it is what turns
+    # binning on: omit it for the per-scan representation, pass a width to project
+    # onto one shared grid. It is entirely independent of precision (precision
+    # only rounds the reported m/z labels, never the grid), with no default,
+    # because the shared grid has no sensible universal width. (If precision is
+    # too coarse to label the bins distinctly, parse_msdata warns; it is not an
+    # error.)
+    if bin_width is not None and (
+            isinstance(bin_width, bool)
+            or not isinstance(bin_width, (int, float)) or bin_width <= 0):
+        raise Exception(f"Invalid bin_width: {bin_width}.")
 
     if requested_files is not None and not isinstance(requested_files, list):
         raise Exception(f"The requested_files argument must be a list.")
@@ -151,9 +186,10 @@ def read(path, prec=0, hrms=False, requested_files=None, telemetry=False,
     datadir = None
     if vendor == 'agilent':
         datadir = agilent.read(
-            path, prec, hrms, requested_files, telemetry, centroid)
+            path, precision, hrms, requested_files, telemetry, centroid,
+            bin_width)
     elif vendor == 'waters':
-        datadir = waters.read(path, prec, requested_files)
+        datadir = waters.read(path, precision, requested_files)
 
     if datadir is None:
         raise Exception(f"Rainbow cannot read {path}.")

@@ -46,8 +46,9 @@ def decompress_inten_list(const unsigned char[::1] comp_view, int num_mz):
 
     Args:
         comp_view: The segment bytes after its 16-byte (smallest mz, mz delta)
-            header -- i.e. the 4-byte point-count word, the two negated int32
-            preamble values, and the token stream.
+            header -- i.e. the 4-byte point-count word, the negated int32
+            leading-zero count, and the token stream (which opens at 4-byte
+            width).
         num_mz: The number of mz-intensity pairs (output length).
 
     Returns:
@@ -62,14 +63,13 @@ def decompress_inten_list(const unsigned char[::1] comp_view, int num_mz):
     cdef int init_zero_repeat
     cdef int width_flag
 
-    # Two negated little-endian int32s follow the 4-byte point-count word.
-    if n < 12:
+    # A negated little-endian int32 (the leading-zero count) follows the 4-byte
+    # point-count word; the token stream begins right after it.
+    if n < 8:
         raise ValueError("Malformed MSProfile.bin RLE segment.")
     memcpy(&init_zero_repeat, &comp_view[4], 4)
-    memcpy(&width_flag, &comp_view[8], 4)
 
     cdef Py_ssize_t cur_idx = -init_zero_repeat
-    width_flag = -width_flag
     # cur_idx only ever advances, so once it starts non-negative it stays in
     # range; a positive init_zero_repeat would start it negative, so reject it.
     if cur_idx < 0:
@@ -79,8 +79,10 @@ def decompress_inten_list(const unsigned char[::1] comp_view, int num_mz):
     data_arr = np.zeros(num_mz, dtype=np.uint32)
     cdef unsigned int[::1] inten = data_arr
 
-    cdef Py_ssize_t off = 12
-    cdef int cur_size = _width_size(width_flag)
+    # The token stream opens at an initial width of 4 bytes (width flag 3); a
+    # control value switches it thereafter.
+    cdef Py_ssize_t off = 8
+    cdef int cur_size = _width_size(3)
     cdef long long value
     cdef Py_ssize_t num_zeros
     cdef signed char v1
