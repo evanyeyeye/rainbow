@@ -228,6 +228,11 @@ def parse_msdata(path, precision='auto', bin_width=None):
         the shared grid.
 
     """
+    if bin_width is not None and (
+            isinstance(bin_width, bool)
+            or not isinstance(bin_width, (int, float)) or bin_width <= 0):
+        raise Exception(f"Invalid bin_width: {bin_width}.")
+
     # The profile is always a high-resolution TOF trace, so 'auto' precision
     # means 4 decimals.
     if precision == 'auto':
@@ -964,8 +969,9 @@ def decompress_inten_list(comp_view, num_mz):
     - A non-negative value is a literal intensity.
     - A negative value -v encodes ``divmod(v, 4)``: the quotient is a run
       of zero intensities to emit, and the remainder is the new width flag
-      (1, 2, 3 -> 1-, 2-, 4-byte; 4 -> 8-byte) to switch to for subsequent
-      values.
+      (1, 2, 3 -> 1-, 2-, 4-byte) to switch to for subsequent values. The
+      remainder is always 0-3, and 0 is malformed, so the only widths are
+      1, 2, and 4 bytes.
 
     Most scans open with an ``0xffffffff`` token, read as -1 at the 4-byte
     starting width, which emits no zeros and switches to 1-byte values; this is
@@ -993,9 +999,8 @@ def decompress_inten_list(comp_view, num_mz):
         1: struct.Struct('<b').unpack,
         2: struct.Struct('<h').unpack,
         3: struct.Struct('<i').unpack,
-        4: struct.Struct('<q').unpack,
     }
-    sizes = {1: 1, 2: 2, 3: 4, 4: 8}
+    sizes = {1: 1, 2: 2, 3: 4}
 
     init_zero_repeat = struct.unpack('<i', comp_view[4:8])[0]
     cur_idx = -init_zero_repeat

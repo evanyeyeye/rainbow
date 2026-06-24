@@ -9,13 +9,13 @@ import pytest
 from rainbow._binning import bin_datapairs
 
 
-def _bin_datapairs_reference(keys, values, pair_counts, prec, data_dtype):
+def _bin_datapairs_reference(keys, values, pair_counts, precision, data_dtype):
     """Original (pre-optimization) binning, kept as a parity oracle.
 
     Mirrors the per-scan np.unique / searchsorted / np.add.at loop that the
     Waters _FUNC.DAT and Agilent .ms decoders both used before bin_datapairs.
     """
-    keys = np.round(keys, prec)
+    keys = np.round(keys, precision)
     num_times = pair_counts.size
     ylabels = np.unique(keys)
     ylabels.sort()
@@ -57,7 +57,7 @@ def test_honors_output_dtype():
 
 
 def test_respects_precision():
-    # Keys arrive already rounded to `prec` (the decoders round first).
+    # Keys arrive already rounded to `precision` (the decoders round first).
     keys = np.round(np.array([100.14, 100.16, 100.16]), 1)
     values = np.array([1, 2, 4], dtype=np.int64)
     ylabels, data = bin_datapairs(keys, values, np.array([3]), 1)
@@ -74,8 +74,8 @@ def test_empty_input():
 
 
 @pytest.mark.parametrize("data_dtype", [np.int64, np.uint32])
-@pytest.mark.parametrize("prec", [0, 1, 2])
-def test_matches_reference_on_random_data(data_dtype, prec):
+@pytest.mark.parametrize("precision", [0, 1, 2])
+def test_matches_reference_on_random_data(data_dtype, precision):
     rng = np.random.RandomState(0)
     for _ in range(20):
         num_times = rng.randint(1, 8)
@@ -86,9 +86,9 @@ def test_matches_reference_on_random_data(data_dtype, prec):
         keys = (rng.rand(n) * 900 + 100).astype(np.float32)
         values = rng.randint(0, 5000, size=n).astype(data_dtype)
         y_ref, d_ref = _bin_datapairs_reference(
-            keys.copy(), values.copy(), pair_counts, prec, data_dtype)
+            keys.copy(), values.copy(), pair_counts, precision, data_dtype)
         y, d = bin_datapairs(
-            np.round(keys, prec), values, pair_counts, prec,
+            np.round(keys, precision), values, pair_counts, precision,
             data_dtype=data_dtype)
         np.testing.assert_array_equal(y, y_ref)
         np.testing.assert_array_equal(d, d_ref)

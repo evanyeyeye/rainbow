@@ -24,11 +24,12 @@ from libc.string cimport memcpy
 
 
 cdef inline int _width_size(int flag) except -1:
-    """Bytes for an RLE width flag (1/2/3/4 -> 1/2/4/8); raise on anything else.
+    """Bytes for an RLE width flag (1/2/3 -> 1/2/4); raise on anything else.
 
-    A zero or out-of-range flag means a corrupt stream; raising here mirrors
-    the ValueError the pure-Python reference reports rather than reading at a
-    bogus width (this module disables Cython's automatic bounds checks).
+    The flag is ``(-value) % 4``, so it is always 0-3; 0 means a corrupt
+    stream. A zero or out-of-range flag raises here, mirroring the ValueError
+    the pure-Python reference reports rather than reading at a bogus width
+    (this module disables Cython's automatic bounds checks).
     """
     if flag == 1:
         return 1
@@ -36,8 +37,6 @@ cdef inline int _width_size(int flag) except -1:
         return 2
     elif flag == 3:
         return 4
-    elif flag == 4:
-        return 8
     raise ValueError("Malformed MSProfile.bin RLE segment.")
 
 
@@ -88,23 +87,20 @@ def decompress_inten_list(const unsigned char[::1] comp_view, int num_mz):
     cdef signed char v1
     cdef short v2
     cdef int v4
-    cdef long long v8
 
     while off < n:
         if off + cur_size > n:
             raise ValueError("Malformed MSProfile.bin RLE segment.")
+        # _width_size guarantees cur_size is 1, 2, or 4.
         if cur_size == 1:
             memcpy(&v1, &comp_view[off], 1)
             value = v1
         elif cur_size == 2:
             memcpy(&v2, &comp_view[off], 2)
             value = v2
-        elif cur_size == 4:
+        else:
             memcpy(&v4, &comp_view[off], 4)
             value = v4
-        else:
-            memcpy(&v8, &comp_view[off], 8)
-            value = v8
         off += cur_size
 
         if value >= 0:
