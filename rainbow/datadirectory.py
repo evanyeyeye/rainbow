@@ -16,7 +16,7 @@ class DataDirectory:
         datafiles (list): DataFile objects with a detector. 
             This does not include miscellaneous analog data.
         detectors (set): String detector names in the DataDirectory.
-            Options: UV, MS, FID, CAD, ELSD.
+            Options: UV, MS, FID, CAD, ELSD, RID.
         by_name (dict): Maps filenames to DataFile objects.
         by_detector (dict): Maps detector names to lists of DataFile objects.
         analog (list): DataFile objects with miscellaneous analog data. 
@@ -136,8 +136,75 @@ class DataDirectory:
         Shows a basic matplotlib plot for the specified DataFile and :code:`label`.
 
         Args:
-            filename (str): DataFile name. 
-            label (int/float): Ylabel to be plotted. 
-            **kwargs (optional): Keyword arguments for matplotlib. 
+            filename (str): DataFile name.
+            label (int/float): Ylabel to be plotted.
+            **kwargs (optional): Keyword arguments for matplotlib.
         """
         self.get_file(filename).plot(label, **kwargs)
+
+    def to_asm(self, export_dad_cube=True, wavelengths=None, ions=None,
+               decimal_places=None, technique=None):
+        """
+        Returns an Allotrope Simple Model (ASM) document for this directory.
+
+        ASM is an open, JSON-based standard for analytical data. See
+        :mod:`rainbow.asm` for the scope of the current mapping.
+
+        Args:
+            export_dad_cube (bool, optional): Include multi-wavelength DAD
+                spectra as 3D UV spectrum cubes. On by default; the DAD cube is
+                by far the largest part of a document, so turning it off
+                (single-wavelength channels still export) shrinks the output.
+            wavelengths (float/list, optional): Restrict the DAD spectrum cube
+                to these wavelengths (nearest available, in nm); the default
+                keeps every wavelength.
+            ions (float/list, optional): m/z value(s) to extract from full-scan
+                MS data, each exported as its own mass chromatogram. Single-ion
+                (SIM) MS is always exported regardless of this argument.
+            decimal_places (int, optional): Round emitted numeric
+                values to this many decimal places. The default keeps
+                full precision.
+            technique (str, optional): Force the export technique, ``"GC"`` or
+                ``"LC"``, overriding the method's declaration and the
+                FID-presence fallback.
+
+        Returns:
+            dict: The ASM document.
+
+        """
+        from rainbow import asm
+        return asm.to_asm(self, export_dad_cube, wavelengths, ions,
+                          decimal_places, technique)
+
+    def export_asm(self, filename, export_dad_cube=True, wavelengths=None,
+                   ions=None, decimal_places=None, technique=None, indent=2):
+        """
+        Writes an Allotrope Simple Model (ASM) JSON document for this directory.
+
+        The document is streamed to disk, so even a large spectrum cube never
+        needs to fit in memory as one string.
+
+        Args:
+            filename (str): Filename for the output JSON.
+            export_dad_cube (bool, optional): Include multi-wavelength DAD
+                spectra as 3D UV spectrum cubes. On by default; turning it off
+                shrinks the output sharply.
+            wavelengths (float/list, optional): Restrict the DAD spectrum cube
+                to these wavelengths (nearest available, in nm); the default
+                keeps every wavelength.
+            ions (float/list, optional): m/z value(s) to extract from full-scan
+                MS data, each exported as its own mass chromatogram. Single-ion
+                (SIM) MS is always exported regardless of this argument.
+            decimal_places (int, optional): Round emitted numeric
+                values to this many decimal places. The default keeps
+                full precision.
+            technique (str, optional): Force the export technique, ``"GC"`` or
+                ``"LC"``, overriding the method's declaration and the
+                FID-presence fallback.
+            indent (int, optional): Indentation for the output JSON.
+
+        """
+        from rainbow import asm
+        with open(filename, 'w') as f:
+            asm.export_asm(self, f, export_dad_cube, wavelengths, ions,
+                           decimal_places, technique, indent)

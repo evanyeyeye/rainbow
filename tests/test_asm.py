@@ -1,0 +1,596 @@
+"""
+Tests for Allotrope Simple Model (ASM) export.
+
+These assert the structure of the emitted document (the data cubes and the
+surrounding envelope). Strict JSON-Schema conformance against the published
+liquid-chromatography schema is a separate, later step.
+
+"""
+import json
+
+import pytest
+
+import rainbow as rb
+
+
+_SPECTRUM_KEY = "three-dimensional ultraviolet spectrum data cube"
+_CHROM_KEY = "chromatogram data cube"
+
+
+@pytest.fixture
+def teal():
+    return rb.read("tests/inputs/teal.dx")
+
+
+def _measurements(document):
+    # Works for either technique: a run with an FID channel exports a gas
+    # chromatography document, every other run a liquid chromatography one.
+    for technique in ("liquid chromatography", "gas chromatography"):
+        aggregate = document.get(technique + " aggregate document")
+        if aggregate is not None:
+            return (aggregate[technique + " document"][0]
+                    ["measurement aggregate document"]["measurement document"])
+    raise KeyError("document has no chromatography aggregate document")
+
+
+def _cube(measurement):
+    for key in (_CHROM_KEY, _SPECTRUM_KEY):
+        if key in measurement:
+            return measurement[key]
+    raise KeyError("measurement has no data cube")
+
+
+def _by_label(document):
+    return {_cube(m)["label"]: m for m in _measurements(document)}
+
+
+def test_to_asm_is_json_serializable(teal):
+    document = teal.to_asm()
+    # Round-trips through JSON (no numpy scalars or arrays left behind).
+    assert json.loads(json.dumps(document)) == document
+
+
+def test_to_asm_top_level(teal):
+    document = teal.to_asm()
+    assert "$asm.manifest" in document
+    aggregate = document["liquid chromatography aggregate document"]
+    assert "device system document" in aggregate
+    lc_documents = aggregate["liquid chromatography document"]
+    assert len(lc_documents) == 1
+    assert lc_documents[0]["analyst"] == "SYSTEM (SYSTEM)"
+
+
+def test_measurements_cover_all_uv_files(teal):
+    # teal has a DAD spectrum and two single-wavelength channels; with the DAD
+    # cube on (the default) all three become measurements.
+    document = teal.to_asm()
+    assert sorted(_by_label(document)) == ["DAD1A.CH", "DAD1H.CH", "DAD1I.UV"]
+
+
+def test_dad_cube_off_excludes_the_spectrum(teal):
+    document = teal.to_asm(export_dad_cube=False)
+    labels = _by_label(document)
+    assert sorted(labels) == ["DAD1A.CH", "DAD1H.CH"]
+    assert all(_SPECTRUM_KEY not in m for m in _measurements(document))
+
+
+def test_chromatogram_cube_structure_and_data(teal):
+    document = teal.to_asm()
+    measurement = _by_label(document)["DAD1A.CH"]
+    datafile = teal.get_file("DAD1A.CH")
+
+    cube = measurement[_CHROM_KEY]
+    structure = cube["cube-structure"]
+    assert structure["dimensions"] == [
+        {"concept": "retention time", "unit": "s", "@componentDatatype": "double"}]
+    assert structure["measures"][0]["concept"] == "absorbance"
+
+    times = cube["data"]["dimensions"][0]
+    absorbance = cube["data"]["measures"][0]
+    assert len(times) == datafile.xlabels.size
+    assert len(absorbance) == datafile.data.shape[0]
+    # Retention time is converted from minutes to seconds.
+    assert times[0] == pytest.approx(float(datafile.xlabels[0]) * 60.0)
+    assert absorbance[0] == pytest.approx(float(datafile.data[0, 0]))
+
+
+def test_spectrum_cube_structure_and_data(teal):
+    document = teal.to_asm()
+    measurement = _by_label(document)["DAD1I.UV"]
+    datafile = teal.get_file("DAD1I.UV")
+    rows, cols = datafile.data.shape
+
+    cube = measurement[_SPECTRUM_KEY]
+    dims = cube["cube-structure"]["dimensions"]
+    assert [d["concept"] for d in dims] == ["retention time", "wavelength"]
+    assert [d["unit"] for d in dims] == ["s", "nm"]
+    assert cube["cube-structure"]["measures"][0]["concept"] == "absorbance"
+
+    data = cube["data"]
+    # Two dimension arrays (times, wavelengths) and one flattened measure grid.
+    assert len(data["dimensions"][0]) == rows
+    assert len(data["dimensions"][1]) == cols
+    assert data["dimensions"][1] == datafile.ylabels.astype(float).tolist()
+    flat = data["measures"][0]
+    assert len(flat) == rows * cols
+    # Flattened with wavelength varying fastest (C order): index r*cols + c.
+    assert flat[0] == pytest.approx(float(datafile.data[0, 0]))
+    assert flat[1] == pytest.approx(float(datafile.data[0, 1]))
+    assert flat[cols] == pytest.approx(float(datafile.data[1, 0]))
+
+
+def test_wavelengths_subsets_the_dad_cube(teal):
+    document = teal.to_asm(wavelengths=[254, 280])
+    cube = _by_label(document)["DAD1I.UV"][_SPECTRUM_KEY]
+    rows = teal.get_file("DAD1I.UV").data.shape[0]
+    assert cube["data"]["dimensions"][1] == [254.0, 280.0]
+    # Two wavelengths per retention point now, not the full grid.
+    assert len(cube["data"]["measures"][0]) == rows * 2
+
+
+def test_wavelengths_select_the_nearest_available(teal):
+    # 255 nm is off the 2 nm grid; it snaps to the nearest column, 254 nm.
+    cube = _by_label(teal.to_asm(wavelengths=[255]))["DAD1I.UV"][_SPECTRUM_KEY]
+    assert cube["data"]["dimensions"][1] == [254.0]
+    # A single-wavelength selection stays a valid 2-D cube: one column per row.
+    rows = teal.get_file("DAD1I.UV").data.shape[0]
+    assert len(cube["data"]["measures"][0]) == rows
+
+
+def test_unknown_wavelength_warns_and_is_skipped(teal):
+    with pytest.warns(UserWarning, match="9999"):
+        document = teal.to_asm(wavelengths=[280, 9999])
+    cube = _by_label(document)["DAD1I.UV"][_SPECTRUM_KEY]
+    assert cube["data"]["dimensions"][1] == [280.0]
+
+
+def test_no_matching_wavelength_omits_the_dad_cube(teal):
+    with pytest.warns(UserWarning):
+        document = teal.to_asm(wavelengths=[9999])
+    # The spectrum is dropped; the single-wavelength channels still export.
+    by_label = _by_label(document)
+    assert "DAD1I.UV" not in by_label
+    assert "DAD1A.CH" in by_label
+    assert all(_SPECTRUM_KEY not in m for m in _measurements(document))
+
+
+def test_decimal_places_rounds_cube_values(teal):
+    cube = (_by_label(teal.to_asm(decimal_places=1, wavelengths=[254]))
+            ["DAD1I.UV"][_SPECTRUM_KEY])
+    times = cube["data"]["dimensions"][0]
+    values = cube["data"]["measures"][0]
+    assert times and all(round(t, 1) == t for t in times)
+    assert values and all(round(v, 1) == v for v in values)
+
+
+def test_decimal_places_rounds_peak_metrics():
+    from rainbow import asm
+    options = asm._Options(decimal_places=2)
+    peak = asm._asm_peak(1, {"retention_time": 1.234567, "area": 9.87654},
+                         options)
+    assert peak["retention time"]["value"] == round(1.234567 * 60, 2)
+    assert peak["peak area"]["value"] == 9.88
+
+
+def test_decimal_places_rounds_injection_volume():
+    # The injection volume is a non-cube quantity; it must round too.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.metadata["injection_volume"] = {"value": 1.23456, "unit": "uL"}
+    volumes = [m["injection document"]
+               ["autosampler injection volume setting (chromatography)"]["value"]
+               for m in _measurements(datadir.to_asm(decimal_places=2))
+               if "injection document" in m]
+    assert volumes and all(v == 1.23 for v in volumes)
+
+
+def test_select_wavelengths_tolerance_boundary():
+    import numpy as np
+    from rainbow import asm
+    labels = np.array([254.0, 256.0])
+    # Exactly 1.0 nm away is kept (inclusive boundary), nearest column wins.
+    assert asm._select_wavelengths(labels, [255.0]) == [0]
+    assert asm._select_wavelengths(labels, [255.6]) == [1]
+    # More than 1.0 nm from any column is dropped, with a warning.
+    with pytest.warns(UserWarning):
+        assert asm._select_wavelengths(labels, [300.0]) == []
+
+
+def test_detector_wavelength_setting(teal):
+    by_label = _by_label(teal.to_asm())
+    for label, expected in (("DAD1A.CH", 210.0), ("DAD1H.CH", 330.0)):
+        control = (by_label[label]["device control aggregate document"]
+                   ["device control document"][0])
+        assert control["detector wavelength setting"] == {
+            "value": expected, "unit": "nm"}
+
+
+def test_sample_and_time_from_metadata(teal):
+    measurement = _measurements(teal.to_asm())[0]
+    # teal is a standby flush, so the sample name is empty -> default.
+    assert measurement["sample document"]["sample identifier"] == "unknown"
+    assert measurement["measurement time"] == teal.metadata["date"]
+
+
+def test_export_asm_writes_file(teal, tmp_path):
+    out = tmp_path / "teal.asm.json"
+    teal.export_asm(str(out))
+    assert json.loads(out.read_text()) == teal.to_asm()
+
+
+def test_export_asm_streams_with_options(teal, tmp_path):
+    # The streamed writer applies the same controls as the in-memory document.
+    out = tmp_path / "teal.asm.json"
+    teal.export_asm(str(out), wavelengths=[254, 280], decimal_places=3)
+    assert json.loads(out.read_text()) == \
+        teal.to_asm(wavelengths=[254, 280], decimal_places=3)
+
+
+def test_export_asm_pretty_output_matches_canonical(teal, tmp_path):
+    # The streamed pretty-print is byte-identical to a single json.dumps, i.e.
+    # the injection documents are correctly indented under the envelope.
+    out = tmp_path / "teal.asm.json"
+    teal.export_asm(str(out))
+    assert out.read_text() == json.dumps(
+        teal.to_asm(), indent=2, ensure_ascii=False)
+
+
+def test_to_asm_on_chemstation_d_directory():
+    # The same converter emits ASM for a classic .D directory, not just .dx.
+    document = rb.read("tests/inputs/red.D").to_asm()
+    by_label = _by_label(document)
+    # The UV spectrum and two channels, plus the CAD channel (exported as an
+    # electric-current chromatogram, see the ASM detectors docs).
+    assert sorted(by_label) == ["ADC1A.CH", "DAD1.UV", "DAD1B.ch", "DAD1C.ch"]
+    # Sample name and per-channel wavelength come from the .D metadata.
+    channel = by_label["DAD1B.ch"]
+    assert channel["sample document"]["sample identifier"] == "usp"
+    control = (channel["device control aggregate document"]
+               ["device control document"][0])
+    assert control["detector wavelength setting"] == {
+        "value": 280.0, "unit": "nm"}
+
+
+def test_cad_exports_as_electric_current_with_truthful_type():
+    # red.D's ADC1A.CH is a CAD channel: a charged-aerosol detector measures a
+    # current, so it exports faithfully as an electric-current (pA) chromatogram,
+    # with the real AFO device type (not "ultraviolet detector") and no
+    # wavelength setting.
+    cad = _by_label(rb.read("tests/inputs/red.D").to_asm())["ADC1A.CH"]
+    assert cad[_CHROM_KEY]["cube-structure"]["measures"][0] == {
+        "concept": "electric current", "unit": "pA",
+        "@componentDatatype": "double"}
+    control = (cad["device control aggregate document"]
+               ["device control document"][0])
+    assert control["device type"] == "liquid chromatography detector"
+    assert "detector wavelength setting" not in control
+
+
+def test_peaks_on_a_non_absorbance_channel_relabel_to_absorbance_with_a_note():
+    # The schema models a peak list only on an absorbance measurement, so a CAD
+    # channel (electric current) that carries integrated peaks is relabeled to
+    # absorbance to keep the peaks, with a note recording the real quantity and a
+    # device type that stays truthful. A relabel happens only when there are
+    # peaks: without them the channel keeps its faithful electric-current cube.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.peaks = [{
+        "signal": "ADC1A", "wavelength": None, "description": None,
+        "channel_file": "ADC1A.CH",
+        "peaks": [{"retention_time": 1.5, "area": 100.0, "height": 10.0}],
+    }]
+    cad = _by_label(datadir.to_asm())["ADC1A.CH"]
+    # The peak itself survives, on an absorbance cube, device type still truthful.
+    peak = (cad["processed data aggregate document"]["processed data document"]
+            [0]["peak list"]["peak"][0])
+    assert peak["peak area"] == {"value": 100.0, "unit": "mAU.s"}
+    assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
+        == "absorbance"
+    assert (cad["device control aggregate document"]["device control document"]
+            [0]["device type"]) == "liquid chromatography detector"
+    # A note records the real quantity.
+    note = (cad["custom information aggregate document"]
+            ["custom information document"][0])
+    assert note["datum label"] == "reported measure"
+    assert "electric current" in note["scalar string datum"]
+
+
+def test_uv_channel_with_peaks_is_not_relabeled():
+    # A UV channel is already absorbance, so peaks attach with no relabel and no
+    # "reported measure" note (the relabel is only for non-absorbance detectors).
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.peaks = [{
+        "signal": "DAD1B", "wavelength": 280.0, "description": None,
+        "channel_file": "DAD1B.ch",
+        "peaks": [{"retention_time": 1.5, "area": 100.0, "height": 10.0}],
+    }]
+    uv = _by_label(datadir.to_asm())["DAD1B.ch"]
+    assert "processed data aggregate document" in uv
+    assert "custom information aggregate document" not in uv
+
+
+def test_fid_with_peaks_relabels_with_an_electric_current_note():
+    # A GC-FID channel with integrated peaks (the common GC case) relabels to
+    # absorbance, keeping the peaks, with a note naming the real quantity and a
+    # device type that stays the flame ionization detector.
+    datadir = rb.read("tests/inputs/pink.D")
+    datadir.peaks = [{
+        "signal": "DAD1A", "wavelength": None, "description": None,
+        "channel_file": "DAD1A.ch",
+        "peaks": [{"retention_time": 1.5, "area": 100.0, "height": 10.0}],
+    }]
+    fid = _by_label(datadir.to_asm())["DAD1A.ch"]
+    assert "processed data aggregate document" in fid
+    control = (fid["device control aggregate document"]
+               ["device control document"][0])
+    assert control["device type"] == "flame ionization detector"
+    note = (fid["custom information aggregate document"]
+            ["custom information document"][0]["scalar string datum"])
+    assert "electric current" in note
+
+
+def test_non_absorbance_channel_without_peaks_stays_faithful():
+    # No peaks, no relabel: the CAD channel keeps its electric-current cube.
+    cad = _by_label(rb.read("tests/inputs/red.D").to_asm())["ADC1A.CH"]
+    assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
+        == "electric current"
+    assert "custom information aggregate document" not in cad
+
+
+def test_elsd_exports_as_intensity_with_truthful_type():
+    # orange.D's ADC1A.CH is an ELSD channel: it exports faithfully as a light
+    # intensity (RLU) chromatogram, with the real ELSD AFO device type.
+    measurement = _by_label(rb.read("tests/inputs/orange.D").to_asm())["ADC1A.CH"]
+    assert measurement[_CHROM_KEY]["cube-structure"]["measures"][0] == {
+        "concept": "intensity", "unit": "RLU", "@componentDatatype": "double"}
+    control = (measurement["device control aggregate document"]
+               ["device control document"][0])
+    assert control["device type"] == "evaporative light scattering detector"
+    assert "detector wavelength setting" not in control
+
+
+_MASS_CHROM_KEY = "mass chromatogram data cube"
+
+
+def test_sim_ms_exports_as_mass_chromatogram():
+    # green.D has four single-ion (SIM) MS channels, each a 1D trace at one m/z.
+    # Each becomes a mass chromatogram data cube (ion count over retention time),
+    # with the monitored m/z recorded in the label.
+    document = rb.read("tests/inputs/green.D").to_asm()
+    measurements = _measurements(document)
+    ms = [m for m in measurements if _MASS_CHROM_KEY in m]
+    assert len(ms) == 4
+
+    cube = ms[0][_MASS_CHROM_KEY]
+    assert cube["cube-structure"]["dimensions"] == [
+        {"concept": "retention time", "unit": "s", "@componentDatatype": "double"}]
+    assert cube["cube-structure"]["measures"][0] == {
+        "concept": "count", "unit": "Counts", "@componentDatatype": "double"}
+    # The m/z appears in the label (a mass chromatogram has no m/z dimension).
+    assert "m/z" in cube["label"]
+    control = (ms[0]["device control aggregate document"]
+               ["device control document"][0])
+    assert control["device type"] == "mass spectrometer"
+
+
+def test_full_scan_ms_exports_only_requested_ions():
+    # orange.D's MS is a 2D retention-by-m/z scan grid, which the published
+    # schema cannot hold faithfully. By default none of it is exported (no mass
+    # cube), but the ELSD channel still is, so the document is not trivially
+    # empty. When the caller names ions, each is pulled from the grid as its own
+    # mass chromatogram.
+    datadir = rb.read("tests/inputs/orange.D")
+    measurements = _measurements(datadir.to_asm())
+    assert all(_MASS_CHROM_KEY not in m for m in measurements)
+    assert any(_CHROM_KEY in m for m in measurements)   # the ELSD measurement
+
+    ms = [m for m in _measurements(datadir.to_asm(ions=[150, 200]))
+          if _MASS_CHROM_KEY in m]
+    assert len(ms) == 2
+    assert all("m/z" in m[_MASS_CHROM_KEY]["label"] for m in ms)
+
+    # A single m/z (not a list) is accepted too.
+    ms = [m for m in _measurements(datadir.to_asm(ions=150))
+          if _MASS_CHROM_KEY in m]
+    assert len(ms) == 1
+
+
+def test_requested_ion_not_in_scan_warns_and_is_skipped():
+    # An ion the scan does not cover is skipped with a warning, not exported and
+    # not an error.
+    datadir = rb.read("tests/inputs/orange.D")
+    with pytest.warns(UserWarning, match="No m/z within 0.5 of 9999"):
+        document = datadir.to_asm(ions=[9999])
+    assert all(_MASS_CHROM_KEY not in m for m in _measurements(document))
+
+
+def test_ions_does_not_affect_sim_channels():
+    # ions= selects from full scans only; a SIM channel always exports all of
+    # its monitored ions regardless of (non-matching) requested ions.
+    document = rb.read("tests/inputs/green.D").to_asm(ions=[999])
+    ms = [m for m in _measurements(document) if _MASS_CHROM_KEY in m]
+    assert len(ms) == 4
+
+
+def test_ms_channel_with_no_shared_axis_is_skipped():
+    # A per-scan profile (e.g. HRMS) has no single shared m/z axis: reading
+    # ylabels raises. The exporter must skip it cleanly, not crash.
+    from rainbow import asm
+
+    class _NoSharedAxis:
+        name = "profile.bin"
+        detector = "MS"
+        metadata = {}
+
+        @property
+        def ylabels(self):
+            raise AttributeError("per-scan profile has no shared m/z axis")
+
+    assert asm._mass_chromatogram_measurements(_NoSharedAxis(), {}, None) == []
+
+
+def test_multi_ion_sim_exports_every_ion():
+    # yellow.D is a simultaneous SIM/Scan run: dataSim.ms holds two monitored
+    # (SIM) ions and data.ms is the full scan. Every SIM ion is exported by
+    # default; the scan is left out unless its ions are requested.
+    datadir = rb.read("tests/inputs/yellow.D")
+    ms = [m for m in _measurements(datadir.to_asm()) if _MASS_CHROM_KEY in m]
+    # Two mass chromatograms, both from the SIM channel, none from the scan.
+    assert len(ms) == 2
+    assert all(m["measurement identifier"].startswith("dataSim.ms") for m in ms)
+    labels = sorted(m[_MASS_CHROM_KEY]["label"] for m in ms)
+    assert labels == ["dataSim.ms (m/z 131)", "dataSim.ms (m/z 202)"]
+
+
+def test_acquisition_mode_tags_sim_and_scan():
+    # The acquisition mode is read from the method (acqmeth.txt), not guessed:
+    # yellow.D's scan and SIM channels are tagged distinctly.
+    datadir = rb.read("tests/inputs/yellow.D")
+    modes = {df.name: df.metadata.get("acquisition_mode")
+             for df in datadir.datafiles if df.detector == "MS"}
+    assert modes == {"data.ms": "Scan", "dataSim.ms": "SIM"}
+
+
+def test_module_device_type_falls_back_for_unmapped_module():
+    # device type is schema-required. A module whose type rainbow cannot map
+    # still gets a valid device document entry, with the generic AFO "device"
+    # class, while a recognizable module keeps its specific type.
+    from rainbow import asm
+    unknown = asm._module_device(1, {"name": "Mystery Box", "type": "Widget"})
+    assert unknown["device type"] == "device"
+    pump = asm._module_device(2, {"name": "Quat. Pump", "type": "Pump"})
+    assert pump["device type"] == "pump"
+
+
+# --- FID and gas-chromatography routing ---
+
+
+def _aggregate_key(document):
+    return next(k for k in document if k.endswith("aggregate document"))
+
+
+def test_non_fid_run_is_liquid_chromatography(teal):
+    # A run with no FID channel stays a liquid chromatography document, on the
+    # liquid-chromatography manifest.
+    document = teal.to_asm()
+    assert _aggregate_key(document) == "liquid chromatography aggregate document"
+    assert "liquid-chromatography" in document["$asm.manifest"]
+    assert "REC/2026/03" in document["$asm.manifest"]
+
+
+def test_fid_run_routes_to_gas_chromatography():
+    # pink.D has FID channels, so the whole run becomes a gas chromatography
+    # document on the gas-chromatography manifest.
+    document = rb.read("tests/inputs/pink.D").to_asm()
+    assert _aggregate_key(document) == "gas chromatography aggregate document"
+    manifest = document["$asm.manifest"]
+    assert "gas-chromatography" in manifest and "REC/2026/03" in manifest
+
+
+def test_fid_exports_as_electric_current_chromatogram():
+    # An FID channel is a 1D chromatogram whose measure is electric current in
+    # pA (the FID's real quantity, faithfully), with a truthful device type and
+    # detection type.
+    document = rb.read("tests/inputs/pink.D").to_asm()
+    fid = next(m for m in _measurements(document) if _CHROM_KEY in m)
+    cube = fid[_CHROM_KEY]
+    assert cube["cube-structure"]["measures"][0] == {
+        "concept": "electric current", "unit": "pA",
+        "@componentDatatype": "double"}
+    control = (fid["device control aggregate document"]
+               ["device control document"][0])
+    assert control["device type"] == "flame ionization detector"
+    assert control["detection type"] == "flame ionization"
+
+
+def test_gc_run_keeps_its_ms_channels():
+    # yellow.D is a GC-MS run (an FID channel plus SIM/scan MS). Routing to a
+    # gas chromatography document does not drop the MS: the SIM ions still
+    # export as mass chromatograms (the 2026/03 GC ADM admits that cube), and
+    # the FID rides alongside as an electric-current chromatogram.
+    document = rb.read("tests/inputs/yellow.D").to_asm()
+    assert _aggregate_key(document) == "gas chromatography aggregate document"
+    measurements = _measurements(document)
+    assert sum(_MASS_CHROM_KEY in m for m in measurements) == 2   # the SIM ions
+    fid = [m for m in measurements if _CHROM_KEY in m]
+    assert len(fid) == 1
+    assert (fid[0]["device control aggregate document"]
+            ["device control document"][0]["device type"]
+            == "flame ionization detector")
+
+
+def test_gc_injection_document_uses_microlitres():
+    # The gas-chromatography injection document carries the volume in uL (the
+    # Greek mu the schema pins), unlike the liquid-chromatography mm^3.
+    datadir = rb.read("tests/inputs/yellow.D")
+    datadir.metadata["injection_volume"] = {"value": 1.5, "unit": "µL"}
+    measurement = _measurements(datadir.to_asm())[0]
+    volume = measurement["injection document"]["injection volume setting"]
+    assert volume == {"value": 1.5, "unit": "μL"}
+
+
+def test_gc_document_carries_a_device_method_identifier():
+    # A gas chromatography document requires a device method identifier; absent
+    # method metadata it falls back rather than being omitted.
+    document = rb.read("tests/inputs/pink.D").to_asm()
+    gc_document = (document["gas chromatography aggregate document"]
+                   ["gas chromatography document"][0])
+    assert gc_document["device method identifier"] == "unknown"
+
+
+# --- technique resolution: override > method > FID-presence fallback ---
+
+
+def test_technique_override_forces_gc_on_a_non_fid_run(teal):
+    # An explicit technique= forces the document even with no FID channel.
+    assert _aggregate_key(teal.to_asm(technique="GC")) \
+        == "gas chromatography aggregate document"
+
+
+def test_technique_override_beats_the_fid_fallback():
+    # pink.D has an FID and no method declaration, so it falls back to GC; an
+    # explicit technique="LC" overrides that.
+    document = rb.read("tests/inputs/pink.D").to_asm(technique="LC")
+    assert _aggregate_key(document) == "liquid chromatography aggregate document"
+
+
+def test_technique_override_beats_the_method_declaration():
+    # yellow.D's method declares GC (metadata['technique'] == 'GC'); the override
+    # still wins.
+    datadir = rb.read("tests/inputs/yellow.D")
+    assert datadir.metadata.get("technique") == "GC"
+    assert _aggregate_key(datadir.to_asm(technique="LC")) \
+        == "liquid chromatography aggregate document"
+
+
+def test_method_declaration_beats_the_fid_fallback():
+    # When the method records the technique, it wins over detector evidence: a
+    # declared LC run with an FID channel stays liquid chromatography.
+    datadir = rb.read("tests/inputs/pink.D")
+    datadir.metadata["technique"] = "LC"
+    assert _aggregate_key(datadir.to_asm()) \
+        == "liquid chromatography aggregate document"
+
+
+def test_method_declared_gc_routes_without_an_fid_channel():
+    # The method alone (no FID) routes a run to gas chromatography.
+    datadir = rb.read("tests/inputs/teal.dx")
+    datadir.metadata["technique"] = "GC"
+    assert _aggregate_key(datadir.to_asm()) \
+        == "gas chromatography aggregate document"
+
+
+def test_bad_technique_override_raises():
+    with pytest.raises(ValueError, match="GC.*LC|technique"):
+        rb.read("tests/inputs/teal.dx").to_asm(technique="GCMS")
+
+
+def test_sequence_routes_by_an_injection_technique():
+    # A sequence is routed by its injections' technique: one GC/FID injection
+    # makes the whole aggregate a gas chromatography document.
+    from rainbow.datasequence import DataSequence
+    gc_injection = rb.read("tests/inputs/pink.D")
+    sequence = DataSequence("seq", [gc_injection], {})
+    document = sequence.to_asm()
+    assert _aggregate_key(document) == "gas chromatography aggregate document"
+    # And the sequence-level override still wins.
+    assert _aggregate_key(sequence.to_asm(technique="LC")) \
+        == "liquid chromatography aggregate document"
