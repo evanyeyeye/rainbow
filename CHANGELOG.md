@@ -11,25 +11,46 @@ to [Semantic Versioning](https://semver.org/).
 ### Added
 - **Allotrope Simple Model (ASM) export and import.** Any `DataDirectory`
   exports to one open, JSON-based ASM document with `datadir.to_asm()` (a dict)
-  or `datadir.export_asm(path)` (a file); `rb.from_asm(document)` reconstructs
-  the `DataDirectory`. UV channels become data cubes (a chromatogram cube per
-  single-wavelength trace, a 3D UV spectrum cube per diode-array acquisition),
-  and integrated peaks become processed data. Export is detector-driven, so it
-  covers the UV channels of both Agilent `.D` and Waters `.raw` runs; non-UV
-  detectors (MS, FID, CAD, ELSD) are not exported yet. New documentation page,
-  "Open data: the Allotrope Simple Model" (`docs/source/asm.rst`).
+  or `datadir.export_asm(path)` (a file); `rb.from_asm(document)` reconstructs a
+  `DataDirectory`. Export is detector-driven and covers UV (a chromatogram cube
+  per single-wavelength trace and a 3D spectrum cube per diode-array
+  acquisition), charged-aerosol, evaporative-light-scattering, and
+  refractive-index channels, mass spectrometry (every monitored ion of a SIM
+  acquisition automatically, and chosen ions of a full scan via
+  `to_asm(ions=[...])`), and flame-ionization channels, which route to a
+  gas-chromatography document. Integrated peaks become processed data. New
+  documentation page, "Open data: the Allotrope Simple Model"
+  (`docs/source/asm.rst`).
+- **`rb.from_asm` also reads ASM documents rainbow did not write** (for example
+  a third-party converter's richer envelope): it reconstructs the UV traces it
+  recognizes, ignores unfamiliar fields, and skips cubes it cannot represent
+  rather than failing.
 - **`rb.read_sequence(path)` and the `DataSequence` container** for Agilent
   multi-injection sequences: a container of per-injection `DataDirectory`
   objects, with the shared instrument, operator, and injection count as
   metadata. `rb.read_sequence(path, peaks=True)` attaches each injection's
   integrated peaks. A whole sequence exports to one ASM document with
-  `sequence.to_asm()` / `sequence.export_asm(path)`, and `rb.sequence_from_asm`
-  reconstructs it. The sequence workflow is Agilent-only. New "Sequences"
+  `sequence.to_asm()` / `sequence.export_asm(path)`, or to one document per
+  injection with `export_asm(directory, per_injection=True)`, and
+  `rb.sequence_from_asm` reconstructs it. `DataSequence` is exported at the
+  package level. The sequence workflow is Agilent-only. New "Sequences"
   documentation guide (`docs/source/sequences.rst`).
 - **Per-injection method and sample metadata** read from the Agilent `acq.macaml`
   and `SAMPLE.XML` sidecars (injection volume, column temperature, flow rate,
   modules, dilution, operator), merged onto each injection. This also enriches
   the metadata returned by a single `rb.read`.
+- **MS acquisition-mode tagging.** Each MS `DataFile` carries a
+  `metadata['acquisition_mode']` of `'SIM'` or `'Scan'`, read from authoritative
+  vendor metadata (Agilent `acqmeth.txt`, Waters `_FUNCTNS.INF` function types)
+  rather than guessed from the data.
+- **Controls for ASM document size.** `to_asm` / `export_asm` accept
+  `export_dad_cube=False` to omit the large diode-array spectrum cube,
+  `wavelengths=[...]` to keep only chosen wavelengths, and `decimal_places=N` to
+  round emitted numbers. `export_asm` streams one injection document at a time,
+  so even a long sequence of large spectra never has to fit in memory at once.
+- **`rb.mz_resolution(path)`** reports the finest m/z spacing a run actually
+  records, the practical ceiling on `bin_width`. It is opt-in and never runs
+  during an ordinary `rb.read`.
 - **Optional `lxml` acceleration** for sequence parsing, installed with
   `pip install rainbow-api[speed]`. It uses a tag-filtered iterparse for the
   large `sequence.acaml`, with the same output as the standard-library fallback.
@@ -38,6 +59,17 @@ to [Semantic Versioning](https://semver.org/).
   manifest.
 - **Opt-in ASM conformance tests** against a pinned Allotrope schema and the
   Allotrope Foundation Ontology (AFO), enabled with `RAINBOW_TEST_ASM_SCHEMA=1`.
+
+### Changed
+- **m/z binning split into `display_precision` and `bin_width`. Breaking:** the
+  `precision` argument to `rb.read` (and the vendor parsers) is replaced by two
+  independent controls. `display_precision` (default `'auto'`) is cosmetic and
+  rounds only the displayed m/z labels; `bin_width` is the lossy step that sums
+  intensities into a shared m/z grid. `bin_width` defaults to the grid the
+  binary records (about 0.1 Da for Agilent quadrupole MS, 0.05 Da for Waters,
+  and the per-scan axis for HRMS profile data), so binned output is unchanged by
+  default. Code passing `precision=` must now pass `display_precision=`, or
+  `bin_width=` to control the binning step.
 
 ## [1.4.0] - 2026-08-13
 
