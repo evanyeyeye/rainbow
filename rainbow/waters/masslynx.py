@@ -18,6 +18,15 @@ import pandas as pd
 _FUNC6_KEY_POW2 = 2.0 ** (np.arange(32) - 23)  # 2 ** (((raw & 0x1F0) >> 4) - 23)
 _FUNC6_VAL_POW4 = (4 ** np.arange(16)).astype(np.int64)  # 4 ** (raw & 0xF)
 
+# _FUNCTNS.INF holds one 416-byte record per function, in funcdat order. The
+# low 5 bits of each record's first byte are the MassLynx function-type code
+# (0 = MS scan, 1 = SIR = Waters' name for SIM, 12 = diode array). The upper
+# bits are acquisition flags (continuum/centroid), so they are masked off.
+_FUNCTNS_RECORD = 32 * 13
+_FUNC_TYPE_MASK = 0x1F
+_FUNC_TYPE_MS_SCAN = 0
+_FUNC_TYPE_SIR = 1
+
 
 def _find_file(directory, target_name):
     """
@@ -62,17 +71,19 @@ SPECTRUM PARSING METHODS
 """
 
 
-def parse_spectrum(path, precision=0, requested_files=None):
+def parse_spectrum(path, display_precision=0, bin_width=1.0,
+                   requested_files=None):
     """
     Finds and parses Waters UV and MS spectra from a .raw directory.
 
     IMPORTANT: The HRMS data format is not supported. \
         It can be differentiated from low resolution MS data using the \
-        _extern.inf or _FUNC .IDX files. 
+        _extern.inf or _FUNC .IDX files.
 
     Args:
-        path (str): Path to the .raw directory. 
-        precision (int, optional): Number of decimals to round ylabels.
+        path (str): Path to the .raw directory.
+        display_precision (int, optional): Decimals for displayed ylabels.
+        bin_width (float, optional): m/z bin width for MS binning.
         requested_files (list, optional): List of filenames to parse.
     
     Returns:
@@ -132,8 +143,10 @@ def parse_spectrum(path, precision=0, requested_files=None):
         if re.match(r'^_FUNC\d{3}\.DAT$', fn, re.IGNORECASE))
     # Waters validates _FUNCTNS.INF size; PE exports may omit this file entirely.
     functns_inf = _find_file_path(path, '_FUNCTNS.INF')
+    func_types = []
     if functns_inf is not None:
         assert (os.path.getsize(functns_inf) == 32 * 13 * len(funcdat_files))
+        func_types = _function_types(functns_inf, len(funcdat_files))
     for funcdat_index, funcdat_file in enumerate(funcdat_files):
         if requested_files and funcdat_file.lower() not in requested_files:
             continue
@@ -145,12 +158,51 @@ def parse_spectrum(path, precision=0, requested_files=None):
             polarity = polarities[funcdat_index]
             if funcdat_index < len(calib_nums):
                 calib = calib_nums[funcdat_index]
-        datafile = parse_function(os.path.join(path, funcdat_file), precision, polarity, calib)
+        datafile = parse_function(
+            os.path.join(path, funcdat_file), display_precision, bin_width,
+            polarity, calib)
+        # Tag the MS acquisition mode (SIM vs scan) from the function type, so a
+        # SIR (Waters' SIM) channel is distinguishable from a full scan.
+        if datafile.detector == 'MS' and funcdat_index < len(func_types):
+            mode = _acquisition_mode(func_types[funcdat_index])
+            if mode:
+                datafile.metadata['acquisition_mode'] = mode
         datafiles.append(datafile)
     return datafiles
 
 
-def parse_function(path, precision=0, polarity=None, calib=None):
+def _function_types(functns_inf_path, count):
+    """The MassLynx function-type code of each function, in funcdat order."""
+    try:
+        with open(functns_inf_path, 'rb') as f:
+            data = f.read()
+    except OSError:
+        return []
+    types = []
+    for index in range(count):
+        offset = index * _FUNCTNS_RECORD
+        if offset >= len(data):
+            break
+        types.append(data[offset] & _FUNC_TYPE_MASK)
+    return types
+
+
+def _acquisition_mode(func_type):
+    """``'SIM'`` or ``'Scan'`` for an MS function type, or None if unrecognized.
+
+    SIR (Selected Ion Recording) is Waters' SIM. A plain MS scan is a scan. Other
+    MS modes (MRM, parent/daughter scans) are left untagged so the exporter falls
+    back to treating only single-ion data as SIM.
+    """
+    if func_type == _FUNC_TYPE_SIR:
+        return 'SIM'
+    if func_type == _FUNC_TYPE_MS_SCAN:
+        return 'Scan'
+    return None
+
+
+def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
+                   calib=None):
     """
     Parses data for a Waters function. 
 
@@ -192,7 +244,8 @@ def parse_function(path, precision=0, polarity=None, calib=None):
         parse_funcdat = parse_funcdat8
     elif bytes_per_pair == 4:
         parse_funcdat = parse_funcdat4
-    ylabels, data = parse_funcdat(path, pair_counts, precision, calib)
+    ylabels, data = parse_funcdat(
+        path, pair_counts, display_precision, bin_width, calib)
 
     # Spectra without an assigned polarity always contain UV data.
     detector = 'MS' if polarity else 'UV'
@@ -240,7 +293,8 @@ def parse_funcidx(path):
     return times, pair_counts, bytes_per_pair
 
 
-def parse_funcdat2(path, pair_counts, precision=0, calib=None):
+def parse_funcdat2(path, pair_counts, display_precision=0, bin_width=1.0,
+                   calib=None):
     """
     Parses a Waters _FUNC .DAT file with the 2-bytes format. 
 
@@ -287,7 +341,8 @@ def parse_funcdat2(path, pair_counts, precision=0, calib=None):
     return ylabels, data
 
 
-def parse_funcdat4(path, pair_counts, precision=0, calib=None):
+def parse_funcdat4(path, pair_counts, display_precision=0, bin_width=1.0,
+                   calib=None):
     """
     Parses a Waters _FUNC .DAT file with the 4-bytes format.
 
@@ -369,7 +424,8 @@ def parse_funcinf(path):
     return mzs
 
 
-def parse_funcdat6(path, pair_counts, precision=0, calib=None):
+def parse_funcdat6(path, pair_counts, display_precision=0, bin_width=1.0,
+                   calib=None):
     """
     Parses a Waters _FUNC .DAT file with the 6-bytes format. 
 
@@ -408,18 +464,18 @@ def parse_funcdat6(path, pair_counts, precision=0, calib=None):
     if calib:
         keys = calibrate(keys, calib)
 
-    # Then round the keys to the nearest whole number.
-    keys = np.round(keys, precision)
-
     # Calculate the `values` from each 6-byte segment.
     val_bases = np.ndarray(num_datapairs, '<h', raw_bytes, 0, 6)
     values = val_bases * _FUNC6_VAL_POW4[raw_values & 0xF]
     del val_bases, raw_values, raw_bytes
 
-    return bin_datapairs(keys, values, pair_counts, precision)
+    # Bin the raw keys (binning is the lossy step; labels are cosmetic).
+    return bin_datapairs(keys, values, pair_counts, bin_width,
+                         display_precision=display_precision)
 
 
-def parse_funcdat8(path, pair_counts, precision=0, calib=None):
+def parse_funcdat8(path, pair_counts, display_precision=0, bin_width=1.0,
+                   calib=None):
     """
     Parses a Waters _FUNC .DAT file with the 8-bytes format. 
 
@@ -470,10 +526,7 @@ def parse_funcdat8(path, pair_counts, precision=0, calib=None):
         keys = calibrate(keys, calib)
     del keyints, keyfracs
 
-    # Round the keys to the nearest whole number. 
-    keys = np.round(keys, precision)
-
-    # Find the integers that need to be scaled via left shift. 
+    # Find the integers that need to be scaled via left shift.
     # This is based on the number of bits allocated for each integer.
     num_valint_bits = val_bits >> 22
     num_shifted = np.zeros(num_datapairs, np.uint8)
@@ -491,11 +544,13 @@ def parse_funcdat8(path, pair_counts, precision=0, calib=None):
     del num_shifted, num_valint_bits, num_valfrac_bits
     del valint_masks, valfrac_masks
 
-    # Get the `values` by adding the components. 
+    # Get the `values` by adding the components.
     values = valints + valfracs
     del valints, valfracs
 
-    return bin_datapairs(keys, values, pair_counts, precision)
+    # Bin the raw keys (binning is the lossy step; labels are cosmetic).
+    return bin_datapairs(keys, values, pair_counts, bin_width,
+                         display_precision=display_precision)
 
 
 def calibrate(mzs, calib_nums):

@@ -1,90 +1,100 @@
 {
-  "metadata": {
-    "vendor": "Agilent",
-    "date": "17-Jun-06, 15:40:38"
-  },
-  "datafiles": {
-    "dad1D.ch": {
-      "detector": "UV",
-      "shape": [
-        1351,
-        1
-      ],
-      "metadata": {
-        "date": "17-Jun-06, 15:40:38",
-        "method": "DD-ALK6B.M",
-        "instrument": "LC",
-        "unit": "mAU",
-        "signal": "DAD D, Sig=280,10 Ref=off"
-      }
+    "metadata": {
+        "vendor": "Agilent",
+        "date": "17-Jun-06, 15:40:38"
     },
-    "dad1E.ch": {
-      "detector": "UV",
-      "shape": [
-        1351,
-        1
-      ],
-      "metadata": {
-        "date": "17-Jun-06, 15:40:38",
-        "method": "DD-ALK6B.M",
-        "instrument": "LC",
-        "unit": "mAU",
-        "signal": "DAD E, Sig=230,10 Ref=off"
-      }
-    },
-    "dad1A.ch": {
-      "detector": "UV",
-      "shape": [
-        1351,
-        1
-      ],
-      "metadata": {
-        "date": "17-Jun-06, 15:40:38",
-        "method": "DD-ALK6B.M",
-        "instrument": "LC",
-        "unit": "mAU",
-        "signal": "DAD A, Sig=254,10 Ref=off"
-      }
-    },
-    "dad1B.ch": {
-      "detector": "UV",
-      "shape": [
-        1351,
-        1
-      ],
-      "metadata": {
-        "date": "17-Jun-06, 15:40:38",
-        "method": "DD-ALK6B.M",
-        "instrument": "LC",
-        "unit": "mAU",
-        "signal": "DAD B, Sig=210,10 Ref=off"
-      }
-    },
-    "dad1C.ch": {
-      "detector": "UV",
-      "shape": [
-        1351,
-        1
-      ],
-      "metadata": {
-        "date": "17-Jun-06, 15:40:38",
-        "method": "DD-ALK6B.M",
-        "instrument": "LC",
-        "unit": "mAU",
-        "signal": "DAD C, Sig=230,10 Ref=off"
-      }
-    },
-    "dad1.uv": {
-      "detector": "UV",
-      "shape": [
-        1344,
-        211
-      ],
-      "metadata": {
-        "date": "17-Jun-06, 15:40:38",
-        "method": "DD-ALK6B.M",
-        "unit": "mAU"
-      }
+    "datafiles": {
+        "dad1D.ch": {
+            "detector": "UV",
+            "shape": [
+                1351,
+                1
+            ],
+            "metadata": {
+                "date": "17-Jun-06, 15:40:38",
+                "method": "DD-ALK6B.M",
+                "instrument": "LC",
+                "unit": "mAU",
+                "signal": "DAD D, Sig=280,10 Ref=off",
+                "wavelength": 280.0,
+                "bandwidth": 10.0
+            }
+        },
+        "dad1E.ch": {
+            "detector": "UV",
+            "shape": [
+                1351,
+                1
+            ],
+            "metadata": {
+                "date": "17-Jun-06, 15:40:38",
+                "method": "DD-ALK6B.M",
+                "instrument": "LC",
+                "unit": "mAU",
+                "signal": "DAD E, Sig=230,10 Ref=off",
+                "wavelength": 230.0,
+                "bandwidth": 10.0
+            }
+        },
+        "dad1A.ch": {
+            "detector": "UV",
+            "shape": [
+                1351,
+                1
+            ],
+            "metadata": {
+                "date": "17-Jun-06, 15:40:38",
+                "method": "DD-ALK6B.M",
+                "instrument": "LC",
+                "unit": "mAU",
+                "signal": "DAD A, Sig=254,10 Ref=off",
+                "wavelength": 254.0,
+                "bandwidth": 10.0
+            }
+        },
+        "dad1B.ch": {
+            "detector": "UV",
+            "shape": [
+                1351,
+                1
+            ],
+            "metadata": {
+                "date": "17-Jun-06, 15:40:38",
+                "method": "DD-ALK6B.M",
+                "instrument": "LC",
+                "unit": "mAU",
+                "signal": "DAD B, Sig=210,10 Ref=off",
+                "wavelength": 210.0,
+                "bandwidth": 10.0
+            }
+        },
+        "dad1C.ch": {
+            "detector": "UV",
+            "shape": [
+                1351,
+                1
+            ],
+            "metadata": {
+                "date": "17-Jun-06, 15:40:38",
+                "method": "DD-ALK6B.M",
+                "instrument": "LC",
+                "unit": "mAU",
+                "signal": "DAD C, Sig=230,10 Ref=off",
+                "wavelength": 230.0,
+                "bandwidth": 10.0
+            }
+        },
+        "dad1.uv": {
+            "detector": "UV",
+            "shape": [
+                1344,
+                211
+            ],
+            "metadata": {
+                "date": "17-Jun-06, 15:40:38",
+                "method": "DD-ALK6B.M",
+                "unit": "mAU"
+            }
+        }
     }
-  }
 }

@@ -4,6 +4,7 @@ Methods for parsing Agilent Chemstation files.
 """
 
 import os
+import re
 import struct
 from collections import Counter
 import numpy as np
@@ -27,30 +28,65 @@ except ImportError:
 # head field is 0..3, so indexing this beats np.power over every pair.
 _MS_INT_POW8 = np.array([1, 8, 64, 512], dtype=np.uint32)
 
+# Single-wavelength DAD/MWD/VWD channels encode their optics in the signal
+# description, e.g. "DAD1B, Sig=280.0,4.0  Ref=off" or
+# "DAD1A,Sig=210.0,4.0  Ref=360.0,100.0": the signal wavelength and bandwidth,
+# then (optionally) the reference wavelength and bandwidth, all in nm. Spectra
+# and other detectors have no Sig= clause. Shared with the OpenLab .dx parser.
+_SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
+_REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
+
+
+def parse_optics(description):
+    """
+    Extracts wavelength settings from a signal description, if present.
+
+    Returns a dict with any of ``wavelength``, ``bandwidth``,
+    ``reference_wavelength``, and ``reference_bandwidth`` (in nm), parsed from
+    the ``Sig=``/``Ref=`` clause of a single-wavelength channel. Descriptions
+    without such a clause (spectra, FID, telemetry, ``Ref=off``) yield an
+    empty or reference-free dict.
+
+    """
+    optics = {}
+    sig = _SIG_RE.search(description)
+    if sig:
+        optics['wavelength'] = float(sig.group(1))
+        optics['bandwidth'] = float(sig.group(2))
+    ref = _REF_RE.search(description)
+    if ref:
+        optics['reference_wavelength'] = float(ref.group(1))
+        optics['reference_bandwidth'] = float(ref.group(2))
+    return optics
+
 """
 MAIN PARSING METHODS
 
 """
 
 
-def parse_allfiles(path, precision='auto', requested_files=None):
+def parse_allfiles(path, display_precision='auto', bin_width=None,
+                   requested_files=None):
     """
     Finds and parses Agilent Chemstation data files \
         with a .ch, .uv, or .ms extension from a .D directory.
-    
+
     Args:
         path (str): Path to the .D directory.
-        precision (int, optional): Number of decimals to round mz values.
+        display_precision (int, optional): Decimals for the displayed m/z labels.
+        bin_width (float, optional): m/z bin width for .ms binning.
         requested_files (list, optional): List of filenames to parse.
 
     Returns:
         List with a DataFile for each parsed data file.
 
     """
-    # Chemstation data (UV, GC/quadrupole .ms) is unit-resolution, so 'auto'
-    # precision means whole numbers.
-    if precision == 'auto':
-        precision = 0
+    # Chemstation .ms is unit-resolution GC/quadrupole data, so the defaults are
+    # whole-number m/z labels on a nominal-mass (1 Da) grid.
+    if display_precision == 'auto':
+        display_precision = 0
+    if bin_width is None:
+        bin_width = 1.0
     datafiles = []
     # Sort for a deterministic parse order across platforms: os.listdir returns
     # entries in filesystem order, which differs between macOS and Linux. The
@@ -60,22 +96,24 @@ def parse_allfiles(path, precision='auto', requested_files=None):
     for name in sorted(os.listdir(path)):
         if requested_files and name.lower() not in requested_files:
             continue
-        datafile = parse_file(os.path.join(path, name), precision)
+        datafile = parse_file(
+            os.path.join(path, name), display_precision, bin_width)
         if datafile:
             datafiles.append(datafile)
     return datafiles
 
 
-def parse_file(path, precision=0):
+def parse_file(path, display_precision=0, bin_width=1.0):
     """
-    Parses an Agilent Chemstation data file. 
-    
-    Supported extensions are .ch, .uv, and .ms. 
+    Parses an Agilent Chemstation data file.
+
+    Supported extensions are .ch, .uv, and .ms.
 
     Args:
         path (str): Path to the data file.
-        precision (int, optional): Number of decimals to round mz values.
-    
+        display_precision (int, optional): Decimals for displayed m/z labels.
+        bin_width (float, optional): m/z bin width for .ms binning.
+
     Returns:
         DataFile representing the file, if it can be parsed. Otherwise, None.
 
@@ -86,7 +124,7 @@ def parse_file(path, precision=0):
     elif ext == '.uv':
         return parse_uv(path)
     elif ext == '.ms':
-        return parse_ms(path, precision)
+        return parse_ms(path, display_precision, bin_width)
     return None
 
 
@@ -295,6 +333,8 @@ def parse_ch_other(path, head):
     if '=' in signal:
         ylabel = signal.split('=')[1].split(',')[0]
         detector = 'UV'
+        # Surface the wavelength settings (shared with the .dx parser).
+        metadata.update(parse_optics(signal))
     elif 'ADC' in signal:
         detector = 'ELSD' if 'CHANNEL' in signal else 'CAD'
     ylabels = np.array([ylabel])
@@ -651,18 +691,21 @@ def parse_uv_partial(path):
 """
 
 
-def parse_ms(path, precision=0):
+def parse_ms(path, display_precision=0, bin_width=1.0):
     """
     Parses an Agilent .ms file.
 
-    These files contain MS spectra and SIM. 
+    These files contain MS spectra and SIM.
 
     Learn more about this file format :ref:`here <ms>`.
 
     Args:
         path (str): Path to Agilent .ms file.
-        precision (int, optional): Number of decimals to round mz values. 
-    
+        display_precision (int, optional): Decimals for the displayed m/z labels.
+        bin_width (float, optional): Width in daltons of each m/z bin. The lossy
+            control: pairs within one bin are summed. Defaults to 1 (nominal
+            mass). Agilent quadrupole .ms records m/z on a 0.1 Da grid.
+
     Returns:
         DataFile with MS data, if the file can be parsed. Otherwise, None.
 
@@ -683,7 +726,7 @@ def parse_ms(path, precision=0):
     head = int_unpack(f.read(4))[0]
     if head != 0x01320000:
         f.close()
-        return parse_ms_partial(path, precision)
+        return parse_ms_partial(path, display_precision, bin_width)
 
     # Determine the type of .ms file based on header.
     # Read the number of retention times from different offsets by type.
@@ -719,9 +762,8 @@ def parse_ms(path, precision=0):
     times = times / 60000
     total_paircount = np.sum(pair_counts)
 
-    # Calculate the mz values. 
-    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4)
-    mzs = np.round(mzs / 20, precision)
+    # Calculate the mz values (raw; binning happens in bin_datapairs).
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / 20
 
     # Calculate the intensity values. 
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -732,7 +774,8 @@ def parse_ms(path, precision=0):
 
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
     ylabels, data = bin_datapairs(
-        mzs, int_values, pair_counts, precision, data_dtype=np.uint32)
+        mzs, int_values, pair_counts, bin_width,
+        display_precision=display_precision, data_dtype=np.uint32)
     del mzs, int_values, pair_counts
 
     # Read file metadata.
@@ -746,9 +789,9 @@ def parse_ms(path, precision=0):
     return DataFile(path, 'MS', times, ylabels, data, metadata)
 
 
-def parse_ms_partial(path, precision=0):
+def parse_ms_partial(path, display_precision=0, bin_width=1.0):
     """
-    Parses a partial Agilent .ms file. 
+    Parses a partial Agilent .ms file.
 
     IMPORTANT: This method only supports LC .ms partials.
 
@@ -756,7 +799,8 @@ def parse_ms_partial(path, precision=0):
 
     Args:
         path (str): Path to the partial .ms file.
-        precision (int, optional): Number of decimal to round mz values.
+        display_precision (int, optional): Decimals for the displayed m/z labels.
+        bin_width (float, optional): Width in daltons of each m/z bin.
 
     Returns:
         DataFile with MS data, if the file can be parsed. Otherwise, None.
@@ -806,9 +850,8 @@ def parse_ms_partial(path, precision=0):
     num_times = times.size
     total_paircount = np.sum(pair_counts)
 
-    # Calculate the mz values. 
-    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4)
-    mzs = np.round(mzs / 20, precision)
+    # Calculate the mz values (raw; binning happens in bin_datapairs).
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / 20
 
     # Calculate the intensity values.
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -819,7 +862,8 @@ def parse_ms_partial(path, precision=0):
 
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
     ylabels, data = bin_datapairs(
-        mzs, int_values, pair_counts, precision, data_dtype=np.uint32)
+        mzs, int_values, pair_counts, bin_width,
+        display_precision=display_precision, data_dtype=np.uint32)
     del mzs, int_values, pair_counts
 
     # Read file metadata.
@@ -910,6 +954,12 @@ def parse_metadata(path, datafiles):
     metadata = {}
     metadata['vendor'] = "Agilent"
 
+    dircontents = set(os.listdir(path))
+
+    # Read the sample name and operator from the directory's structured
+    # metadata files (reliable, unlike guessing header byte offsets).
+    metadata.update(read_sample_metadata(path, dircontents))
+
     # Scan each DataFile for the date and vial position.
     # These may be stored in multiple files but the values are constant.
     # In MS files, the time may be saved in a different format.
@@ -924,8 +974,7 @@ def parse_metadata(path, datafiles):
     if 'date' in metadata and 'vialpos' in metadata:
         return metadata
 
-    # Scan certain files for the vial position. 
-    dircontents = set(os.listdir(path))
+    # Scan certain files for the vial position.
 
     # sequence.acam_
     if "sequence.acam_" in dircontents:
@@ -991,6 +1040,60 @@ def parse_metadata(path, datafiles):
                 break
 
     return metadata
+
+
+def read_sample_metadata(path, dircontents):
+    """
+    Reads the sample name and operator from a .D directory's metadata files.
+
+    Classic Chemstation runs store these in ``SAMPLE.XML`` (UTF-16);
+    MassHunter runs store them as ``Field`` entries in
+    ``AcqData/sample_info.xml``. Both are optional and best-effort: a missing
+    file, an empty value, or a parse error simply yields nothing.
+
+    Args:
+        path (str): Path to the .D directory.
+        dircontents (set): Names in the directory (from ``os.listdir``).
+
+    Returns:
+        Dictionary with any of ``sample`` and ``operator``.
+
+    """
+    # Case-insensitive lookup, since filename case varies across platforms.
+    actual = {name.lower(): name for name in dircontents}
+    found = {}
+
+    # Classic Chemstation: SAMPLE.XML -> <Sample><Name>...</Name>.
+    if 'sample.xml' in actual:
+        try:
+            root = etree.parse(
+                os.path.join(path, actual['sample.xml'])).getroot()
+            name = root.findtext('Name')
+            if name and name.strip():
+                found['sample'] = name.strip()
+        except Exception:
+            pass
+
+    # MassHunter: AcqData/sample_info.xml -> <Field><Name>../<Value>../>.
+    if 'acqdata' in actual:
+        info_path = os.path.join(path, actual['acqdata'], 'sample_info.xml')
+        if os.path.exists(info_path):
+            try:
+                root = etree.parse(info_path).getroot()
+                fields = {}
+                for field in root.findall('.//Field'):
+                    name = field.findtext('Name')
+                    value = field.findtext('Value')
+                    if name and value and value.strip():
+                        fields[name.strip()] = value.strip()
+                if 'sample' not in found and fields.get('Sample Name'):
+                    found['sample'] = fields['Sample Name']
+                if fields.get('OperatorName'):
+                    found['operator'] = fields['OperatorName']
+            except Exception:
+                pass
+
+    return found
 
 
 def get_xml_vialnum(path):

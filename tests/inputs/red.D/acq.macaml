@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <ACAML xmlns="urn:schemas-agilent-com:acaml15" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<Checksum Algorithm="MD5">
 		<Value>J3j5wGYWfiPJD14IUsBkfg==</Value>
@@ -7,7 +7,7 @@
 		<DocID>aae71eb1-6b5c-489a-b051-04ec7309d40b</DocID>
 		<DocInfo>
 			<Description>Method ACAML</Description>
-			<CreatedByUser>NORTHAMERICA\usrymrlwn005255</CreatedByUser>
+			<CreatedByUser>LAB\analyst</CreatedByUser>
 			<CreatedByApplication>
 				<AgilentApp>
 					<Name>ChemStation</Name>
@@ -15,7 +15,7 @@
 				</AgilentApp>
 			</CreatedByApplication>
 			<CreationDate>2018-02-27T10:25:54.435-05:00</CreationDate>
-			<ClientName>USRYMRLWN005255</ClientName>
+			<ClientName>BENCH</ClientName>
 		</DocInfo>
 		<Content>
 			<MethodConfiguration xsi:type="MethodConfigurationType" id="1611365e-51f9-4d75-bf25-a868d0c46994" ver="0">
