@@ -6,6 +6,7 @@ synthetic sequence.acaml (instrument + peaks), export it to ASM, read it back
 with sequence_from_asm, and check that the data, peaks, and metadata survive
 the lap. A few hand-built ASM dicts cover from_asm and the helpers directly.
 """
+import json
 import os
 import shutil
 
@@ -16,6 +17,7 @@ import rainbow as rb
 from rainbow import asm
 
 
+INPUTS = os.path.join(os.path.dirname(__file__), "inputs")
 FIXTURE = os.path.join(os.path.dirname(__file__), "inputs", "brown.D")
 INJECTION_NAMES = ["008-D1F-A1-sample_01.D", "009-D1F-A2-sample_02.D"]
 
@@ -253,3 +255,33 @@ def test_peak_from_asm_converts_seconds_back_to_minutes():
     peak = asm._peak_from_asm(asm_peak)
     assert peak["retention_time"] == 2.0
     assert peak["area"] == 50.0
+
+
+def test_from_asm_reads_external_uv_document():
+    # A document rainbow did not write (third-party converter, rich envelope
+    # with many extra fields) still reads: the UV chromatogram is reconstructed
+    # and the unfamiliar fields are ignored. Fixture is sanitized/synthetic.
+    with open(os.path.join(INPUTS, "external_uv.asm.json")) as f:
+        document = json.load(f)
+    datadir = rb.from_asm(document)
+
+    assert len(datadir.datafiles) == 1
+    datafile = datadir.datafiles[0]
+    assert datafile.detector == 'UV'
+    np.testing.assert_allclose(
+        datafile.xlabels, np.array([0.0, 30.0, 60.0]) / 60.0)
+    np.testing.assert_allclose(datafile.data[:, 0], [0.1, 5.0, 0.2])
+    assert datafile.metadata.get("wavelength") == 254.0
+    assert datadir.metadata.get("sample") == "Sample A"
+
+
+def test_from_asm_skips_mass_chromatogram_keeps_uv():
+    # An LC-MS document mixes a mass chromatogram cube (which rainbow does not
+    # reconstruct) with a UV chromatogram cube. from_asm keeps the UV trace and
+    # skips the MS one rather than crashing.
+    with open(os.path.join(INPUTS, "external_lcms.asm.json")) as f:
+        document = json.load(f)
+    datadir = rb.from_asm(document)
+
+    assert [df.name for df in datadir.datafiles] == ["trace-uv"]
+    assert datadir.datafiles[0].detector == 'UV'
