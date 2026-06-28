@@ -4,6 +4,9 @@ docs/_autosummary/*
 
 .DS_STORE
 
+# editor / agent tooling state (never part of the package)
+.claude/
+
 # local docs build environment
 .venv-docs/
 

@@ -388,7 +388,7 @@ def sequence_export_asm_per_injection(datasequence, directory,
         filename = _unique_filename(_injection_filename(injection.name), taken)
         taken.add(filename)
         path = os.path.join(directory, filename)
-        with open(path, "w") as fileobj:
+        with open(path, "w", encoding="utf-8") as fileobj:
             _stream_aggregate(fileobj, technique, device_system,
                               [(injection, injection.metadata)], options,
                               indent)

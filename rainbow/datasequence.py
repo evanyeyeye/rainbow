@@ -161,6 +161,6 @@ class DataSequence:
             return asm.sequence_export_asm_per_injection(
                 self, filename, export_dad_cube, wavelengths, ions,
                 decimal_places, technique, indent)
-        with open(filename, 'w') as f:
+        with open(filename, 'w', encoding="utf-8") as f:
             asm.sequence_export_asm(self, f, export_dad_cube, wavelengths,
                                     ions, decimal_places, technique, indent)

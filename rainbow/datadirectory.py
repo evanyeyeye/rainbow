@@ -205,6 +205,6 @@ class DataDirectory:
 
         """
         from rainbow import asm
-        with open(filename, 'w') as f:
+        with open(filename, 'w', encoding="utf-8") as f:
             asm.export_asm(self, f, export_dad_cube, wavelengths, ions,
                            decimal_places, technique, indent)
