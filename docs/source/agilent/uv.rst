@@ -41,7 +41,7 @@ The strings are separated by large blocks of null bytes, which are used to reser
      - LC DATA FILE
    * - 0x35A
      - Notebook name
-     - 0394783-1156_caffeine
+     - 0000000-0000_caffeine
    * - 0x758
      - Parent directory 
      - SYSTEM

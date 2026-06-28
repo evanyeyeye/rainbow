@@ -1400,3 +1400,77 @@ def test_centroid_shared_axis_ops_raise():
                lambda c: c.plot("x")):
         with pytest.raises(AttributeError, match="per-scan m/z axis"):
             op(centroid)
+
+
+# --- bin_to_grid / _scatter_sum exactness ----------------------------------
+# The grid scatter-add uses np.bincount (float64 reduction) for speed, guarded
+# to fall back to an exact uint64 np.add.at above float64's 53-bit integer
+# range. These tests pin that the fast path is bit-for-bit identical to an exact
+# reference, and that the fallback triggers and stays exact past 2**53.
+
+def _reference_scatter(idx, intensities, size):
+    """An unambiguous exact uint64 scatter-add to compare against."""
+    grid = np.zeros(size, dtype=np.uint64)
+    np.add.at(grid, idx, intensities)
+    return grid
+
+
+def test_scatter_sum_matches_exact_reference():
+    rng = np.random.default_rng(0)
+    size = 500
+    idx = rng.integers(0, size, size=20000)
+    intensities = rng.integers(0, 10_000, size=20000).astype(np.uint64)
+    got = masshunter._scatter_sum(idx, intensities, size)
+    assert got.dtype == np.uint64
+    np.testing.assert_array_equal(got, _reference_scatter(idx, intensities, size))
+
+
+def test_scatter_sum_fallback_is_exact_past_2_53():
+    # Two points whose summed intensity exceeds 2**53: the float64 bincount path
+    # would lose the low bit, so the guard must take the exact uint64 fallback.
+    big = np.uint64(2 ** 53)
+    idx = np.array([3, 3], dtype=np.int64)
+    intensities = np.array([big, np.uint64(1)], dtype=np.uint64)
+    assert int(intensities.sum()) >= masshunter._FLOAT64_EXACT_INT  # fallback path
+    got = masshunter._scatter_sum(idx, intensities, 8)
+    assert int(got[3]) == 2 ** 53 + 1  # exact, not rounded to 2**53
+
+
+def test_scatter_sum_guard_boundary_is_exact_both_sides():
+    # Exactly at the 2**53 boundary takes the exact fallback (strict <); just
+    # below stays on the fast bincount path. Both must be exact.
+    at = np.array([np.uint64(2 ** 53)], dtype=np.uint64)         # fallback
+    below = np.array([np.uint64(2 ** 53 - 1)], dtype=np.uint64)  # fast path
+    assert int(masshunter._scatter_sum(np.array([0]), at, 1)[0]) == 2 ** 53
+    assert int(masshunter._scatter_sum(np.array([0]), below, 1)[0]) == 2 ** 53 - 1
+
+
+def test_bin_to_grid_dense_matches_reference():
+    # Three scans of unit-resolution points; small m/z span -> dense path.
+    mz = np.array([100.0, 101.0, 100.0, 102.0, 101.0, 101.0])
+    intensity = np.array([5, 7, 3, 9, 4, 6], dtype=np.uint64)
+    rows = np.array([0, 0, 1, 1, 2, 2])
+    ylabels, grid = masshunter.bin_to_grid(mz, intensity, rows, 3, display_precision=0)
+    assert grid.dtype == np.uint64
+    # Expected: columns 100/101/102 summed per scan row.
+    np.testing.assert_array_equal(ylabels, [100.0, 101.0, 102.0])
+    np.testing.assert_array_equal(grid, np.array([[5, 7, 0],
+                                                  [3, 0, 9],
+                                                  [0, 10, 0]], dtype=np.uint64))
+
+
+def test_bin_to_grid_sparse_path_matches_dense(monkeypatch):
+    # Force the sparse branch (np.unique/searchsorted) by shrinking the dense
+    # threshold, and include a zero-intensity point at an m/z no other scan fills
+    # (114.0): the sparse path must drop that phantom all-zero column to match the
+    # dense path's grid.any() filter. Same input -> same expected grid.
+    monkeypatch.setattr(masshunter, "_MAX_DENSE_BINS", 4)
+    mz = np.array([100.0, 101.0, 100.0, 102.0, 101.0, 101.0, 114.0])
+    intensity = np.array([5, 7, 3, 9, 4, 6, 0], dtype=np.uint64)
+    rows = np.array([0, 0, 1, 1, 2, 2, 2])
+    ylabels, grid = masshunter.bin_to_grid(mz, intensity, rows, 3, display_precision=0)
+    assert grid.dtype == np.uint64
+    np.testing.assert_array_equal(ylabels, [100.0, 101.0, 102.0])
+    np.testing.assert_array_equal(grid, np.array([[5, 7, 0],
+                                                  [3, 0, 9],
+                                                  [0, 10, 0]], dtype=np.uint64))

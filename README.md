@@ -45,7 +45,7 @@ Here, the `datadir` DataDirectory object contains a DataFile object for `DAD1A.u
 *rainbow* normally infers the vendor from the path suffix (`.D`/`.dx` for Agilent, `.raw` for Waters). A directory whose name lacks that suffix is identified from its contents instead, so renamed datasets still parse. To force a parser explicitly, pass `format`:
 
 ```python
-datadir = rb.read("Noscapine 3", format="waters")
+datadir = rb.read("Caffeine 3", format="waters")
 ```
 
 The raw UV data is contained in numpy arrays that are attributes of `datafile`. Users may find the following particularly useful:

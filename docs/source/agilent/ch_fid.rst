@@ -41,10 +41,10 @@ The strings are separated by large blocks of null bytes, which are likely used t
      - GC DATA FILE
    * - 0x35A
      - Notebook name
-     - cedrol_mix_01
+     - example_mix01
    * - 0x758
      - Parent directory
-     - mcminns
+     - jdoe
    * - 0x957
      - Date
      - 17 Dec 19  10:04 am
@@ -56,10 +56,10 @@ The strings are separated by large blocks of null bytes, which are likely used t
      - GC 
    * - 0xA0E
      - Method 
-     - Rt-bDEX-SE_mcminn.M
+     - Rt-bDEX-SE_jdoe.M
    * - 0xC11
      - Instrument 
-     - Mustang ChemStation 
+     - FAKEPC2 ChemStation 
    * - 0x104C
      - Units
      - pA 

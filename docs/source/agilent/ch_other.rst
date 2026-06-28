@@ -43,10 +43,10 @@ The strings are separated by large blocks of null bytes, which are used to reser
      - LC DATA FILE
    * - 0x35A
      - Notebook name
-     - 0416044-0032
+     - 0000000-0000
    * - 0x758
      - Parent directory
-     - varab
+     - jdoe
    * - 0x957
      - Date
      - 10-May-18, 17:43:49
@@ -61,7 +61,7 @@ The strings are separated by large blocks of null bytes, which are used to reser
      - RM_HPLC.M
    * - 0xC11
      - Instrument 
-     - Asterix ChemStation 
+     - FAKEPC1 ChemStation 
    * - 0xE11
      - UNKNOWN
      - B.07.01 [0005]

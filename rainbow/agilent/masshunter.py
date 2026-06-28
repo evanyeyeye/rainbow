@@ -1230,6 +1230,45 @@ def _read_icpms_mzs(path, num_masses):
 # the sort-based mapping, which only allocates the occupied columns.
 _MAX_DENSE_BINS = 50_000_000
 
+# float64 represents integers exactly up to 2**53. np.bincount sums its weights
+# in float64, so a uint64 scatter-add round-trips losslessly only while the total
+# stays under this bound. It always does for real profile data (a whole run's
+# summed counts are orders of magnitude below 2**53), but the guard below keeps
+# the guarantee total for any input.
+_FLOAT64_EXACT_INT = 1 << 53
+
+
+def _scatter_sum(idx, intensities, size):
+    """
+    Scatter-adds ``intensities`` into a length-``size`` uint64 array at the flat
+    indices ``idx`` (i.e. ``grid[idx[k]] += intensities[k]``, accumulating
+    duplicates).
+
+    Uses :func:`numpy.bincount`, a fast single-pass C reduction, which is far
+    quicker than :func:`numpy.add.at`. ``bincount`` sums in float64; while the
+    total fits float64's exact 53-bit integer range the uint64 cast is lossless
+    and reproduces an exact integer scatter-add bit for bit. Above that (not seen
+    in real data) it falls back to an exact uint64 ``np.add.at`` so the result is
+    identical for any input.
+
+    Args:
+        idx (np.ndarray): Flat destination index of every point.
+        intensities (np.ndarray): uint64 intensity of every point.
+        size (int): Length of the output grid.
+
+    Returns:
+        Length-``size`` uint64 array of summed intensities.
+
+    """
+    # sum(dtype=object) totals in exact Python ints, so the guard itself cannot
+    # be fooled by a uint64 wraparound before the comparison.
+    if int(intensities.sum(dtype=object)) < _FLOAT64_EXACT_INT:
+        return np.bincount(
+            idx, weights=intensities, minlength=size).astype(np.uint64)
+    grid = np.zeros(size, dtype=np.uint64)
+    np.add.at(grid, idx, intensities)
+    return grid
+
 
 def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_width=None):
     """
@@ -1276,15 +1315,8 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
 
     if span * num_times <= _MAX_DENSE_BINS:
         # Dense path: integer bin keys index straight into the grid.
-        # np.bincount with weights is far faster than np.add.at for this
-        # scatter-add. It returns float64, but the weights are integer
-        # intensity counts whose per-bin sums stay well within float64's
-        # exact 53-bit integer range, so casting back to uint64 is lossless
-        # and reproduces the prior grid bit for bit.
         idx = rows * span + (keys - low)
-        grid = np.bincount(
-            idx, weights=intensities, minlength=num_times * span
-        ).astype(np.uint64)
+        grid = _scatter_sum(idx, intensities, num_times * span)
         grid = grid.reshape(num_times, span)
         present = np.nonzero(grid.any(axis=0))[0]
         return np.round((low + present) * width, display_precision), grid[:, present]
@@ -1297,12 +1329,8 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
     # path (grid.any) so every returned column is a bin some scan actually filled.
     uniq = np.unique(keys)
     cols = np.searchsorted(uniq, keys)
-    # See the dense path above: bincount is a faster scatter-add and the
-    # uint64 cast is lossless for these integer intensity sums.
     idx = rows * uniq.size + cols
-    grid = np.bincount(
-        idx, weights=intensities, minlength=num_times * uniq.size
-    ).astype(np.uint64)
+    grid = _scatter_sum(idx, intensities, num_times * uniq.size)
     grid = grid.reshape(num_times, uniq.size)
     present = np.nonzero(grid.any(axis=0))[0]
     return np.round(uniq[present] * width, display_precision), grid[:, present]

@@ -3,7 +3,7 @@ import re
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
-from rainbow import agilent, waters
+from rainbow import agilent, waters, debug
 from rainbow.asm import from_asm, sequence_from_asm
 
 
@@ -42,7 +42,7 @@ def _sniff_vendor(path):
     Identifies the vendor of a directory from its contents.
 
     Used as a fallback when a directory's name lacks the conventional vendor
-    suffix (e.g. a Waters .raw folder renamed to ``Noscapine 3``). Returns
+    suffix (e.g. a Waters .raw folder renamed to ``Caffeine 3``). Returns
     'agilent', 'waters', or None if no signature matches.
 
     Args:

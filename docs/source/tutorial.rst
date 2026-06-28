@@ -60,7 +60,7 @@ The output would look something like:
     [-0.93856454]
     [-0.93948841]
     [-0.94015151]]
-   Metadata: {'notebook': 'usp', 'date': '27-Feb-18, 10:11:50', 'method': 'column2_gradient14min.M', 'instrument': 'Asterix ChemStation', 'unit': 'mAU', 'signal': 'DAD1B, Sig=280.0,4.0  Ref=off'}
+   Metadata: {'notebook': 'smp', 'date': '27-Feb-18, 10:11:50', 'method': 'column2_gradient14min.M', 'instrument': 'FAKEPC1 ChemStation', 'unit': 'mAU', 'signal': 'DAD1B, Sig=280.0,4.0  Ref=off'}
 
    --------
    ADC1A.CH

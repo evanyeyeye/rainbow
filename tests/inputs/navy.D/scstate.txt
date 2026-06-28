@@ -1,0 +1,10 @@
+                          SC State Report (Rev. 2.01)
+                               Fri Jun 23 05:00:13 2023
+Instrument Configuration:
+  Instrument Model          = G6120B
+  Serial Number             = DEAA900001
+  Mass Range Low/High[Res]  = 0.15 / 3276.00 [0.050]
+Smartcard Configuration:
+  Smartcard Model           = SC3B
+  Main Processor Speed      = 40.0 MHz
+  Firmware Revision Number  = 3.02.49 

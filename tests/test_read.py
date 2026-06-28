@@ -27,7 +27,7 @@ def test_extension_still_dispatches():
 
 
 def test_sniffs_waters_without_suffix(tmp_path):
-    path = _copy_without_suffix(WATERS_FIXTURE, tmp_path, "Noscapine 3")
+    path = _copy_without_suffix(WATERS_FIXTURE, tmp_path, "Caffeine 3")
     assert rb.read(path).metadata["vendor"] == "Waters"
 
 

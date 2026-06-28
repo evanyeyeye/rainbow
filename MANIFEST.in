@@ -7,3 +7,9 @@ include rainbow/agilent/_chdelta.pyx
 exclude rainbow/agilent/_uvdelta.c
 exclude rainbow/agilent/_msprofile.c
 exclude rainbow/agilent/_chdelta.c
+
+# Keep the test suite out of the source distribution. The wheel already excludes
+# it (packages.find ships only rainbow*), but setuptools otherwise sweeps the
+# tests/*.py into the sdist; they reference large binary fixtures and add nothing
+# for someone installing the package.
+prune tests

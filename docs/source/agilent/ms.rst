@@ -42,12 +42,12 @@ In GC-MS files, the metadata is stored in the same way as the LC-MS files in the
      - GC / MS Data File
    * - 0x18
      - Notebook name
-     - 0416044-0032
-     - cedrol_mix_01
+     - 0000000-0000
+     - example_mix01
    * - 0x94
      - Parent directory
-     - varab 
-     - mcminns
+     - jdoe 
+     - jdoe
    * - 0xB2
      - Date
      - 10 May 18   5:43 pm -0500
@@ -59,7 +59,7 @@ In GC-MS files, the metadata is stored in the same way as the LC-MS files in the
    * - 0xE4
      - Method
      - RM_HPLC.M
-     - Rt-bDEX-SE_mcminn.M
+     - Rt-bDEX-SE_jdoe.M
    * - 0x140
      - Mz range
      - MSD1, Initial Scan Range=170.0-1000.0
@@ -92,7 +92,7 @@ The strings are separated by large blocks of null bytes, which are used to reser
      - D:\\MassHunter\\Methods\\
    * - 0x466
      - Method
-     - Rt-bDEX-SE_mcminn.M 
+     - Rt-bDEX-SE_jdoe.M 
    * - 0x664
      - UNKNOWN
      - D:\\MassHunter\\GCMS\\1\\5977\\

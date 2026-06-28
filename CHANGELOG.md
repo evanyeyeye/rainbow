@@ -3,12 +3,16 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-<!-- At 1.4 integration, merge in the rainbow.debug metadata-inspection
-     subsystem entries from the feature/debug-metadata branch. -->
-
 ## [1.5.0] - Unreleased
 
 ### Added
+- **`rainbow.debug` metadata-inspection subsystem.** A new opt-in module with
+  two entry points, `rb.debug.inspect(path)` and `rb.debug.fields(path)`, that
+  decode the many vendor sidecar files a run directory ships (ChemStation
+  registers and INIs, .NET and XML blobs, mzXML and Waters headers, method and
+  macro dumps, audit trails) into structured fields on demand. It is never run
+  by the normal `rb.read` path, so it adds no overhead unless called. New
+  documentation under `docs/debug/`.
 - **Allotrope Simple Model (ASM) export and import.** Any `DataDirectory`
   exports to one open, JSON-based ASM document with `datadir.to_asm()` (a dict)
   or `datadir.export_asm(path)` (a file); `rb.from_asm(document)` reconstructs a
