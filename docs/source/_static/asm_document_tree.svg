@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 772 556" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <!--
+    F2: the ASM liquid-chromatography document tree that to_asm emits.
+    Boxes are document objects; a stacked shadow marks an array (one entry per
+    module / injection / channel). Gray text to the right names the key fields.
+  -->
+
+  <text x="20" y="28" font-size="15" font-weight="700" fill="#2f7d4d">ASM document</text>
+  <text x="180" y="28" font-size="13" fill="#777">one JSON object;</text>
+  <text x="305" y="28" font-size="13" font-family="monospace" fill="#777">$asm.manifest</text>
+  <text x="432" y="28" font-size="13" fill="#777">pins the schema version</text>
+
+  <!-- connector lines (drawn first, under the boxes) -->
+  <g stroke="#9bbfa8" stroke-width="1.5" fill="none">
+    <!-- row0 -> row1, row3 -->
+    <path d="M34,82 L34,108 M34,108 L52,108"/>
+    <path d="M34,82 L34,196 M34,196 L52,196"/>
+    <!-- row1 -> row2 -->
+    <path d="M66,126 L66,152 M66,152 L84,152"/>
+    <!-- row3 -> row4 -->
+    <path d="M66,214 L66,240 M66,240 L84,240"/>
+    <!-- row4 -> row5 -->
+    <path d="M98,258 L98,284 M98,284 L116,284"/>
+    <!-- row5 -> row6,7,8,9,10 -->
+    <path d="M130,302 L130,328 M130,328 L148,328"/>
+    <path d="M130,302 L130,372 M130,372 L148,372"/>
+    <path d="M130,302 L130,416 M130,416 L148,416"/>
+    <path d="M130,302 L130,460 M130,460 L148,460"/>
+    <path d="M130,302 L130,504 M130,504 L148,504"/>
+  </g>
+
+  <!-- row0: aggregate document (indent 0) -->
+  <rect x="20" y="46" width="338" height="36" rx="7" fill="#eaf7ee" stroke="#3c9a5f" stroke-width="2"/>
+  <text x="34" y="69" font-size="14" font-weight="700" fill="#2f6b46">liquid chromatography aggregate document</text>
+
+  <!-- row1: device system document (indent 1) -->
+  <rect x="52" y="90" width="250" height="36" rx="7" fill="#eaf7ee" stroke="#3c9a5f" stroke-width="1.8"/>
+  <text x="66" y="113" font-size="13.5" fill="#2f6b46">device system document</text>
+  <text x="316" y="113" font-size="12.5" fill="#777">the instrument shared by the run</text>
+
+  <!-- row2: device document [] (indent 2, array) -->
+  <rect x="88" y="138" width="246" height="36" rx="7" fill="#dff0e6" stroke="#9bbfa8" stroke-width="1.5"/>
+  <rect x="84" y="134" width="246" height="36" rx="7" fill="#eaf7ee" stroke="#3c9a5f" stroke-width="1.8"/>
+  <text x="98" y="157" font-size="13.5" fill="#2f6b46">device document [ ]</text>
+  <text x="344" y="151" font-size="12.5" fill="#777">one per instrument module</text>
+  <text x="344" y="167" font-size="12" font-family="monospace" fill="#999">device type · model · serial · firmware</text>
+
+  <!-- row3: liquid chromatography document [] (indent 1, array) -->
+  <rect x="56" y="182" width="250" height="36" rx="7" fill="#dff0e6" stroke="#9bbfa8" stroke-width="1.5"/>
+  <rect x="52" y="178" width="250" height="36" rx="7" fill="#eaf7ee" stroke="#3c9a5f" stroke-width="1.8"/>
+  <text x="66" y="201" font-size="13.5" fill="#2f6b46">liquid chromatography document [ ]</text>
+  <text x="316" y="195" font-size="12.5" fill="#777">one per injection</text>
+  <text x="316" y="211" font-size="12" font-family="monospace" fill="#999">analyst</text>
+
+  <!-- row4: measurement aggregate document (indent 2) -->
+  <rect x="84" y="222" width="250" height="36" rx="7" fill="#eaf7ee" stroke="#3c9a5f" stroke-width="1.8"/>
+  <text x="98" y="245" font-size="13.5" fill="#2f6b46">measurement aggregate document</text>
+
+  <!-- row5: measurement document [] (indent 3, array) -->
+  <rect x="120" y="270" width="250" height="36" rx="7" fill="#dff0e6" stroke="#9bbfa8" stroke-width="1.5"/>
+  <rect x="116" y="266" width="250" height="36" rx="7" fill="#eaf7ee" stroke="#3c9a5f" stroke-width="1.8"/>
+  <text x="130" y="289" font-size="13.5" fill="#2f6b46">measurement document [ ]</text>
+  <text x="380" y="289" font-size="12.5" fill="#777">one per UV channel</text>
+
+  <!-- row6: sample document (indent 4) -->
+  <rect x="148" y="310" width="240" height="36" rx="7" fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.6"/>
+  <text x="162" y="333" font-size="13" fill="#2a567f">sample document</text>
+  <text x="400" y="333" font-size="12" font-family="monospace" fill="#999">sample identifier · vial location</text>
+
+  <!-- row7: device control document (indent 4) -->
+  <rect x="148" y="354" width="240" height="36" rx="7" fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.6"/>
+  <text x="162" y="377" font-size="13" fill="#2a567f">device control document</text>
+  <text x="400" y="377" font-size="12" font-family="monospace" fill="#999">detector · wavelength setting</text>
+
+  <!-- row8: data cube (indent 4) -->
+  <rect x="148" y="398" width="240" height="36" rx="7" fill="#fff4e6" stroke="#d9913a" stroke-width="1.8"/>
+  <text x="162" y="421" font-size="13" font-weight="700" fill="#9a6a1e">data cube</text>
+  <text x="400" y="421" font-size="12" font-family="monospace" fill="#999">chromatogram | 3D UV spectrum</text>
+
+  <!-- row9: injection document (indent 4) -->
+  <rect x="148" y="442" width="240" height="36" rx="7" fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.6"/>
+  <text x="162" y="465" font-size="13" fill="#2a567f">injection document</text>
+  <text x="400" y="465" font-size="12" font-family="monospace" fill="#999">volume setting · injection time</text>
+
+  <!-- row10: processed data (indent 4) -->
+  <rect x="148" y="486" width="240" height="36" rx="7" fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.6"/>
+  <text x="162" y="509" font-size="13" fill="#2a567f">processed data document</text>
+  <text x="400" y="509" font-size="12" font-family="monospace" fill="#999">peak list  (when peaks are read)</text>
+</svg>

@@ -29,6 +29,15 @@ test = ["pytest"]
 # segment is actually encountered, so the base install stays pure-Python;
 # install rainbow-api[hrms] to parse those files (read(..., hrms=True)).
 hrms = ["python-lzf"]
+# For the opt-in ASM schema-conformance test (see tests/test_asm_schema.py).
+# jsonschema >= 4.18 pulls in the `referencing` registry used to resolve the
+# Allotrope schema's cross-references.
+validate = ["jsonschema>=4.18"]
+# Optional accelerator: when present, the sequence.acaml peak reader uses
+# lxml's filtered iterparse instead of the xml.etree fallback (see
+# rainbow/agilent/sequence.py). Faster and lower-memory on large documents;
+# never required.
+speed = ["lxml>=4.9"]
 
 [project.urls]
 Repository = "https://github.com/evanyeyeye/rainbow"
