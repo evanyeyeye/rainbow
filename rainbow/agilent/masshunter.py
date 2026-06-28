@@ -33,15 +33,16 @@ class ProfileDataFile(DataFile):
 
     Unlike a regular :class:`~rainbow.datafile.DataFile`, an HRMS profile has no
     single m/z axis. Every scan is sampled on the same raw flight-time grid
-    (:attr:`tof`), so a column index is the same physical bin in every scan, but
-    the flight-time-to-m/z calibration drifts from scan to scan. The m/z of a
-    point therefore depends on both the scan and the point. Access a scan's m/z
-    with :meth:`mass_labels` or :meth:`scan`; reading ``ylabels`` raises, because
-    a single shared m/z axis does not exist (see :ref:`hrms-data-model`).
+    (:attr:`flight_times`), so a column index is the same physical bin in every
+    scan, but the flight-time-to-m/z calibration drifts from scan to scan. The
+    m/z of a point therefore depends on both the scan and the point. Access a
+    scan's m/z with :meth:`mass_labels` or :meth:`scan`; reading ``ylabels``
+    raises, because a single shared m/z axis does not exist (see
+    :ref:`hrms-data-model`).
 
     Attributes:
-        tof (numpy.ndarray): The shared flight-time axis, one value per column
-            of ``data``, identical for every scan.
+        flight_times (numpy.ndarray): The shared flight-time axis, one value per
+            column of ``data``, identical for every scan.
         data (numpy.ndarray): 2D intensities, shape ``(num_scans, num_points)``.
             Rows are scans (retention times); columns are flight-time bins.
         xlabels (numpy.ndarray): Retention time of each scan (row).
@@ -49,12 +50,12 @@ class ProfileDataFile(DataFile):
             full float precision.
 
     """
-    def __init__(self, path, xlabels, tof, data, calib, use_flags, metadata,
-                 mz_decimals=4):
+    def __init__(self, path, xlabels, flight_times, data, calib, use_flags,
+                 metadata, mz_decimals=4):
         self.name = os.path.basename(path)
         self.detector = 'MS'
         self.xlabels = xlabels
-        self.tof = tof
+        self.flight_times = flight_times
         self.data = data
         self._calib = calib
         self._use_flags = use_flags
@@ -89,7 +90,7 @@ class ProfileDataFile(DataFile):
     def mass_labels(self, i):
         """ The calibrated m/z values for scan ``i`` (rounded to
         :attr:`mz_decimals`). """
-        mz = calibrate_mz(self.tof, self._calib[i], self._use_flags[i])
+        mz = calibrate_mz(self.flight_times, self._calib[i], self._use_flags[i])
         if self.mz_decimals is not None:
             mz = np.round(mz, self.mz_decimals)
         return mz
@@ -109,8 +110,82 @@ class ProfileDataFile(DataFile):
                f"Xlabels: {self.xlabels}\n" \
                f"Profile: {n} scans x {k} points " \
                f"(per-scan m/z; use scan(i)/mass_labels(i))\n" \
-               f"TOF axis: {self.tof}\n" \
+               f"Flight times: {self.flight_times}\n" \
                f"Data: {self.data}\n" \
+               f"Metadata: {self.metadata}\n"
+
+
+class CentroidDataFile(DataFile):
+    """
+    A centroid (peak-picked) spectrum whose m/z axis is per-scan.
+
+    A centroid keeps only the peaks of each scan, so every scan is a list of
+    ``(m/z, intensity)`` pairs of a *different* length, and (for a drifting
+    Q-TOF) at different m/z. There is therefore no single m/z axis and no
+    rectangular data matrix, unlike a regular
+    :class:`~rainbow.datafile.DataFile`. This mirrors :class:`ProfileDataFile`,
+    but a centroid has no shared flight-time axis to fall back on, so it is
+    simpler: just the per-scan peak lists. Access one scan with :meth:`scan` or
+    :meth:`mass_labels`; reading ``ylabels`` (or ``data``) raises. Read with a
+    ``bin_width`` for the (lossy) shared-grid DataFile instead (see
+    :ref:`hrms-data-model`).
+
+    Attributes:
+        xlabels (numpy.ndarray): Retention time of each scan.
+
+    """
+    def __init__(self, path, xlabels, mz_arrays, intensity_arrays, metadata):
+        self.name = os.path.basename(path)
+        self.detector = 'MS'
+        self.xlabels = xlabels
+        self._mz = mz_arrays
+        self._intensities = intensity_arrays
+        self.metadata = metadata
+
+    def _no_shared_axis(self, what):
+        return AttributeError(
+            f"{what} needs one shared m/z axis, but a centroid spectrum has a "
+            "per-scan m/z axis: each scan is its own peak list. Use scan(i) or "
+            "mass_labels(i) for one scan's peaks; or read with a bin_width for "
+            f"the (lossy) shared-grid DataFile. See {_PROFILE_DOC_URL}")
+
+    @property
+    def ylabels(self):
+        raise self._no_shared_axis("ylabels")
+
+    @property
+    def data(self):
+        raise self._no_shared_axis("data")
+
+    def extract_traces(self, labels=None):
+        raise self._no_shared_axis("extract_traces")
+
+    def export_csv(self, filename, labels=None, delim=','):
+        raise self._no_shared_axis("export_csv")
+
+    def to_csvstr(self, labels=None, delim=','):
+        raise self._no_shared_axis("to_csvstr")
+
+    def plot(self, label, **kwargs):
+        raise self._no_shared_axis("plot")
+
+    def mass_labels(self, i):
+        """ The m/z of the peaks in scan ``i``. """
+        return self._mz[i]
+
+    def scan(self, i):
+        """ Scan ``i`` as ``(m/z, intensity)``: its peak list, no binning. """
+        return self._mz[i], self._intensities[i]
+
+    def get_info(self):
+        n = len(self.xlabels)
+        return f"\n{'-' * len(self.name)}\n" \
+               f"{self.name}\n" \
+               f"{'-' * len(self.name)}\n" \
+               f"Detector: {self.detector}\n" \
+               f"Xlabels: {self.xlabels}\n" \
+               f"Centroid: {n} scans, per-scan peak lists " \
+               f"(use scan(i)/mass_labels(i))\n" \
                f"Metadata: {self.metadata}\n"
 
 
@@ -119,7 +194,7 @@ MAIN PARSING METHOD
 
 """
 
-def parse_allfiles(path, precision='auto', hrms=False, centroid=False,
+def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
                    bin_width=None, telemetry=False, requested_files=None):
     """
     Finds and parses Agilent Masshunter data files.
@@ -135,7 +210,7 @@ def parse_allfiles(path, precision='auto', hrms=False, centroid=False,
 
     Args:
         path (str): Path to the Agilent .D directory.
-        precision (int or str, optional): Number of decimals to round m/z to.
+        display_precision (int or str, optional): Number of decimals to round m/z to.
             ``'auto'`` (the default) resolves per file: 4 for the profile and TOF
             centroids, 0 for unit-resolution (GC/quadrupole) centroids.
         hrms (bool, optional): Parse the profile spectrum (MSProfile.bin).
@@ -172,12 +247,13 @@ def parse_allfiles(path, precision='auto', hrms=False, centroid=False,
         # profile it stands in for.
         if "MSScan_XSpecific.bin" in acqdata_files:
             if hrms:
-                datafiles.append(parse_icpmsdata(acqdata_path, precision))
+                datafiles.append(parse_icpmsdata(acqdata_path, display_precision))
         else:
             if centroid and "MSPeak.bin" in acqdata_files:
-                datafiles.append(parse_mspeakdata(acqdata_path, precision))
+                datafiles.append(parse_mspeakdata(
+                    acqdata_path, display_precision, bin_width))
             if hrms and "MSProfile.bin" in acqdata_files:
-                profile = parse_msdata(acqdata_path, precision, bin_width)
+                profile = parse_msdata(acqdata_path, display_precision, bin_width)
                 if bin_width is not None:
                     datafiles.append(profile)         # single shared-grid file
                 else:
@@ -775,7 +851,7 @@ MS PARSING METHODS
 
 """
 
-def parse_msdata(path, precision='auto', bin_width=None):
+def parse_msdata(path, display_precision='auto', bin_width=None):
     """
     Parses Masshunter MS data.
 
@@ -800,12 +876,12 @@ def parse_msdata(path, precision='auto', bin_width=None):
     Pass a ``bin_width`` to project the spectra onto a single shared m/z grid,
     which is convenient for extracted-ion chromatograms and heatmaps but inserts
     zeros and loses resolution for high-resolution data (see
-    :ref:`hrms-data-model`). The bin width is independent of the ``precision``
+    :ref:`hrms-data-model`). The bin width is independent of the ``display_precision``
     label rounding; it is what turns binning on.
 
     Args:
         path (str): Path to the AcqData subdirectory.
-        precision (int or str, optional): Number of decimals to round mz labels
+        display_precision (int or str, optional): Number of decimals to round mz labels
             to. ``'auto'`` (the default) resolves to 4 for this high-resolution
             data.
         bin_width (float, optional): Omit (the default) to return the per-scan
@@ -824,20 +900,20 @@ def parse_msdata(path, precision='auto', bin_width=None):
             or not isinstance(bin_width, (int, float)) or bin_width <= 0):
         raise Exception(f"Invalid bin_width: {bin_width}.")
 
-    # The profile is always a high-resolution TOF trace, so 'auto' precision
-    # means 4 decimals.
-    if precision == 'auto':
-        precision = 4
+    # The profile is always a high-resolution TOF trace, so an 'auto'
+    # display_precision means 4 decimals.
+    if display_precision == 'auto':
+        display_precision = 4
 
-    # bin_width and precision are independent: bin_width sets the grid, precision
-    # only rounds the reported labels. If precision is too coarse for the
+    # bin_width and display_precision are independent: bin_width sets the grid, display_precision
+    # only rounds the reported labels. If display_precision is too coarse for the
     # bin_width, neighbouring bins can round to the same label; warn, but still
     # bin (the labels are cosmetic, and the caller may not need them distinct).
-    if bin_width is not None and bin_width < 10 ** -precision:
+    if bin_width is not None and bin_width < 10 ** -display_precision:
         warnings.warn(
-            f"precision={precision} is coarser than bin_width={bin_width}: some "
+            f"display_precision={display_precision} is coarser than bin_width={bin_width}: some "
             f"shared-grid m/z labels may collide (distinct bins rounding to the "
-            f"same value). Raise precision to label every bin distinctly.")
+            f"same value). Raise display_precision to label every bin distinctly.")
 
     # MSScan.xsd: Extract the file structure of MSScan.bin.
     complextypes_dict = parse_scan_xsd(os.path.join(path, "MSScan.xsd"))
@@ -943,10 +1019,11 @@ def parse_msdata(path, precision='auto', bin_width=None):
             scan_calib_ids.append(calib_id)
         else:
             # Calculate the calibrated mz values from the raw flight-time axis.
-            tof = np.arange(
+            flight_times = np.arange(
                 start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
-            tof = tof[:num_mz]
-            mzs = calibrate_mz(tof, calib_vals[i], calib_flags.get(calib_id))
+            flight_times = flight_times[:num_mz]
+            mzs = calibrate_mz(
+                flight_times, calib_vals[i], calib_flags.get(calib_id))
             mz_arrs.append(mzs)
         inten_arrs.append(inten)
 
@@ -959,7 +1036,7 @@ def parse_msdata(path, precision='auto', bin_width=None):
     if bin_width is None:
         return _build_per_scan_profiles(
             times, inten_arrs, grid_keys, calib_vals[:num_times],
-            scan_calib_ids, calib_flags, mz_decimals=precision)
+            scan_calib_ids, calib_flags, mz_decimals=display_precision)
 
     # Concatenating the per-scan arrays avoids materializing a ~100M-element
     # Python list (and the numpy round-trip through it), which otherwise
@@ -968,7 +1045,7 @@ def parse_msdata(path, precision='auto', bin_width=None):
     intensities = np.concatenate(inten_arrs).astype(np.uint64)
     rows = np.repeat(np.arange(num_times), num_mz_per_time.astype(np.int64))
     mz_ylabels, data = bin_to_grid(
-        mz_arr, intensities, rows, num_times, precision, bin_width)
+        mz_arr, intensities, rows, num_times, display_precision, bin_width)
 
     return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
 
@@ -1007,9 +1084,9 @@ def _build_per_scan_profiles(times, inten_arrs, grid_keys, calib_vals,
     for seg, (key, idxs) in enumerate(
             sorted(groups.items(), key=lambda kv: -len(kv[1]))):
         num_mz, start_mz, delta_mz = key
-        tof = np.arange(
+        flight_times = np.arange(
             start_mz, start_mz + delta_mz * (num_mz - 1) + 1e-3, delta_mz)
-        tof = tof[:num_mz]
+        flight_times = flight_times[:num_mz]
         data = np.stack([inten_arrs[i] for i in idxs]).astype(np.uint32)
         xlabels = times[idxs]
         calib = calib_vals[idxs]
@@ -1017,12 +1094,12 @@ def _build_per_scan_profiles(times, inten_arrs, grid_keys, calib_vals,
         # One grid keeps the canonical name; extra grids are suffixed.
         name = "MSProfile.bin" if seg == 0 else f"MSProfile.bin.{seg + 1}"
         profiles.append(ProfileDataFile(
-            name, xlabels, tof, data, calib, use_flags, {},
+            name, xlabels, flight_times, data, calib, use_flags, {},
             mz_decimals=mz_decimals))
     return profiles
 
 
-def parse_icpmsdata(path, precision='auto'):
+def parse_icpmsdata(path, display_precision='auto'):
     """
     Parses Agilent Masshunter ICP-MS data (MSProfile.bin).
 
@@ -1048,15 +1125,15 @@ def parse_icpmsdata(path, precision='auto'):
 
     Args:
         path (str): Path to the AcqData subdirectory.
-        precision (int, optional): Number of decimals to round m/z values.
+        display_precision (int, optional): Number of decimals to round m/z values.
 
     Returns:
         DataFile containing Masshunter ICP-MS data.
 
     """
     # ICP-MS isotope channels are unit-resolution, so 'auto' means whole numbers.
-    if precision == 'auto':
-        precision = 0
+    if display_precision == 'auto':
+        display_precision = 0
 
     # MSScan.xsd: Extract the file structure of MSScan.bin.
     complextypes_dict = parse_scan_xsd(os.path.join(path, "MSScan.xsd"))
@@ -1103,7 +1180,7 @@ def parse_icpmsdata(path, precision='auto'):
     f.close()
 
     # Sort channels by m/z so the ylabels are monotonically increasing.
-    mz_ylabels = np.round(mz_ylabels, precision)
+    mz_ylabels = np.round(mz_ylabels, display_precision)
     order = np.argsort(mz_ylabels, kind='stable')
 
     return DataFile(
@@ -1154,15 +1231,15 @@ def _read_icpms_mzs(path, num_masses):
 _MAX_DENSE_BINS = 50_000_000
 
 
-def bin_to_grid(mz_arr, intensities, rows, num_times, precision, bin_width=None):
+def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_width=None):
     """
     Bins per-point (mz, intensity) values into a (retention time x mz) grid.
 
-    The shared-grid bin width is decoupled from the label precision. ``precision``
+    The shared-grid bin width is decoupled from the label display_precision. ``display_precision``
     only sets how many decimals the returned m/z labels are rounded to, while
     ``bin_width`` (in daltons) sets how wide each bin is - i.e. how aggressively
     points from different scans are pooled into one column. When ``bin_width`` is
-    None it defaults to ``10**-precision`` (one bin per labelled m/z), which is the
+    None it defaults to ``10**-display_precision`` (one bin per labelled m/z), which is the
     historical behavior.
 
     Each point is assigned to bin ``round(mz / bin_width)``; mapping those bins
@@ -1177,9 +1254,9 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, precision, bin_width=None)
         intensities (np.ndarray): uint64 intensity of every point.
         rows (np.ndarray): Retention-time (row) index of every point.
         num_times (int): Number of retention times (grid rows).
-        precision (int): Number of decimals to round the returned mz labels to.
+        display_precision (int): Number of decimals to round the returned mz labels to.
         bin_width (float, optional): Width of each shared-grid bin in daltons.
-            Defaults to ``10**-precision``.
+            Defaults to ``10**-display_precision``.
 
     Returns:
         Tuple ``(mz_ylabels, data)``: the sorted bin-center mz values that occur,
@@ -1187,11 +1264,11 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, precision, bin_width=None)
 
     """
     # Assign each point to integer bin round(mz / bin_width). The None default
-    # uses the integer scale 10**precision directly, reproducing the prior grid bit
+    # uses the integer scale 10**display_precision directly, reproducing the prior grid bit
     # for bit; an explicit bin_width divides by the requested width instead.
-    width = bin_width if bin_width is not None else 10 ** -precision
+    width = bin_width if bin_width is not None else 10 ** -display_precision
     if bin_width is None:
-        keys = np.round(mz_arr * (10 ** precision)).astype(np.int64)
+        keys = np.round(mz_arr * (10 ** display_precision)).astype(np.int64)
     else:
         keys = np.round(mz_arr / bin_width).astype(np.int64)
     low = int(keys.min())
@@ -1210,7 +1287,7 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, precision, bin_width=None)
         ).astype(np.uint64)
         grid = grid.reshape(num_times, span)
         present = np.nonzero(grid.any(axis=0))[0]
-        return np.round((low + present) * width, precision), grid[:, present]
+        return np.round((low + present) * width, display_precision), grid[:, present]
 
     # Sparse path: map bins onto only the columns that occur, then drop any
     # column whose intensity summed to zero. The profile stream can contain
@@ -1228,7 +1305,7 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, precision, bin_width=None)
     ).astype(np.uint64)
     grid = grid.reshape(num_times, uniq.size)
     present = np.nonzero(grid.any(axis=0))[0]
-    return np.round(uniq[present] * width, precision), grid[:, present]
+    return np.round(uniq[present] * width, display_precision), grid[:, present]
 
 
 # Bytes-per-peak -> (mz dtype, intensity dtype) for the MSPeak.bin centroid
@@ -1237,7 +1314,7 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, precision, bin_width=None)
 _PEAK_DTYPES = {8: ('<f4', '<f4'), 12: ('<f8', '<f4'), 16: ('<f8', '<f8')}
 
 
-def parse_mspeakdata(path, precision='auto'):
+def parse_mspeakdata(path, display_precision='auto', bin_width=None):
     """
     Parses Masshunter centroided MS data stored in MSPeak.bin.
 
@@ -1246,6 +1323,11 @@ def parse_mspeakdata(path, precision='auto'):
     MSProfile.bin (:obj:`parse_msdata`). GC quadrupole acquisitions store only
     centroids; Q-TOF/TOF acquisitions store a profile block and a centroid block
     per scan (see :obj:`read_scan_records`), and this reads the centroid one.
+
+    Like the profile, a centroid has a per-scan m/z axis (each scan is its own
+    peak list), so with no ``bin_width`` (the default) the per-scan
+    representation is returned (a :class:`CentroidDataFile`); pass a ``bin_width``
+    to project the peaks onto a single shared m/z grid (a :class:`DataFile`).
 
     The following files are used:
         - MSScan.xsd  -> File structure of MSScan.bin.
@@ -1256,12 +1338,17 @@ def parse_mspeakdata(path, precision='auto'):
 
     Args:
         path (str): Path to the AcqData subdirectory.
-        precision (int or str, optional): Number of decimals to round mz values
-            to. ``'auto'`` (the default) resolves to 4 for TOF-calibrated
+        display_precision (int or str, optional): Decimals to round the m/z
+            labels to. ``'auto'`` (the default) resolves to 4 for TOF-calibrated
             centroids and 0 for unit-resolution (GC/quadrupole) centroids.
+        bin_width (float, optional): Omit (the default) for the per-scan
+            :class:`CentroidDataFile`; pass a width in daltons to project the
+            peaks onto one shared m/z grid.
 
     Returns:
-        DataFile containing Masshunter centroided MS data.
+        A :class:`CentroidDataFile` (per-scan), or a single
+        :class:`~rainbow.datafile.DataFile` on the shared grid when a
+        ``bin_width`` is given.
 
     """
     complextypes_dict = parse_scan_xsd(os.path.join(path, "MSScan.xsd"))
@@ -1275,17 +1362,17 @@ def parse_mspeakdata(path, precision='auto'):
     calibration_ids = [record.get('CalibrationID') for record in scan_records]
     calib_vals, calib_flags = _load_calibration(path, calibration_ids)
 
-    # 'auto' precision: TOF centroids (calibrated, high-resolution) round to 4
-    # decimals; unit-resolution GC/quadrupole centroids (no calibration) to 0.
-    if precision == 'auto':
-        precision = 4 if calib_vals is not None else 0
+    # 'auto' display_precision: TOF centroids (calibrated, high-resolution) round
+    # to 4 decimals; unit-resolution GC/quadrupole centroids (no calibration) 0.
+    if display_precision == 'auto':
+        display_precision = 4 if calib_vals is not None else 0
 
     peak_path = os.path.join(path, "MSPeak.bin")
     peak_size = os.path.getsize(peak_path)
     times = np.empty(num_times)
-    num_peaks_per_time = np.zeros(num_times, dtype=np.int64)
-    mz_arrs = []
-    inten_arrs = []
+    # Per-scan peak lists, aligned to every scan (empty where a scan has none).
+    mz_per_scan = [None] * num_times
+    inten_per_scan = [None] * num_times
     with open(peak_path, 'rb') as f:
         for i, record in enumerate(scan_records):
             times[i] = record['ScanTime']
@@ -1307,19 +1394,32 @@ def parse_mspeakdata(path, precision='auto'):
                 mzs = calibrate_mz(np.asarray(mzs, dtype=np.float64),
                                    calib_vals[i], calib_flags.get(
                                        calibration_ids[i]))
-            mz_arrs.append(np.round(mzs, precision))
-            inten_arrs.append(intensities)
-            num_peaks_per_time[i] = num_peaks
+            mz_per_scan[i] = np.round(mzs, display_precision)
+            inten_per_scan[i] = np.asarray(intensities, dtype=np.uint64)
 
-    if not mz_arrs:
+    for i in range(num_times):
+        if mz_per_scan[i] is None:
+            mz_per_scan[i] = np.array([], dtype=np.float64)
+            inten_per_scan[i] = np.array([], dtype=np.uint64)
+
+    if bin_width is None:
+        # The per-scan (faithful) representation, like the HRMS profile default.
+        return CentroidDataFile(
+            "MSPeak.bin", times, mz_per_scan, inten_per_scan, {})
+
+    # A bin_width projects the per-scan peaks onto one shared m/z grid (lossy),
+    # the same way the profile binning does.
+    mz_arr = np.concatenate(mz_per_scan)
+    if mz_arr.size == 0:
         return DataFile(
             "MSPeak.bin", 'MS', times, np.array([], dtype=np.float64),
             np.zeros((num_times, 0), dtype=np.uint64), {})
-
-    mz_arr = np.concatenate(mz_arrs)
-    intensities = np.concatenate(inten_arrs).astype(np.uint64)
+    intensities = np.concatenate(inten_per_scan)
+    num_peaks_per_time = np.array(
+        [len(m) for m in mz_per_scan], dtype=np.int64)
     rows = np.repeat(np.arange(num_times), num_peaks_per_time)
-    mz_ylabels, data = bin_to_grid(mz_arr, intensities, rows, num_times, precision)
+    mz_ylabels, data = bin_to_grid(
+        mz_arr, intensities, rows, num_times, display_precision, bin_width)
     return DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data, {})
 
 

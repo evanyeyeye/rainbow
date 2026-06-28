@@ -2,6 +2,10 @@
 Unit tests for the shared (key, value) -> (time x ylabel) binning helper that
 replaced the per-scan np.unique / searchsorted / np.add.at loops in the Waters
 and Agilent spectrum decoders.
+
+bin_datapairs now bins by ``bin_width`` (the lossy control) and labels the bins
+at ``display_precision`` (cosmetic). Binning by ``bin_width`` is equivalent to
+the old "round to N decimals then sum" with ``bin_width = 10**-N``.
 """
 import numpy as np
 import pytest
@@ -13,7 +17,8 @@ def _bin_datapairs_reference(keys, values, pair_counts, precision, data_dtype):
     """Original (pre-optimization) binning, kept as a parity oracle.
 
     Mirrors the per-scan np.unique / searchsorted / np.add.at loop that the
-    Waters _FUNC.DAT and Agilent .ms decoders both used before bin_datapairs.
+    Waters _FUNC.DAT and Agilent .ms decoders both used, binning by rounding to
+    ``prec`` decimals.
     """
     keys = np.round(keys, precision)
     num_times = pair_counts.size
@@ -34,33 +39,39 @@ def test_sums_within_scan_and_sorts_ylabels():
     keys = np.array([102., 100., 102., 101., 100.])
     values = np.array([5, 3, 7, 9, 4], dtype=np.int64)
     pair_counts = np.array([3, 2])
-    ylabels, data = bin_datapairs(keys, values, pair_counts, 0)
+    ylabels, data = bin_datapairs(keys, values, pair_counts, 1.0,
+                                  display_precision=0)
     np.testing.assert_array_equal(ylabels, [100., 101., 102.])
     np.testing.assert_array_equal(data, [[3, 0, 12], [4, 9, 0]])
 
 
-def test_preserves_key_dtype():
-    # Calibrated Waters m/z are float32; the ylabels must stay float32.
-    keys = np.array([200.4, 200.4, 350.7], dtype=np.float32)
+def test_labels_are_bin_centres():
+    # Raw keys near 200.4 and 350.7 fall in the 200 and 351 nominal-mass bins.
+    keys = np.array([200.4, 200.4, 350.7])
     values = np.array([1, 2, 3], dtype=np.int64)
-    ylabels, _ = bin_datapairs(keys, values, np.array([3]), 0)
-    assert ylabels.dtype == np.float32
+    ylabels, data = bin_datapairs(keys, values, np.array([3]), 1.0,
+                                  display_precision=0)
+    np.testing.assert_array_equal(ylabels, [200., 351.])
+    np.testing.assert_array_equal(data, [[3, 3]])
 
 
 def test_honors_output_dtype():
     # Agilent .ms accumulates intensities into uint32.
     keys = np.array([100., 100., 200.])
     values = np.array([1, 2, 3], dtype=np.uint32)
-    _, data = bin_datapairs(keys, values, np.array([3]), 0, data_dtype=np.uint32)
+    _, data = bin_datapairs(keys, values, np.array([3]), 1.0,
+                            display_precision=0, data_dtype=np.uint32)
     assert data.dtype == np.uint32
     np.testing.assert_array_equal(data, [[3, 3]])
 
 
-def test_respects_precision():
-    # Keys arrive already rounded to `precision` (the decoders round first).
-    keys = np.round(np.array([100.14, 100.16, 100.16]), 1)
+def test_bin_width_finer_than_nominal():
+    # A 0.1 Da bin_width keeps the 100.1 and 100.2 bins distinct; labels show
+    # one decimal.
+    keys = np.array([100.14, 100.16, 100.16])
     values = np.array([1, 2, 4], dtype=np.int64)
-    ylabels, data = bin_datapairs(keys, values, np.array([3]), 1)
+    ylabels, data = bin_datapairs(keys, values, np.array([3]), 0.1,
+                                  display_precision=1)
     np.testing.assert_array_equal(ylabels, [100.1, 100.2])
     np.testing.assert_array_equal(data, [[1, 6]])
 
@@ -68,14 +79,15 @@ def test_respects_precision():
 def test_empty_input():
     ylabels, data = bin_datapairs(
         np.array([], dtype=np.float64), np.array([], dtype=np.int64),
-        np.array([0, 0]), 0)
+        np.array([0, 0]), 1.0, display_precision=0)
     assert ylabels.size == 0
     assert data.shape == (2, 0)
 
 
 @pytest.mark.parametrize("data_dtype", [np.int64, np.uint32])
-@pytest.mark.parametrize("precision", [0, 1, 2])
-def test_matches_reference_on_random_data(data_dtype, precision):
+@pytest.mark.parametrize("prec", [0, 1, 2])
+def test_matches_reference_on_random_data(data_dtype, prec):
+    # Binning by bin_width = 10**-prec reproduces the old round-to-prec binning.
     rng = np.random.RandomState(0)
     for _ in range(20):
         num_times = rng.randint(1, 8)
@@ -83,13 +95,13 @@ def test_matches_reference_on_random_data(data_dtype, precision):
         n = int(pair_counts.sum())
         if n == 0:
             continue
-        keys = (rng.rand(n) * 900 + 100).astype(np.float32)
+        keys = (rng.rand(n) * 900 + 100).astype(np.float64)
         values = rng.randint(0, 5000, size=n).astype(data_dtype)
         y_ref, d_ref = _bin_datapairs_reference(
-            keys.copy(), values.copy(), pair_counts, precision, data_dtype)
+            keys.copy(), values.copy(), pair_counts, prec, data_dtype)
         y, d = bin_datapairs(
-            np.round(keys, precision), values, pair_counts, precision,
-            data_dtype=data_dtype)
-        np.testing.assert_array_equal(y, y_ref)
+            keys.copy(), values, pair_counts, 10.0 ** -prec,
+            display_precision=prec, data_dtype=data_dtype)
+        np.testing.assert_allclose(y, y_ref)
         np.testing.assert_array_equal(d, d_ref)
         assert d.dtype == d_ref.dtype

@@ -149,7 +149,17 @@ The data body contains a data segment for each retention time. Each segment begi
 
 Next, there are two big-endian unsigned shorts for each data value. The first short represents the mz value and the second short represents the intensity. 
 
-The value of the first short is the result of multiplying the raw mz value by 20. The mz values may have one decimal place. For example, a short with the value 19796 represents the mass 989.8. Also, each mz value is not necessarily recorded at each retention time. For example, one data segment could have intensities for mz 100, 200, and 300 while another has intensities for mz 200 and 400. 
+The value of the first short is the result of multiplying the raw mz value by 20. The mz values may have one decimal place. For example, a short with the value 19796 represents the mass 989.8. Also, each mz value is not necessarily recorded at each retention time. For example, one data segment could have intensities for mz 100, 200, and 300 while another has intensities for mz 200 and 400.
+
+.. note::
+
+   So the m/z grid here is 0.1 Da (the raw short is m/z times 20). By
+   default ``rb.read`` bins this to nominal mass (1 Da); pass a finer
+   ``bin_width`` (down to 0.1 Da) to keep more resolution, and
+   ``rb.mz_resolution(path)`` reports that grid for a file. The separate
+   ``display_precision`` only rounds the displayed m/z labels; it never merges
+   intensities. A ``bin_width`` finer than 0.1 Da only warns and inserts empty
+   bins.
 
 The value of the second short is encoded using its bits. The most significant two bits represent a :code:`power` of eight. Note that there are four possible powers: 0, 1, 2, 3 (since there are only two bits). The remaining 14 bits represent a :code:`base` value. The intensity is calculated with the formula: :code:`base * 8^power`.
 

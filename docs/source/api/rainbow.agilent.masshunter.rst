@@ -34,5 +34,6 @@
 
    .. autosummary::
    
+      CentroidDataFile
       ProfileDataFile
    

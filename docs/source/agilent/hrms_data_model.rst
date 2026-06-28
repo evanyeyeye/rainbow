@@ -148,19 +148,19 @@ To read a MassHunter profile dataset:
 .. code-block:: python
 
    import rainbow as rb
-   datadir = rb.read("example.D", hrms=True, precision=4)
+   datadir = rb.read("example.D", hrms=True, display_precision=4)
    profile = datadir.get_file("MSProfile.bin")
 
-This requests the **per-scan** representation (with ``precision=4`` the *m/z*
-labels are rounded to four decimals; the default ``precision='auto'`` also picks
-four for Q-TOF data). To access those data:
+This requests the **per-scan** representation (with ``display_precision=4`` the
+*m/z* labels are rounded to four decimals; the default ``display_precision='auto'``
+also picks four for Q-TOF data). To access those data:
 
 .. code-block:: python
 
-   profile.scan(i)         # -> (m/z array, intensity array) for scan i
-   profile.mass_labels(i)  # -> the m/z array for scan i (its own, per scan)
-   profile.tof             # the shared flight-time axis (same for every scan)
-   profile.data            # the 2-D intensities, shape (num_scans, k)
+   profile.scan(i)          # -> (m/z array, intensity array) for scan i
+   profile.mass_labels(i)   # -> the m/z array for scan i (its own, per scan)
+   profile.flight_times     # the shared flight-time axis (same for every scan)
+   profile.data             # the 2-D intensities, shape (num_scans, k)
 
 Note that there is deliberately **no** ``profile.ylabels``. (If you try to access
 ``ylabels``, you will be scolded.)
@@ -178,7 +178,7 @@ The answer is the **common grid**: pass a ``bin_width`` to ``rb.read``:
 .. code-block:: python
 
    import rainbow as rb
-   datadir = rb.read("example.D", hrms=True, precision=4, bin_width=0.01)
+   datadir = rb.read("example.D", hrms=True, display_precision=4, bin_width=0.01)
    profile = datadir.get_file("MSProfile.bin")   # a shared-grid DataFile
    profile.ylabels                               # one m/z axis you can index
 
@@ -248,21 +248,40 @@ at once, and the zeros vanish (:numref:`fig-realign`).
 
 .. note::
 
-   ``bin_width`` is unrelated to ``precision``. ``bin_width`` controls how
-   aggressively scans are pooled onto the common grid; ``precision`` only controls
-   how the *m/z* labels are rounded. If ``precision`` is too coarse to give every
-   bin a distinct label, *rainbow* warns but still bins at the requested
-   ``bin_width``.
+   ``bin_width`` is unrelated to ``display_precision``. ``bin_width`` controls how
+   aggressively scans are pooled onto the common grid (the one lossy step);
+   ``display_precision`` only controls how the *m/z* labels are rounded. If
+   ``display_precision`` is too coarse to give every bin a distinct label,
+   *rainbow* warns but still bins at the requested ``bin_width``.
 
 Centroids
 ---------
 
-Since centroid data are merely generated from profile data, both formats are
-subject to drift, and both bin the same way, producing the same zeros. The only
-difference is how many points sit under a peak: a profile spends **many** (a wide
-row of staircases, :numref:`fig-centroid-zeros` a), a centroid spends **one** (a
-single staircase, :numref:`fig-centroid-zeros` b). Both are about two-thirds
-zeros, but the centroid's matrix is far smaller, so binning it is cheap.
+Centroids are read exactly like profiles, and for the same reason: a centroid
+also has a per-scan m/z axis (each scan is its own peak list). So with no
+``bin_width`` you get the **per-scan** form, a :class:`CentroidDataFile` with
+``scan(i)`` / ``mass_labels(i)`` and no ``ylabels``, and a ``bin_width`` projects
+the peaks onto the common grid (a :class:`~rainbow.datafile.DataFile`):
+
+.. code-block:: python
+
+   import rainbow as rb
+   centroid = rb.read("example.D", centroid=True).get_file("MSPeak.bin")
+   centroid.scan(i)         # -> (m/z array, intensity array) for scan i
+
+   gridded = rb.read("example.D", centroid=True,
+                     bin_width=0.01).get_file("MSPeak.bin")
+   gridded.ylabels          # one m/z axis you can index
+
+A centroid has no shared flight-time ladder to fall back on, so its per-scan form
+is just the bare peak lists, there is no ``flight_times``.
+
+When you do bin, it behaves exactly like the profile's binning, producing the
+same drift zeros. The only difference is how many points sit under a peak: a
+profile spends **many** (a wide row of staircases, :numref:`fig-centroid-zeros`
+a), a centroid spends **one** (a single staircase, :numref:`fig-centroid-zeros`
+b). Both are about two-thirds zeros, but the centroid's matrix is far smaller, so
+binning it is cheap.
 
 .. _fig-centroid-zeros:
 
