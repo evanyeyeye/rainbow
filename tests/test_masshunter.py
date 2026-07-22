@@ -571,6 +571,37 @@ def test_centroid_flag_end_to_end():
     assert "centroid_available" not in with_centroid.metadata
 
 
+def test_read_metadata_locates_masshunter_datafiles():
+    """ read_metadata routes a MassHunter .D to its AcqData binaries instead of
+    returning an empty datafile list (the Chemstation .uv/.ch/.ms scan never
+    finds them). It reports the bin names plus the flags needed to read them,
+    without parsing the binaries. """
+    # gold.D carries both a profile spectrum and a peak-picked centroid list.
+    both = rb.read_metadata(GOLD_D)
+    assert both["datafiles"] == ["MSProfile.bin", "MSPeak.bin"]
+    assert both["metadata"].get("hrms_available")
+    assert both["metadata"].get("centroid_available")
+
+    # amber.D has only MSProfile.bin, so no centroid is advertised.
+    profile_only = rb.read_metadata(AMBER_D)
+    assert profile_only["datafiles"] == ["MSProfile.bin"]
+    assert profile_only["metadata"].get("hrms_available")
+    assert "centroid_available" not in profile_only["metadata"]
+
+
+def test_hrms_flag_advertises_profile():
+    """ hrms=True adds the MSProfile.bin DataFile; by default it is not parsed
+    but a metadata note advertises that profile/HRMS data is available (mirrors
+    centroid_available). amber.D is run-length encoded, so no python-lzf. """
+    default = rb.read(AMBER_D)
+    assert "MSProfile.bin" not in [df.name for df in default.datafiles]
+    assert default.metadata.get("hrms_available")
+
+    with_hrms = rb.read(AMBER_D, hrms=True)
+    assert "MSProfile.bin" in [df.name for df in with_hrms.datafiles]
+    assert "hrms_available" not in with_hrms.metadata
+
+
 def test_centroid_truncation_is_graceful():
     """ A truncated MSPeak.bin segment is skipped rather than crashing. """
     centroid = masshunter.parse_mspeakdata(os.path.join(COPPER_D, "AcqData"))

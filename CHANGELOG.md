@@ -3,6 +3,23 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-07-22
+
+### Added
+- **`hrms` optional-dependency extra** (`pip install rainbow-api[hrms]`), which
+  installs `python-lzf` for LZF-compressed Agilent MassHunter `MSProfile.bin`
+  segments. The extra was referenced in the docs but never declared, so the
+  install warned the extra did not exist and silently installed nothing.
+- **`hrms_available` metadata hint** on `rb.read(path)` and
+  `rb.read_metadata(path)`, mirroring `centroid_available`: a MassHunter `.D`
+  whose `MSProfile.bin` was not parsed now advertises that profile data is
+  present and needs `hrms=True`.
+
+### Fixed
+- **`rb.read_metadata()` on Agilent MassHunter `.D` folders** now reports the
+  `MSProfile.bin`/`MSPeak.bin` datafiles (plus the `hrms_available` /
+  `centroid_available` hints) instead of returning an empty datafile list.
+
 ## [1.3.0] - 2026-06-24
 
 ### Changed
