@@ -891,6 +891,21 @@ def test_dad_telemetry_is_opt_in_and_analog():
         assert datafile.data.shape == (8, 1)
 
 
+def test_dad_fixture_keeps_the_real_signal_kinds():
+    """ A .cd record marks a signal 1 for absorbance and 2 for telemetry. The
+    parser separates the two by unit instead, so nothing here reads the field -
+    but the fixture is only useful as evidence if it still says what the
+    instrument said. """
+    with open(os.path.join(BRONZE_ACQDATA, "DAD1.cd"), 'rb') as f:
+        raw = f.read()
+    absorbance = [0x71, 0xde, 0x14b, 0x1b0, 0x21d]
+    telemetry = [0x27e, 0x2e6, 0x34b]
+    for offset in absorbance:
+        assert struct.unpack_from('<I', raw, offset)[0] == 1
+    for offset in telemetry:
+        assert struct.unpack_from('<I', raw, offset)[0] == 2
+
+
 def test_dad_parses_without_the_ms_flags():
     """ DAD data is parsed unconditionally, as the Chemstation UV formats are -
     a .d holding only DAD data still reads as UV with no flags set. """

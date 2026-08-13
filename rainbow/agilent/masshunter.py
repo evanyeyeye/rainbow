@@ -195,22 +195,28 @@ DAD PARSING METHODS
 # The DAD files of a MassHunter .d are a family of four that share a 68-byte
 # header whose only populated field is a little-endian u16 type tag. They pair
 # up as descriptor/data: the descriptor indexes the data file, giving each
-# record's byte offset and length, so neither data file has to be walked with
-# an assumed stride.
+# record's byte offset and its length - in bytes for a .sd, in points for a
+# .cd - so neither data file has to be walked with an assumed stride.
 #
 #   DAD1.cd (0x0200) -> describes the signals in DAD1.cg
 #   DAD1.cg (0x0201) -> one chromatogram per signal
 #   DAD1.sd (0x0202) -> describes the spectra in DAD1.sp
 #   DAD1.sp (0x0203) -> the spectra themselves
 #
+# A tag names the kind of file, not the detector that wrote it: the pumps and
+# column compartments write .cd/.cg pairs under the same two tags, which is why
+# the DAD files are found by device name rather than by tag. Only the .sd/.sp
+# spectra are unique to a detector.
+#
 # Everything is little-endian, uncompressed float64 - unlike the Chemstation
 # .uv/.ch formats, there is no delta encoding and no scaling factor.
 _DAD_HEADER_SIZE = 68
 _DAD_TAGS = {'.cd': 0x0200, '.cg': 0x0201, '.sd': 0x0202, '.sp': 0x0203}
 
-# Both descriptors carry their own header past the shared one. The fields we
-# need sit at the same offsets in each: a count, and (for .sd) where its fixed
-# width records begin. The .cd records begin directly after its header.
+# Both descriptors carry their own header past the shared one, but lay it out
+# differently: a .sd gives where its fixed width records begin and then how
+# many there are, while a .cd gives its count first and starts its records
+# directly afterwards.
 _SD_DATA_OFFSET = 0x4c      # u32: byte offset of the first spectrum record
 _SD_NUM_RECORDS = 0x50      # u32
 _CD_NUM_SIGNALS = 0x4c      # u32
