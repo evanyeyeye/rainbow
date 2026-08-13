@@ -16,7 +16,8 @@ def read(path, precision='auto', hrms=False, requested_files=None,
         hrms (bool, optional): Flag for parsing the MassHunter profile
             spectrum (MSProfile.bin).
         requested_files (list, optional): List of filenames to parse.
-        telemetry (bool, optional): Flag for parsing .dx telemetry traces.
+        telemetry (bool, optional): Flag for parsing instrument telemetry
+            traces, in a .dx archive or alongside a MassHunter DAD's signals.
         centroid (bool, optional): Flag for parsing the MassHunter centroid
             spectrum (MSPeak.bin).
         bin_width (float, optional): Shared-grid bin width in daltons for the
@@ -35,13 +36,13 @@ def read(path, precision='auto', hrms=False, requested_files=None,
 
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(path, precision, requested_files))
-    if hrms or centroid:
-        try:
-            from rainbow.agilent import masshunter
-            datafiles.extend(masshunter.parse_allfiles(
-                path, precision, hrms, centroid, bin_width))
-        except ModuleNotFoundError:
-            raise ModuleNotFoundError("You must install python-lzf to parse masshunter files.")
+    # MassHunter is always consulted, not only under the MS flags: a .d may also
+    # hold DAD data, which is parsed unconditionally the way the Chemstation UV
+    # formats are. The MS parsing inside stays gated on hrms/centroid.
+    from rainbow.agilent import masshunter
+    datafiles.extend(masshunter.parse_allfiles(
+        path, precision, hrms, centroid, bin_width, telemetry,
+        requested_files))
 
     metadata = chemstation.parse_metadata(path, datafiles)
 

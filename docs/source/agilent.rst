@@ -16,6 +16,7 @@ exports instead use a single :ref:`.dx archive <dx>`.
    Agilent MSProfile.bin <agilent/hrms>
    Agilent HRMS Data Model <agilent/hrms_data_model>
    Agilent ICP-MS MSProfile.bin <agilent/icpms>
+   Agilent MassHunter DAD <agilent/dad>
    Agilent OpenLab CDS (.dx) <agilent/dx>
 
 It may be useful to search for a binary format by detector. 
@@ -32,6 +33,7 @@ It may be useful to search for a binary format by detector.
    * - UV
      - :doc:`Agilent .uv <agilent/uv>` :raw-html:`<br/>`
        :doc:`Agilent .ch (other) <agilent/ch_other>` :raw-html:`<br/>`
+       :doc:`Agilent MassHunter DAD <agilent/dad>` :raw-html:`<br/>`
        :doc:`Agilent OpenLab CDS (.dx) <agilent/dx>`
    * - MS
      - :doc:`Agilent .ms <agilent/ms>`

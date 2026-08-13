@@ -773,3 +773,461 @@ def test_waters_auto_precision_is_whole_numbers(path):
         ylabels = datafile.ylabels
         assert ylabels.size > 0
         np.testing.assert_array_equal(ylabels, np.round(ylabels))
+
+
+# ---------------------------------------------------------------------------
+# MassHunter DAD (.cd/.cg/.sd/.sp).
+#
+# A MassHunter DAD writes the same two views the Chemstation format splits into
+# .ch and .uv files, but in its own binary family: a descriptor indexing a data
+# file, twice over. `bronze` is a four-retention-time slice of a real QQQ+DAD
+# acquisition, keeping all five absorbance signals, the three telemetry traces,
+# and the full 190-550 nm axis. Its telemetry traces deliberately keep a
+# different point count (8) from its absorbance signals (4), as they do on the
+# instrument, so the per-signal geometry is exercised rather than assumed.
+# ---------------------------------------------------------------------------
+
+BRONZE_D = os.path.join("tests", "inputs", "bronze.D")
+BRONZE_ACQDATA = os.path.join(BRONZE_D, "AcqData")
+
+
+def test_dad_signals_are_described():
+    """ The .cd descriptor names every signal and locates its data in the .cg. """
+    signals = masshunter.read_dad_signals(
+        os.path.join(BRONZE_ACQDATA, "DAD1.cd"))
+    assert len(signals) == 8
+    assert [s['letter'] for s in signals] == list("ABCDEIJK")
+
+    absorbance = [s for s in signals if s['description'].startswith('Sig=')]
+    assert len(absorbance) == 5
+    assert all(s['unit'] == 'mAU' for s in absorbance)
+    assert absorbance[0]['description'].startswith('Sig=254.0')
+
+    # The telemetry traces carry their own units - which are UTF-8, not ASCII -
+    # and are sampled at their own rate.
+    telemetry = [s for s in signals if not s['description'].startswith('Sig=')]
+    assert [s['description'] for s in telemetry] == [
+        "Board Temperature", "Optical Unit Temperature", "UV Lamp Anode Voltage"]
+    assert [s['unit'] for s in telemetry] == ["\N{DEGREE SIGN}C",
+                                              "\N{DEGREE SIGN}C", "V"]
+    assert {s['num_times'] for s in telemetry} != {
+        s['num_times'] for s in absorbance}
+
+
+def test_dad_chromatograms_are_named_per_signal():
+    """ Each signal becomes its own DataFile, named the Chemstation way. """
+    datadir = rb.read(BRONZE_D)
+    names = [df.name for df in datadir.datafiles]
+    assert names[:5] == ["DAD1A.cg", "DAD1B.cg", "DAD1C.cg",
+                         "DAD1D.cg", "DAD1E.cg"]
+    for name, wavelength in zip(names, (254, 210, 280, 400, 260)):
+        datafile = datadir.get_file(name)
+        assert datafile.detector == 'UV'
+        assert datafile.data.shape == (4, 1)
+        assert datafile.ylabels[0] == wavelength
+
+
+def test_dad_spectra_form_one_grid():
+    """ The .sp spectra land on the single wavelength axis the .sd describes. """
+    datadir = rb.read(BRONZE_D)
+    spectra = datadir.get_file("DAD1.sp")
+    assert spectra.detector == 'UV'
+    assert spectra.data.shape == (4, 181)
+    assert spectra.ylabels[0] == 190
+    assert spectra.ylabels[-1] == 550
+    np.testing.assert_allclose(np.diff(spectra.ylabels), 2)
+    # Retention times are minutes, ascending, and shared with the chromatograms.
+    assert (spectra.xlabels[1:] > spectra.xlabels[:-1]).all()
+    np.testing.assert_allclose(
+        spectra.xlabels, datadir.get_file("DAD1A.cg").xlabels)
+
+
+def test_dad_spectra_agree_with_chromatograms():
+    """ The two views encode the same measurement, so a signal's chromatogram
+    is reproduced by the spectra over that signal's band.
+
+    A signal is a centre wavelength and a bandwidth ("Sig=400.0,4.0" is 400 nm
+    over 4 nm), so the comparison averages the spectra across the band rather
+    than reading a single column.
+
+    400 nm is the case this can be asserted on: it is the one signal acquired
+    Ref=off, so its chromatogram is the band alone. The others subtract a
+    reference band, and reproducing Agilent's exact weighting is out of scope
+    here - averaging the reference band accounts for most of the difference but
+    not all of it, so those signals are only checked for the shared time axis
+    and a plausible absorbance scale. """
+    datadir = rb.read(BRONZE_D)
+    spectra = datadir.get_file("DAD1.sp")
+    wavelengths = np.asarray(spectra.ylabels, dtype=float)
+
+    def band(centre, width=4.0):
+        columns = np.abs(wavelengths - centre) <= width / 2
+        return spectra.data[:, columns].mean(axis=1)
+
+    unreferenced = datadir.get_file("DAD1D.cg")     # Sig=400.0, Ref=off
+    np.testing.assert_allclose(unreferenced.data[:, 0], band(400), atol=5e-3)
+
+    for name, centre in (("DAD1A.cg", 254), ("DAD1B.cg", 210)):
+        chromatogram = datadir.get_file(name).data[:, 0]
+        assert chromatogram.shape == (4,)
+        # Same units and order of magnitude as the band it is drawn from.
+        assert np.abs(chromatogram - band(centre)).max() < 1.0
+
+
+def test_dad_telemetry_is_opt_in_and_analog():
+    """ The detector's telemetry traces are parsed only on request, and land in
+    `analog` rather than among the detector signals. """
+    default = rb.read(BRONZE_D)
+    assert default.analog == []
+    assert len(default.datafiles) == 6
+
+    with_telemetry = rb.read(BRONZE_D, telemetry=True)
+    assert len(with_telemetry.datafiles) == 6      # unchanged: additive
+    assert [df.name for df in with_telemetry.analog] == [
+        "DAD1I.cg", "DAD1J.cg", "DAD1K.cg"]
+    for datafile in with_telemetry.analog:
+        assert datafile.detector is None
+        # Sampled at their own rate, not the absorbance signals'.
+        assert datafile.data.shape == (8, 1)
+
+
+def test_dad_fixture_keeps_the_real_signal_kinds():
+    """ A .cd record marks a signal 1 for absorbance and 2 for telemetry. The
+    parser separates the two by unit instead, so nothing here reads the field -
+    but the fixture is only useful as evidence if it still says what the
+    instrument said. """
+    with open(os.path.join(BRONZE_ACQDATA, "DAD1.cd"), 'rb') as f:
+        raw = f.read()
+    absorbance = [0x71, 0xde, 0x14b, 0x1b0, 0x21d]
+    telemetry = [0x27e, 0x2e6, 0x34b]
+    for offset in absorbance:
+        assert struct.unpack_from('<I', raw, offset)[0] == 1
+    for offset in telemetry:
+        assert struct.unpack_from('<I', raw, offset)[0] == 2
+
+
+def test_dad_parses_without_the_ms_flags():
+    """ DAD data is parsed unconditionally, as the Chemstation UV formats are -
+    a .d holding only DAD data still reads as UV with no flags set. """
+    datadir = rb.read(BRONZE_D)
+    assert datadir.detectors == {'UV'}
+    assert len(datadir.by_detector['UV']) == 6
+
+
+def test_dad_rejects_a_foreign_file():
+    """ The type tag in the shared header identifies which member a file is, so
+    a mismatched one is declined rather than misread. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = os.path.join(tmp, "fake.D", "AcqData")
+        os.makedirs(acqdata)
+        # The .sp content under a .cd name: right family, wrong member.
+        shutil.copy(os.path.join(BRONZE_ACQDATA, "DAD1.sp"),
+                    os.path.join(acqdata, "DAD1.cd"))
+        assert masshunter.read_dad_signals(
+            os.path.join(acqdata, "DAD1.cd")) == []
+
+
+def test_dad_varying_wavelength_axis_is_declined():
+    """ Spectra that do not share one wavelength axis cannot form a dense grid,
+    so they are declined with a warning instead of being reshaped. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = os.path.join(tmp, "AcqData")
+        shutil.copytree(BRONZE_ACQDATA, acqdata)
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+        with open(desc_path, 'rb') as descriptor:
+            desc = bytearray(descriptor.read())
+        data_offset = struct.unpack_from('<I', desc, 0x4c)[0]
+        # Give the second spectrum a different wavelength count.
+        struct.pack_into('<I', desc, data_offset + 80 + 44, 180)
+        with open(desc_path, 'wb') as descriptor:
+            descriptor.write(bytes(desc))
+
+        with pytest.warns(UserWarning, match="wavelength axis changes"):
+            spectra = masshunter.parse_dadspectra(
+                os.path.join(acqdata, "DAD1.sp"), desc_path)
+        assert spectra is None
+
+
+def test_dad_honors_requested_files():
+    """ requested_files narrows the DAD parse as it does the Chemstation one -
+    by the per-signal name, or by the file the signals share. """
+    one_signal = rb.read(BRONZE_D, requested_files=["DAD1B.cg"])
+    assert [df.name for df in one_signal.datafiles] == ["DAD1B.cg"]
+
+    spectra_only = rb.read(BRONZE_D, requested_files=["DAD1.sp"])
+    assert [df.name for df in spectra_only.datafiles] == ["DAD1.sp"]
+
+    # The shared filename selects every signal it holds, but not the spectra.
+    every_signal = rb.read(BRONZE_D, requested_files=["DAD1.cg"])
+    assert [df.name for df in every_signal.datafiles] == [
+        "DAD1A.cg", "DAD1B.cg", "DAD1C.cg", "DAD1D.cg", "DAD1E.cg"]
+
+    assert rb.read(BRONZE_D, requested_files=["nothing.cg"]).datafiles == []
+    # A name that merely resembles a real one is not a request for it: there is
+    # no DAD1A.sp, so asking for one yields nothing.
+    assert rb.read(BRONZE_D, requested_files=["DAD1A.sp"]).datafiles == []
+    assert rb.read(BRONZE_D, requested_files=["DAD1.sd"]).datafiles == []
+
+
+def test_dad_telemetry_can_be_requested_by_name():
+    """ Naming a telemetry trace parses it whether or not the flag is set, as
+    it does for .dx telemetry. """
+    datadir = rb.read(BRONZE_D, requested_files=["DAD1I.cg"])
+    assert [df.name for df in datadir.analog] == ["DAD1I.cg"]
+    assert datadir.datafiles == []
+
+
+def _bronze_copy(tmp):
+    """ A writable copy of the bronze AcqData, for corrupting. """
+    acqdata = os.path.join(tmp, "AcqData")
+    shutil.copytree(BRONZE_ACQDATA, acqdata)
+    return acqdata
+
+
+def _patch(path, offset, value, fmt='<I'):
+    with open(path, 'rb') as f:
+        raw = bytearray(f.read())
+    struct.pack_into(fmt, raw, offset, value)
+    with open(path, 'wb') as f:
+        f.write(bytes(raw))
+
+
+def test_dad_short_descriptor_is_declined():
+    """ A truncated .cd yields no signals rather than a partial parse. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        path = os.path.join(acqdata, "DAD1.cd")
+        with open(path, 'rb') as f:
+            head = f.read(0x50)
+        with open(path, 'wb') as f:
+            f.write(head)
+        with pytest.warns(UserWarning, match="too short to hold"):
+            assert masshunter.read_dad_signals(path) == []
+
+
+def test_dad_missing_signals_are_reported():
+    """ Reading fewer signals than the descriptor declares is warned about,
+    not returned silently as a short list. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        path = os.path.join(acqdata, "DAD1.cd")
+        _patch(path, 0x4c, 9)          # claim one more signal than exists
+        with pytest.warns(UserWarning, match="describes 9 signals but only 8"):
+            signals = masshunter.read_dad_signals(path)
+        assert len(signals) == 8
+
+
+def _synthetic_cd(acqdata, signals):
+    """ Writes a minimal .cd/.cg pair, one record per (letter, description,
+    unit, num_times), and returns the .cg's size. The real fixture carries its
+    only one-letter unit in its last record, where nothing can be lost behind
+    it. """
+    descriptor = bytearray(80)
+    struct.pack_into('<H', descriptor, 0, 0x0200)
+    struct.pack_into('<I', descriptor, 0x4c, len(signals))
+
+    chromatograms = bytearray(68)
+    offsets = []
+    for _, _, _, num_times in signals:
+        offsets.append(len(chromatograms))
+        chromatograms += struct.pack('<dd', 0.0, 0.01) + b'\x00' * num_times * 8
+
+    def pascal(text):
+        encoded = text.encode('utf-8')
+        return bytes([len(encoded)]) + encoded
+
+    for (letter, description, unit, num_times), offset in zip(signals, offsets):
+        descriptor += pascal(letter) + pascal(description)
+        descriptor += struct.pack('<IIII', 1, offset, 0, num_times)
+        descriptor += b'\x00' * 8 + pascal(unit)
+
+    with open(os.path.join(acqdata, "DAD1.cd"), 'wb') as f:
+        f.write(descriptor)
+    with open(os.path.join(acqdata, "DAD1.cg"), 'wb') as f:
+        f.write(chromatograms)
+    return len(chromatograms)
+
+
+def test_dad_one_letter_unit_does_not_split_a_record():
+    """ A single-uppercase-letter unit ("V") has the same byte shape as a
+    record's leading letter. Put one on a middle record, where mistaking it for
+    a boundary would cost the record behind it. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = os.path.join(tmp, "synthetic.D", "AcqData")
+        os.makedirs(acqdata)
+        size = _synthetic_cd(acqdata, [
+            ("A", "Sig=254.0,4.0  Ref=360.0,100.0", "mAU", 10),
+            ("B", " UV Lamp Anode Voltage", "V", 40),
+            ("C", "Sig=210.0,4.0  Ref=360.0,100.0", "mAU", 10)])
+        signals = masshunter.read_dad_signals(
+            os.path.join(acqdata, "DAD1.cd"), size)
+
+    assert [s['letter'] for s in signals] == ["A", "B", "C"]
+    assert [s['unit'] for s in signals] == ["mAU", "V", "mAU"]
+    assert [s['num_times'] for s in signals] == [10, 40, 10]
+
+
+def test_dad_records_are_bounded_by_the_chromatogram_file():
+    """ Every record indexes data inside the .cg, so requiring it to fit rules
+    out a coincidental byte pattern: text read as a field gives implausibly
+    large numbers. """
+    record = (b"\x01A\x1eSig=254.0,4.0  Ref=360.0,100.0"
+              + struct.pack('<IIII', 1, 68, 0, 10))
+    assert masshunter._read_record_header(record, 0, 68 + 16 + 10 * 8)
+    assert masshunter._read_record_header(record, 0, 100) is None
+    # The bound leaves the real fixture untouched.
+    signals = masshunter.read_dad_signals(
+        os.path.join(BRONZE_ACQDATA, "DAD1.cd"),
+        os.path.getsize(os.path.join(BRONZE_ACQDATA, "DAD1.cg")))
+    assert [s['letter'] for s in signals] == list("ABCDEIJK")
+    assert signals[-1]['unit'] == "V"
+
+
+def test_dad_descriptor_pointing_outside_the_file_is_declined():
+    """ A spectrum offset past the end of the .sp is refused, not read. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+        data_offset = 164
+        _patch(desc_path, data_offset + 32, 10 ** 7)    # first spectrum offset
+        with pytest.warns(UserWarning, match="outside the file"):
+            assert masshunter.parse_dadspectra(
+                os.path.join(acqdata, "DAD1.sp"), desc_path) is None
+
+
+def test_dad_zero_wavelengths_is_declined():
+    """ A descriptor reporting no wavelengths is refused with a warning. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+        for i in range(4):
+            _patch(desc_path, 164 + i * 80 + 44, 0)
+        with pytest.warns(UserWarning, match="0 wavelengths"):
+            assert masshunter.parse_dadspectra(
+                os.path.join(acqdata, "DAD1.sp"), desc_path) is None
+
+
+def test_dad_axis_disagreement_is_declined():
+    """ The wavelength axis is stated in both the .sp and the .sd, so the two
+    are checked against each other. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        spectra_path = os.path.join(acqdata, "DAD1.sp")
+        # Move every spectrum's start together, so the axes still agree with
+        # each other and only the descriptor is left contradicting them.
+        for i in range(4):
+            _patch(spectra_path, 68 + i * 1464, 900.0, '<d')
+        with pytest.warns(UserWarning, match="but its descriptor says"):
+            assert masshunter.parse_dadspectra(
+                spectra_path, os.path.join(acqdata, "DAD1.sd")) is None
+
+
+def test_dad_axis_changing_mid_run_is_declined():
+    """ Each spectrum states its own axis, so a run that changes it partway
+    yields rows that share no grid. Every spectrum is checked, not just the
+    first. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        spectra_path = os.path.join(acqdata, "DAD1.sp")
+        _patch(spectra_path, 68 + 2 * 1464, 400.0, '<d')    # the third one
+        with pytest.warns(UserWarning, match="share one wavelength axis"):
+            assert masshunter.parse_dadspectra(
+                spectra_path, os.path.join(acqdata, "DAD1.sd")) is None
+
+
+def test_dad_padded_spectrum_records_are_read():
+    """ A descriptor may give a record length longer than the values it holds,
+    which only means the record is padded. Reading is driven by the wavelength
+    count, so such a file parses rather than being declined. """
+    reference = rb.read(BRONZE_D).get_file("DAD1.sp")
+    pad = 8
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        spectra_path = os.path.join(acqdata, "DAD1.sp")
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+
+        with open(spectra_path, 'rb') as f:
+            raw = f.read()
+        stride = 1464
+        rebuilt = bytearray(raw[:68])
+        for i in range(4):
+            rebuilt += raw[68 + i * stride:68 + (i + 1) * stride] + b'\x00' * pad
+        with open(spectra_path, 'wb') as f:
+            f.write(rebuilt)
+        for i in range(4):
+            _patch(desc_path, 164 + i * 80 + 32, 68 + i * (stride + pad))
+            _patch(desc_path, 164 + i * 80 + 40, stride + pad)
+
+        parsed = masshunter.parse_dadspectra(spectra_path, desc_path)
+        assert parsed is not None
+        assert np.array_equal(parsed.data, reference.data)
+
+
+def test_dad_short_spectrum_records_are_declined():
+    """ A record shorter than its wavelength count would be read past its end,
+    so it is refused rather than trusted. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+        for i in range(4):
+            _patch(desc_path, 164 + i * 80 + 40, 1000)
+        with pytest.warns(UserWarning, match="shorter than"):
+            assert masshunter.parse_dadspectra(
+                os.path.join(acqdata, "DAD1.sp"), desc_path) is None
+
+
+def test_dad_single_spectrum_is_writeable():
+    """ One spectrum needs no restriding, so the returned array must still be a
+    copy rather than a view onto the read-only file buffer. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        _patch(os.path.join(acqdata, "DAD1.sd"), 0x50, 1)   # one record
+        parsed = masshunter.parse_dadspectra(
+            os.path.join(acqdata, "DAD1.sp"), os.path.join(acqdata, "DAD1.sd"))
+        assert parsed.data.shape == (1, 181)
+        parsed.data[0, 0] = 1.0
+
+
+def test_dad_non_contiguous_spectra_are_read():
+    """ Spectra are located through the descriptor, so they need not be evenly
+    spaced in the .sp. Rebuild one with a gap between every spectrum. """
+    reference = rb.read(BRONZE_D).get_file("DAD1.sp")
+    gap = 7
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        spectra_path = os.path.join(acqdata, "DAD1.sp")
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+
+        with open(spectra_path, 'rb') as f:
+            raw = f.read()
+        stride = 16 + 181 * 8
+        spread = bytearray(raw[:68])
+        offsets = []
+        for i in range(4):
+            offsets.append(68 + len(spread) - 68)
+            spread += raw[68 + i * stride: 68 + (i + 1) * stride]
+            spread += b"\x00" * gap
+        with open(spectra_path, 'wb') as f:
+            f.write(bytes(spread))
+        for i, offset in enumerate(offsets):
+            _patch(desc_path, 164 + i * 80 + 32, offset)
+
+        spectra = masshunter.parse_dadspectra(spectra_path, desc_path)
+        assert spectra is not None
+        np.testing.assert_array_equal(spectra.data, reference.data)
+        np.testing.assert_array_equal(spectra.ylabels, reference.ylabels)
+
+
+def test_dad_accepts_other_detector_stems():
+    """ A multi- or variable-wavelength detector writes the same family under
+    its own name, so the parse is not tied to "DAD". """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = os.path.join(tmp, "AcqData")
+        os.makedirs(acqdata)
+        for ext in (".cd", ".cg", ".sd", ".sp"):
+            shutil.copy(os.path.join(BRONZE_ACQDATA, "DAD1" + ext),
+                        os.path.join(acqdata, "MWD1" + ext))
+        datafiles = masshunter.parse_dadfiles(acqdata)
+        assert [df.name for df in datafiles] == [
+            "MWD1A.cg", "MWD1B.cg", "MWD1C.cg", "MWD1D.cg", "MWD1E.cg",
+            "MWD1.sp"]

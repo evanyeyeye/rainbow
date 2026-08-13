@@ -120,15 +120,18 @@ MAIN PARSING METHOD
 """
 
 def parse_allfiles(path, precision='auto', hrms=False, centroid=False,
-                   bin_width=None):
+                   bin_width=None, telemetry=False, requested_files=None):
     """
-    Finds and parses Agilent Masshunter MS data files.
+    Finds and parses Agilent Masshunter data files.
 
     MassHunter stores a scan's spectrum as a dense profile trace
     (``MSProfile.bin``) and/or a peak-picked centroid list (``MSPeak.bin``).
     Both are opt-in: ``hrms`` parses the profile and ``centroid`` parses the
     centroids (see :obj:`parse_msdata` and :obj:`parse_mspeakdata`). With
-    neither flag set nothing is parsed here.
+    neither flag set no MS data is parsed here.
+
+    A DAD's data (see :obj:`parse_dadfiles`) is parsed unconditionally, as the
+    Chemstation UV formats are - it is uncompressed and cheap to read.
 
     Args:
         path (str): Path to the Agilent .D directory.
@@ -141,6 +144,9 @@ def parse_allfiles(path, precision='auto', hrms=False, centroid=False,
             the per-scan representation (:class:`ProfileDataFile`); pass a width
             in daltons to project onto the shared m/z grid; see
             :obj:`parse_msdata`.
+        telemetry (bool, optional): Parse the DAD's non-absorbance traces.
+        requested_files (list, optional): Lowercased filenames to restrict the
+            DAD parse to. The MS files are selected by their flags instead.
 
     Returns:
         List containing a DataFile for each parsed file.
@@ -153,6 +159,8 @@ def parse_allfiles(path, precision='auto', hrms=False, centroid=False,
         return datafiles
 
     acqdata_files = set(os.listdir(acqdata_path))
+    datafiles.extend(parse_dadfiles(
+        acqdata_path, telemetry, requested_files, acqdata_files))
     # MSTS.xml is no longer required: the scan count is recovered from the
     # MSScan.bin record geometry (see read_scan_records). This lets us parse
     # Agilent OpenLab .rslt/.sirslt result folders, which omit MSTS.xml.
@@ -180,7 +188,590 @@ def parse_allfiles(path, precision='auto', hrms=False, centroid=False,
 
 
 """
-MS PARSING METHODS 
+DAD PARSING METHODS
+
+"""
+
+# The DAD files of a MassHunter .d are a family of four that share a 68-byte
+# header whose only populated field is a little-endian u16 type tag. They pair
+# up as descriptor/data: the descriptor indexes the data file, giving each
+# record's byte offset and its length - in bytes for a .sd, in points for a
+# .cd - so neither data file has to be walked with an assumed stride.
+#
+#   DAD1.cd (0x0200) -> describes the signals in DAD1.cg
+#   DAD1.cg (0x0201) -> one chromatogram per signal
+#   DAD1.sd (0x0202) -> describes the spectra in DAD1.sp
+#   DAD1.sp (0x0203) -> the spectra themselves
+#
+# A tag names the kind of file, not the detector that wrote it: the pumps and
+# column compartments write .cd/.cg pairs under the same two tags, which is why
+# the DAD files are found by device name rather than by tag. Only the .sd/.sp
+# spectra are unique to a detector.
+#
+# Everything is little-endian, uncompressed float64 - unlike the Chemstation
+# .uv/.ch formats, there is no delta encoding and no scaling factor.
+_DAD_HEADER_SIZE = 68
+_DAD_TAGS = {'.cd': 0x0200, '.cg': 0x0201, '.sd': 0x0202, '.sp': 0x0203}
+
+# Both descriptors carry their own header past the shared one, but lay it out
+# differently: a .sd gives where its fixed width records begin and then how
+# many there are, while a .cd gives its count first and starts its records
+# directly afterwards.
+_SD_DATA_OFFSET = 0x4c      # u32: byte offset of the first spectrum record
+_SD_NUM_RECORDS = 0x50      # u32
+_CD_NUM_SIGNALS = 0x4c      # u32
+_CD_DATA_OFFSET = 0x50
+
+# A .sd spectrum record: 80 bytes, of which we read these fields.
+_SD_RECORD_SIZE = 80
+_SD_RETENTION_TIME = 4      # f64, minutes
+_SD_SP_OFFSET = 32          # u32, byte offset of the spectrum in .sp
+_SD_SP_NBYTES = 40          # u32, its length in bytes
+_SD_NUM_WAVELENGTHS = 44    # u32
+_SD_WAVELENGTH_START = 48   # f64, nm
+_SD_WAVELENGTH_END = 56     # f64, nm
+
+# Both data files prefix a record with its own axis before the values: a .sp
+# spectrum with its wavelengths, a .cg chromatogram with its retention times.
+_AXIS_PREFIX_SIZE = 16      # f64 start + f64 step
+
+# Devices that produce absorbance signals, matching the Chemstation naming.
+_DAD_DEVICES = ('DAD', 'MWD', 'VWD')
+
+
+def parse_dadfiles(path, telemetry=False, requested_files=None, listing=None):
+    """
+    Finds and parses the Agilent Masshunter DAD files of a .d directory.
+
+    A MassHunter DAD writes its data as a ``.cd``/``.cg`` pair holding the
+    wavelength chromatograms and a ``.sd``/``.sp`` pair holding the spectra -
+    the same two views the Chemstation format splits into ``.ch`` and ``.uv``
+    files. The spectra are returned as a single multi-wavelength DataFile and
+    each chromatogram as its own, named for the signal it carries
+    (``DAD1A.cg``, ``DAD1B.cg``, ...), carrying the signal letter Chemstation
+    would put in the filename since here they share one file.
+
+    Args:
+        path (str): Path to the AcqData subdirectory.
+        telemetry (bool, optional): Also parse the non-absorbance traces the
+            detector records alongside its signals (lamp voltage, board
+            temperature). Off by default, matching ``.dx`` telemetry.
+        requested_files (list, optional): Lowercased filenames to restrict the
+            parse to, as for the Chemstation parser. Both the file on disk
+            (``dad1.cg``) and a per-signal name (``dad1a.cg``) select.
+        listing (iterable, optional): The contents of ``path``, when the caller
+            has already listed it. Saves re-listing the directory.
+
+    Returns:
+        List containing a DataFile for each parsed signal and spectrum.
+
+    """
+    datafiles = []
+    if listing is None:
+        if not os.path.isdir(path):
+            return datafiles
+        listing = os.listdir(path)
+
+    # The siblings of a .cd share its casing, which matters on a case-sensitive
+    # filesystem: an acquisition written as DAD1.CD carries DAD1.CG beside it.
+    # Build this in sorted order, so that a directory holding names differing
+    # only by case resolves the same way every time.
+    by_name = {name.lower(): name for name in sorted(listing)}
+
+    def sibling(stem, ext):
+        want = (stem + ext).lower()
+        return os.path.join(path, by_name.get(want, stem + ext))
+
+    for name in sorted(listing):
+        stem, ext = os.path.splitext(name)
+        if ext.lower() != '.cd' or stem[:3].upper() not in _DAD_DEVICES:
+            continue
+
+        chrom_path = sibling(stem, '.cg')
+        if os.path.isfile(chrom_path) and _dad_requested(
+                requested_files, stem, '.cg'):
+            signals = read_dad_signals(
+                os.path.join(path, name), os.path.getsize(chrom_path))
+            if signals:
+                datafiles.extend(parse_dadchroms(
+                    chrom_path, signals, telemetry, requested_files))
+
+        spectra_path = sibling(stem, '.sp')
+        desc_path = sibling(stem, '.sd')
+        # The spectra are one file under one name, so unlike the chromatograms
+        # they match a request exactly - a name that is merely similar is not a
+        # file anyone asked for.
+        if (os.path.isfile(spectra_path) and os.path.isfile(desc_path)
+                and (not requested_files
+                     or os.path.basename(spectra_path).lower() in requested_files)):
+            spectra = parse_dadspectra(spectra_path, desc_path)
+            if spectra is not None:
+                datafiles.append(spectra)
+
+    return datafiles
+
+
+def _dad_requested(requested_files, stem, ext):
+    """
+    Returns True if any requested filename could be served by ``stem + ext``.
+
+    The chromatograms all live in one .cg but are returned under per-signal
+    names, so a request for either form has to keep that file in play; which
+    signals it yields is settled in :obj:`parse_dadchroms`.
+
+    """
+    if not requested_files:
+        return True
+    return any(name.endswith(ext) and name.startswith(stem.lower())
+               for name in requested_files)
+
+
+def read_dad_header(f, ext):
+    """
+    Validates a DAD file's header and returns True if it matches ``ext``.
+
+    Args:
+        f (_io.BufferedReader): File opened in 'rb' mode.
+        ext (str): Extension whose type tag is expected, e.g. '.sp'.
+
+    Returns:
+        True if the file carries the expected type tag, otherwise False.
+
+    """
+    f.seek(0)
+    head = f.read(_DAD_HEADER_SIZE)
+    if len(head) < _DAD_HEADER_SIZE:
+        return False
+    return struct.unpack_from('<H', head, 0)[0] == _DAD_TAGS[ext]
+
+
+def read_dad_signals(path, data_size=None):
+    """
+    Parses an Agilent Masshunter DAD descriptor (.cd) file.
+
+    The descriptor holds one record per signal, each a run of length-prefixed
+    strings (the signal's letter, its description, and its unit) interleaved
+    with the fields locating that signal's data in the matching ``.cg``. A
+    record is variable width because the strings are, so it is walked rather
+    than indexed.
+
+    Args:
+        path (str): Path to the .cd file.
+        data_size (int): Size of the matching .cg in bytes, if known. Every
+            record indexes data inside that file, so giving its size lets a
+            coincidental byte pattern be told apart from a real record.
+
+    Returns:
+        List of dicts with the keys ``letter``, ``description``, ``unit``,
+        ``offset`` and ``num_times``; empty if the file cannot be parsed.
+
+    """
+    with open(path, 'rb') as f:
+        if not read_dad_header(f, '.cd'):
+            return []
+        f.seek(0)
+        raw = f.read()
+
+    if len(raw) < _CD_DATA_OFFSET + 4:
+        warnings.warn(
+            f"{os.path.basename(path)} is too short to hold a signal "
+            f"descriptor; no signals could be read.")
+        return []
+    num_signals = struct.unpack_from('<I', raw, _CD_NUM_SIGNALS)[0]
+
+    signals = []
+    pos = _CD_DATA_OFFSET
+    for _ in range(num_signals):
+        # Each record is the signal's letter and description followed by the
+        # fields locating its data: what kind of signal it is, the byte offset,
+        # an always-zero word, and the number of points.
+        header = _read_record_header(raw, pos, data_size)
+        if header is None:
+            break
+        letter, description, offset, num_times, pos = header
+        # The unit follows, but not adjacently - fields we have no use for sit
+        # in between - so scan ahead to the next record and take the unit from
+        # what lies before it.
+        end = _find_next_record(raw, pos, data_size) or len(raw)
+        signals.append({
+            'letter': letter,
+            'description': description.strip(),
+            'unit': _find_unit(raw, pos, end),
+            'offset': offset,
+            'num_times': num_times,
+        })
+        pos = end
+
+    if len(signals) != num_signals:
+        # Losing a signal loses a whole trace, so say so rather than quietly
+        # returning a short list. An unreadable record is skipped over rather
+        # than ending the walk, so name what survived: the gap can fall
+        # anywhere, not only at the end.
+        read = ', '.join(signal['letter'] for signal in signals) or 'none'
+        warnings.warn(
+            f"{os.path.basename(path)} describes {num_signals} signals but only "
+            f"{len(signals)} could be read ({read}); the others are missing "
+            f"from the parse.")
+    return signals
+
+
+def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
+    """
+    Parses the chromatograms of an Agilent Masshunter DAD (.cg) file.
+
+    Each signal is stored as its own contiguous block: the retention time of
+    the first point, the time step, then one float64 absorbance per point. The
+    block's offset and length come from the ``.cd`` descriptor, so signals
+    recorded at different rates - the detector's telemetry traces are sampled
+    several times more often than its absorbance signals - are read correctly.
+
+    A signal's description gives the band it integrates and the band subtracted
+    from it, in the Chemstation form ``Sig=254.0,4.0  Ref=360.0,100.0`` (254 nm
+    over 4 nm, referenced to 360 nm over 100 nm). These chromatograms are
+    therefore not slices of the ``.sp`` spectra: they are band averages, minus
+    a reference, where the spectra are raw. They are stored by the instrument
+    rather than recomputed here.
+
+    Args:
+        path (str): Path to the .cg file.
+        signals (list): Signal records from :obj:`read_dad_signals`.
+        telemetry (bool, optional): Include the non-absorbance traces.
+        requested_files (list, optional): Lowercased filenames to restrict the
+            parse to; a signal is kept if its own name (``dad1a.cg``) or the
+            file it lives in (``dad1.cg``) was asked for.
+
+    Returns:
+        List with a DataFile per signal, in the order they are described.
+
+    """
+    datafiles = []
+    stem = os.path.splitext(os.path.basename(path))[0]
+    filename = os.path.basename(path).lower()
+
+    with open(path, 'rb') as f:
+        if not read_dad_header(f, '.cg'):
+            return datafiles
+        f.seek(0)
+        raw = f.read()
+
+    for signal in signals:
+        # An absorbance signal is named the Chemstation way ("Sig=254.0,..."),
+        # and carries mAU; the detector's telemetry traces have neither.
+        is_absorbance = (signal['unit'].lower() == 'mau'
+                         or signal['description'].startswith('Sig='))
+        signal_name = f"{stem}{signal['letter']}.cg".lower()
+        requested = bool(requested_files) and signal_name in requested_files
+        # Naming a telemetry trace explicitly parses it whether or not the flag
+        # is set, as it does for .dx telemetry.
+        if not is_absorbance and not telemetry and not requested:
+            continue
+        if requested_files and not (requested or filename in requested_files):
+            continue
+
+        num_times = signal['num_times']
+        start = signal['offset']
+        end = start + _AXIS_PREFIX_SIZE + num_times * 8
+        if start < _DAD_HEADER_SIZE or end > len(raw):
+            warnings.warn(
+                f"Skipping DAD signal {signal['letter']} of {os.path.basename(path)}: "
+                f"its descriptor points outside the file.")
+            continue
+
+        first_time, time_step = struct.unpack_from('<dd', raw, start)
+        values = np.frombuffer(
+            raw, dtype='<f8', count=num_times, offset=start + _AXIS_PREFIX_SIZE)
+        times = first_time + time_step * np.arange(num_times)
+
+        # Give the trace the signal letter Chemstation would put in the
+        # filename (DAD1A.ch), keeping this format's own extension: here all
+        # the signals share one file, so the letter is what tells them apart.
+        name = os.path.join(os.path.dirname(path), f"{stem}{signal['letter']}.cg")
+        datafiles.append(DataFile(
+            name,
+            'UV' if is_absorbance else None,
+            times,
+            np.array([_signal_wavelength(signal['description'])]),
+            values.reshape(-1, 1).copy(),
+            {'signal': signal['description'], 'unit': signal['unit']}))
+
+    return datafiles
+
+
+def parse_dadspectra(path, desc_path):
+    """
+    Parses the spectra of an Agilent Masshunter DAD (.sp) file.
+
+    Every spectrum is stored as its own wavelength axis (a start and a step)
+    followed by one float64 absorbance per wavelength. The ``.sd`` descriptor
+    supplies each spectrum's retention time and its offset and length in the
+    ``.sp``, so the spectra are located rather than assumed to be evenly
+    spaced.
+
+    Spectra sharing one wavelength axis - the usual case - are returned as a
+    single (retention time x wavelength) DataFile. If the axis changes during
+    the run the spectra cannot form one grid, and None is returned with a
+    warning rather than silently reshaping mismatched rows.
+
+    Args:
+        path (str): Path to the .sp file.
+        desc_path (str): Path to the matching .sd file.
+
+    Returns:
+        DataFile with the DAD spectra, or None if they cannot be parsed.
+
+    """
+    with open(desc_path, 'rb') as f:
+        if not read_dad_header(f, '.sd'):
+            return None
+        f.seek(0)
+        desc = f.read()
+
+    if len(desc) < _SD_NUM_RECORDS + 4:
+        return None
+    # The descriptor states where its records begin and how many there are; it
+    # carries its own header past the shared one, so neither can be assumed.
+    data_offset = struct.unpack_from('<I', desc, _SD_DATA_OFFSET)[0]
+    num_times = struct.unpack_from('<I', desc, _SD_NUM_RECORDS)[0]
+    if (num_times == 0 or data_offset < _DAD_HEADER_SIZE
+            or data_offset + num_times * _SD_RECORD_SIZE > len(desc)):
+        warnings.warn(
+            f"Cannot parse {os.path.basename(desc_path)}: it describes "
+            f"{num_times} spectra from offset {data_offset}, which its size "
+            f"does not accommodate.")
+        return None
+    records = np.frombuffer(
+        desc, dtype=np.uint8, count=num_times * _SD_RECORD_SIZE,
+        offset=data_offset
+    ).reshape(num_times, _SD_RECORD_SIZE)
+
+    def field(offset, dtype):
+        width = np.dtype(dtype).itemsize
+        return records[:, offset:offset + width].copy().view(dtype).ravel()
+
+    times = field(_SD_RETENTION_TIME, '<f8')
+    offsets = field(_SD_SP_OFFSET, '<u4')
+    num_wavelengths = field(_SD_NUM_WAVELENGTHS, '<u4')
+    starts = field(_SD_WAVELENGTH_START, '<f8')
+    ends = field(_SD_WAVELENGTH_END, '<f8')
+
+    # One shared wavelength axis is what makes a dense 2D array meaningful.
+    if not (np.all(num_wavelengths == num_wavelengths[0])
+            and np.all(starts == starts[0]) and np.all(ends == ends[0])):
+        warnings.warn(
+            f"Cannot parse {os.path.basename(path)}: its wavelength axis changes "
+            f"during the run, so the spectra do not share a grid.")
+        return None
+
+    count = int(num_wavelengths[0])
+    if count <= 0:
+        warnings.warn(
+            f"Cannot parse {os.path.basename(path)}: its descriptor reports "
+            f"{count} wavelengths per spectrum.")
+        return None
+
+    with open(path, 'rb') as f:
+        if not read_dad_header(f, '.sp'):
+            return None
+        f.seek(0)
+        raw = f.read()
+
+    stride = _AXIS_PREFIX_SIZE + count * 8
+    # The descriptor states each spectrum's length too, so the stride derived
+    # from the wavelength count can be checked rather than assumed. A record
+    # may be longer than the values it holds, which only means it is padded or
+    # carries a trailer; one that is shorter would be read past its end.
+    nbytes = field(_SD_SP_NBYTES, '<u4')
+    if np.any(nbytes < stride):
+        warnings.warn(
+            f"Cannot parse {os.path.basename(path)}: its descriptor gives "
+            f"spectra shorter than {count} wavelengths ({stride} bytes).")
+        return None
+
+    spectrum_offsets = offsets.astype(np.int64)
+    if (spectrum_offsets.min() < _DAD_HEADER_SIZE
+            or spectrum_offsets.max() + stride > len(raw)):
+        warnings.warn(
+            f"Cannot parse {os.path.basename(path)}: its descriptor points to "
+            f"spectra outside the file.")
+        return None
+
+    # The spectra are contiguous and equally sized in every file seen so far,
+    # which lets the whole block be viewed at once instead of read per scan.
+    contiguous = np.array_equal(
+        spectrum_offsets, spectrum_offsets[0] + stride * np.arange(num_times))
+    prefix_size = _AXIS_PREFIX_SIZE // 8
+    if contiguous:
+        block = np.frombuffer(
+            raw, dtype='<f8', count=num_times * stride // 8,
+            offset=spectrum_offsets[0]
+        ).reshape(num_times, stride // 8)
+        axes = block[:, :prefix_size]
+        data = block[:, prefix_size:]
+    else:
+        axes = np.empty((num_times, prefix_size), dtype=np.float64)
+        data = np.empty((num_times, count), dtype=np.float64)
+        for i, start in enumerate(spectrum_offsets):
+            record = np.frombuffer(
+                raw, dtype='<f8', count=prefix_size + count, offset=start)
+            axes[i] = record[:prefix_size]
+            data[i] = record[prefix_size:]
+
+    # Every spectrum carries its own axis, so an acquisition could in principle
+    # change it mid-run. Those spectra share no grid and cannot be stacked, so
+    # check them all rather than trusting the first.
+    wavelength_start, wavelength_step = axes[0]
+    if not np.allclose(axes, axes[0]):
+        warnings.warn(
+            f"Cannot parse {os.path.basename(path)}: its spectra do not all "
+            f"share one wavelength axis.")
+        return None
+
+    # The axis is stated twice - as a start and step in the .sp, and as a range
+    # in the .sd - so check the two against each other rather than trusting one.
+    stated_end = wavelength_start + wavelength_step * (count - 1)
+    if not np.isclose(stated_end, ends[0]) or not np.isclose(
+            wavelength_start, starts[0]):
+        warnings.warn(
+            f"Cannot parse {os.path.basename(path)}: its spectra span "
+            f"{wavelength_start:g}-{stated_end:g} nm but its descriptor says "
+            f"{starts[0]:g}-{ends[0]:g} nm.")
+        return None
+
+    wavelengths = wavelength_start + wavelength_step * np.arange(count)
+    data = np.ascontiguousarray(data)
+    if not data.flags.writeable:
+        # A single spectrum needs no restriding, which would otherwise leave the
+        # read-only file buffer as the returned array.
+        data = data.copy()
+    return DataFile(path, 'UV', times, wavelengths, data,
+                    {'signal': f"Spectra {starts[0]:g}-{ends[0]:g} nm",
+                     'unit': 'mAU'})
+
+
+def _read_pascal_string(raw, pos):
+    """
+    Reads a length-prefixed ASCII string, or (None, pos) if there is not one.
+
+    Used only for the .cd descriptor, whose records are strings of varying
+    length interleaved with fixed-width fields.
+
+    """
+    if pos >= len(raw):
+        return None, pos
+    length = raw[pos]
+    end = pos + 1 + length
+    if length == 0 or end > len(raw):
+        return None, pos
+    chunk = raw[pos + 1:end]
+    # The strings are UTF-8, not ASCII: a DAD writes its temperature traces in
+    # degrees Celsius, whose degree sign is two bytes. Reject only control
+    # bytes, which is what actually distinguishes a string from binary here.
+    try:
+        text = chunk.decode('utf-8')
+    except UnicodeDecodeError:
+        return None, pos
+    if any(c < ' ' or c == '\x7f' for c in text):
+        return None, pos
+    return text, end
+
+
+def _find_next_record(raw, pos, data_size=None):
+    """
+    Returns the offset of the next .cd signal record, or None at the end.
+
+    A record opens with the length-prefixed letter naming the signal. That
+    alone is too weak to anchor on - a one-character unit such as ``V`` has the
+    same shape - so a candidate is accepted only if a whole record header reads
+    out of it: the letter, a description, and the field block behind it.
+
+    """
+    for i in range(pos, len(raw) - 2):
+        if raw[i] != 1 or not _is_signal_letter(chr(raw[i + 1])):
+            continue
+        if _read_record_header(raw, i, data_size) is not None:
+            return i
+    return None
+
+
+def _is_signal_letter(char):
+    """
+    Returns True if ``char`` could be the letter naming a signal.
+
+    Every signal seen is named A-Z, as under Chemstation. The scan and the
+    header reader have to agree on this, or a detector naming them some other
+    way would yield its first signal and silently lose the rest.
+
+    """
+    return char.isascii() and char.isalnum()
+
+
+def _read_record_header(raw, pos, data_size=None):
+    """
+    Reads a .cd signal record header, or None if one does not start at ``pos``.
+
+    Returns ``(letter, description, offset, num_times, end)``, where ``end`` is
+    the position just past the field block.
+
+    """
+    letter, after_letter = _read_pascal_string(raw, pos)
+    if letter is None or len(letter) != 1 or not _is_signal_letter(letter):
+        return None
+    description, after_description = _read_pascal_string(raw, after_letter)
+    if description is None or after_description + 16 > len(raw):
+        return None
+    _, offset, _, num_times = struct.unpack_from('<IIII', raw, after_description)
+    # A real record locates data inside the .cg; a coincidental byte pattern
+    # almost never does. Where the .cg's size is known, requiring the record to
+    # fit inside it rules out nearly every such pattern - text read as a field
+    # gives implausibly large numbers.
+    if offset < _DAD_HEADER_SIZE or num_times <= 0:
+        return None
+    if data_size is not None and (
+            offset + _AXIS_PREFIX_SIZE + num_times * 8 > data_size):
+        return None
+    return letter, description, offset, num_times, after_description + 16
+
+
+def _find_unit(raw, start, end):
+    """
+    Returns the unit string inside a .cd signal record, or '' if absent.
+
+    The unit is the last length-prefixed string before the next record, sitting
+    behind numeric fields we have no use for. Absorbance signals carry ``mAU``;
+    the detector's telemetry traces carry their own (``°C``, ``V``).
+
+    """
+    unit = ''
+    for i in range(start, min(end, len(raw))):
+        text, _ = _read_pascal_string(raw, i)
+        # Any short printable string here could be the unit: one may be a single
+        # symbol ('%', 'V') as readily as a word, so it cannot be required to
+        # contain a letter. Take the last rather than the first, since only the
+        # last is pinned to a known position - a stray run of bytes in the
+        # numeric fields ahead of it can read as a string too.
+        if text and 1 <= len(text) <= 8 and text.strip():
+            unit = text.strip()
+    return unit
+
+
+def _signal_wavelength(description):
+    """
+    Pulls the wavelength out of a signal description, or 0 if it has none.
+
+    The descriptions follow the Chemstation convention, e.g.
+    ``Sig=254.0,4.0  Ref=360.0,100.0`` for a signal at 254 nm.
+
+    """
+    if not description.startswith('Sig='):
+        return 0.0
+    try:
+        return float(description[4:].split(',', 1)[0])
+    except ValueError:
+        return 0.0
+
+
+"""
+MS PARSING METHODS
 
 """
 

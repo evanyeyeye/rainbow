@@ -3,6 +3,45 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Agilent MassHunter DAD support.** A MassHunter `.d` stores its DAD data in
+  four files that the Chemstation decoders do not read, so until now a `.d`
+  acquired with a diode-array detector returned no UV data at all - silently,
+  since MassHunter parsing is opt-in and an unread detector looks the same as
+  an absent one. `rb.read` now parses them: `DAD1.cd` describes the signals in
+  `DAD1.cg` (one chromatogram each), and `DAD1.sd` describes the spectra in
+  `DAD1.sp` - the same two views the Chemstation format splits into `.ch` and
+  `.uv` files.
+
+  The spectra become a single (retention time x wavelength) `DataFile` named
+  after the `.sp`, and each signal its own, carrying the Chemstation signal
+  letter (`DAD1A.cg`, `DAD1B.cg`, ...) since here they share one file. Both
+  descriptors give the byte offset of every record they describe, so the data
+  files are indexed rather than walked at an assumed stride - signals sampled at
+  different rates, and spectra that are not evenly spaced, are read correctly.
+  Unlike the Chemstation `.uv`/`.ch` formats there is no delta encoding and no
+  scaling factor: the values are plain little-endian float64.
+
+  Spectra whose wavelength axis changes during a run cannot form one grid, and
+  are declined with a warning rather than reshaped.
+- `rb.read(..., telemetry=True)` also parses the traces a DAD records beside
+  its signals (lamp voltage, board and optical-unit temperature). Off by
+  default and returned as analog data, matching `.dx` telemetry — including
+  that naming one in `requested_files` parses it regardless of the flag.
+- `tests/test_masshunter.py::test_dad_*` and the `bronze.D` fixture: a
+  four-retention-time slice of a real QQQ+DAD acquisition keeping all five
+  absorbance signals, all three telemetry traces, and the full 190-550 nm axis,
+  with the telemetry deliberately at a different point count from the signals.
+
+### Changed
+- **The MassHunter parser is now always consulted for a `.d`, not only under
+  `hrms`/`centroid`.** DAD data is parsed unconditionally, as the Chemstation
+  UV formats are; the MS parsing inside remains gated on those flags. A `.d`
+  that holds DAD data therefore yields UV `DataFile`s where it previously
+  yielded none.
+
 ## [1.3.0] - 2026-06-24
 
 ### Changed
