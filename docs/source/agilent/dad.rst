@@ -132,10 +132,10 @@ values, at the offset the descriptor gives.
 
    Because the wavelength axis is repeated per spectrum, an acquisition may in
    principle vary it during a run. Such spectra do not share a grid and cannot
-   form a dense two-dimensional array, so **rainbow** declines them with a
-   warning rather than reshaping mismatched rows. As a further check, the axis
-   of the first spectrum is compared against the range its ``.sd`` record
-   states.
+   form a dense two-dimensional array, so **rainbow** checks every spectrum's
+   axis and declines them with a warning rather than reshaping mismatched rows.
+   The axis is also stated as a range in the ``.sd``, and the two statements are
+   checked against each other.
 
    DAD parsing needs no flag, as the Chemstation UV formats need none. The
    detector's telemetry traces are returned as analog data only under

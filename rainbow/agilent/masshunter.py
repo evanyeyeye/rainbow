@@ -231,8 +231,9 @@ _SD_NUM_WAVELENGTHS = 44    # u32
 _SD_WAVELENGTH_START = 48   # f64, nm
 _SD_WAVELENGTH_END = 56     # f64, nm
 
-# A spectrum in .sp is prefixed by its own wavelength axis, then the values.
-_SP_PREFIX_SIZE = 16        # f64 start wavelength + f64 step
+# Both data files prefix a record with its own axis before the values: a .sp
+# spectrum with its wavelengths, a .cg chromatogram with its retention times.
+_AXIS_PREFIX_SIZE = 16      # f64 start + f64 step
 
 # Devices that produce absorbance signals, matching the Chemstation naming.
 _DAD_DEVICES = ('DAD', 'MWD', 'VWD')
@@ -273,7 +274,9 @@ def parse_dadfiles(path, telemetry=False, requested_files=None, listing=None):
 
     # The siblings of a .cd share its casing, which matters on a case-sensitive
     # filesystem: an acquisition written as DAD1.CD carries DAD1.CG beside it.
-    by_name = {name.lower(): name for name in listing}
+    # Build this in sorted order, so that a directory holding names differing
+    # only by case resolves the same way every time.
+    by_name = {name.lower(): name for name in sorted(listing)}
 
     def sibling(stem, ext):
         want = (stem + ext).lower()
@@ -287,7 +290,8 @@ def parse_dadfiles(path, telemetry=False, requested_files=None, listing=None):
         chrom_path = sibling(stem, '.cg')
         if os.path.isfile(chrom_path) and _dad_requested(
                 requested_files, stem, '.cg'):
-            signals = read_dad_signals(os.path.join(path, name))
+            signals = read_dad_signals(
+                os.path.join(path, name), os.path.getsize(chrom_path))
             if signals:
                 datafiles.extend(parse_dadchroms(
                     chrom_path, signals, telemetry, requested_files))
@@ -341,7 +345,7 @@ def read_dad_header(f, ext):
     return struct.unpack_from('<H', head, 0)[0] == _DAD_TAGS[ext]
 
 
-def read_dad_signals(path):
+def read_dad_signals(path, data_size=None):
     """
     Parses an Agilent Masshunter DAD descriptor (.cd) file.
 
@@ -353,6 +357,9 @@ def read_dad_signals(path):
 
     Args:
         path (str): Path to the .cd file.
+        data_size (int): Size of the matching .cg in bytes, if known. Every
+            record indexes data inside that file, so giving its size lets a
+            coincidental byte pattern be told apart from a real record.
 
     Returns:
         List of dicts with the keys ``letter``, ``description``, ``unit``,
@@ -376,16 +383,16 @@ def read_dad_signals(path):
     pos = _CD_DATA_OFFSET
     for _ in range(num_signals):
         # Each record is the signal's letter and description followed by the
-        # fields locating its data: a flag, the byte offset, a reserved word,
-        # and the number of points.
-        header = _read_record_header(raw, pos)
+        # fields locating its data: what kind of signal it is, the byte offset,
+        # an always-zero word, and the number of points.
+        header = _read_record_header(raw, pos, data_size)
         if header is None:
             break
         letter, description, offset, num_times, pos = header
         # The unit follows, but not adjacently - fields we have no use for sit
         # in between - so scan ahead to the next record and take the unit from
         # what lies before it.
-        end = _find_next_record(raw, pos) or len(raw)
+        end = _find_next_record(raw, pos, data_size) or len(raw)
         signals.append({
             'letter': letter,
             'description': description.strip(),
@@ -397,10 +404,14 @@ def read_dad_signals(path):
 
     if len(signals) != num_signals:
         # Losing a signal loses a whole trace, so say so rather than quietly
-        # returning a short list.
+        # returning a short list. An unreadable record is skipped over rather
+        # than ending the walk, so name what survived: the gap can fall
+        # anywhere, not only at the end.
+        read = ', '.join(signal['letter'] for signal in signals) or 'none'
         warnings.warn(
             f"{os.path.basename(path)} describes {num_signals} signals but only "
-            f"{len(signals)} could be read; the rest are missing from the parse.")
+            f"{len(signals)} could be read ({read}); the others are missing "
+            f"from the parse.")
     return signals
 
 
@@ -459,8 +470,8 @@ def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
 
         num_times = signal['num_times']
         start = signal['offset']
-        end = start + _SP_PREFIX_SIZE + num_times * 8
-        if start < _DAD_HEADER_SIZE or end > len(raw) or num_times <= 0:
+        end = start + _AXIS_PREFIX_SIZE + num_times * 8
+        if start < _DAD_HEADER_SIZE or end > len(raw):
             warnings.warn(
                 f"Skipping DAD signal {signal['letter']} of {os.path.basename(path)}: "
                 f"its descriptor points outside the file.")
@@ -468,7 +479,7 @@ def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
 
         first_time, time_step = struct.unpack_from('<dd', raw, start)
         values = np.frombuffer(
-            raw, dtype='<f8', count=num_times, offset=start + _SP_PREFIX_SIZE)
+            raw, dtype='<f8', count=num_times, offset=start + _AXIS_PREFIX_SIZE)
         times = first_time + time_step * np.arange(num_times)
 
         # Give the trace the signal letter Chemstation would put in the
@@ -564,15 +575,16 @@ def parse_dadspectra(path, desc_path):
         f.seek(0)
         raw = f.read()
 
-    stride = _SP_PREFIX_SIZE + count * 8
+    stride = _AXIS_PREFIX_SIZE + count * 8
     # The descriptor states each spectrum's length too, so the stride derived
-    # from the wavelength count can be checked rather than assumed.
+    # from the wavelength count can be checked rather than assumed. A record
+    # may be longer than the values it holds, which only means it is padded or
+    # carries a trailer; one that is shorter would be read past its end.
     nbytes = field(_SD_SP_NBYTES, '<u4')
-    if not np.all(nbytes == stride):
+    if np.any(nbytes < stride):
         warnings.warn(
             f"Cannot parse {os.path.basename(path)}: its descriptor gives "
-            f"spectrum lengths that disagree with {count} wavelengths "
-            f"({stride} bytes).")
+            f"spectra shorter than {count} wavelengths ({stride} bytes).")
         return None
 
     spectrum_offsets = offsets.astype(np.int64)
@@ -587,19 +599,32 @@ def parse_dadspectra(path, desc_path):
     # which lets the whole block be viewed at once instead of read per scan.
     contiguous = np.array_equal(
         spectrum_offsets, spectrum_offsets[0] + stride * np.arange(num_times))
+    prefix_size = _AXIS_PREFIX_SIZE // 8
     if contiguous:
         block = np.frombuffer(
             raw, dtype='<f8', count=num_times * stride // 8,
             offset=spectrum_offsets[0]
         ).reshape(num_times, stride // 8)
-        data = block[:, _SP_PREFIX_SIZE // 8:]
+        axes = block[:, :prefix_size]
+        data = block[:, prefix_size:]
     else:
+        axes = np.empty((num_times, prefix_size), dtype=np.float64)
         data = np.empty((num_times, count), dtype=np.float64)
         for i, start in enumerate(spectrum_offsets):
-            data[i] = np.frombuffer(
-                raw, dtype='<f8', count=count, offset=start + _SP_PREFIX_SIZE)
-    wavelength_start, wavelength_step = struct.unpack_from(
-        '<dd', raw, int(spectrum_offsets[0]))
+            record = np.frombuffer(
+                raw, dtype='<f8', count=prefix_size + count, offset=start)
+            axes[i] = record[:prefix_size]
+            data[i] = record[prefix_size:]
+
+    # Every spectrum carries its own axis, so an acquisition could in principle
+    # change it mid-run. Those spectra share no grid and cannot be stacked, so
+    # check them all rather than trusting the first.
+    wavelength_start, wavelength_step = axes[0]
+    if not np.allclose(axes, axes[0]):
+        warnings.warn(
+            f"Cannot parse {os.path.basename(path)}: its spectra do not all "
+            f"share one wavelength axis.")
+        return None
 
     # The axis is stated twice - as a start and step in the .sp, and as a range
     # in the .sd - so check the two against each other rather than trusting one.
@@ -613,7 +638,12 @@ def parse_dadspectra(path, desc_path):
         return None
 
     wavelengths = wavelength_start + wavelength_step * np.arange(count)
-    return DataFile(path, 'UV', times, wavelengths, np.ascontiguousarray(data),
+    data = np.ascontiguousarray(data)
+    if not data.flags.writeable:
+        # A single spectrum needs no restriding, which would otherwise leave the
+        # read-only file buffer as the returned array.
+        data = data.copy()
+    return DataFile(path, 'UV', times, wavelengths, data,
                     {'signal': f"Spectra {starts[0]:g}-{ends[0]:g} nm",
                      'unit': 'mAU'})
 
@@ -645,7 +675,7 @@ def _read_pascal_string(raw, pos):
     return text, end
 
 
-def _find_next_record(raw, pos):
+def _find_next_record(raw, pos, data_size=None):
     """
     Returns the offset of the next .cd signal record, or None at the end.
 
@@ -656,14 +686,26 @@ def _find_next_record(raw, pos):
 
     """
     for i in range(pos, len(raw) - 2):
-        if raw[i] != 1 or not 65 <= raw[i + 1] < 91:
+        if raw[i] != 1 or not _is_signal_letter(chr(raw[i + 1])):
             continue
-        if _read_record_header(raw, i) is not None:
+        if _read_record_header(raw, i, data_size) is not None:
             return i
     return None
 
 
-def _read_record_header(raw, pos):
+def _is_signal_letter(char):
+    """
+    Returns True if ``char`` could be the letter naming a signal.
+
+    Every signal seen is named A-Z, as under Chemstation. The scan and the
+    header reader have to agree on this, or a detector naming them some other
+    way would yield its first signal and silently lose the rest.
+
+    """
+    return char.isascii() and char.isalnum()
+
+
+def _read_record_header(raw, pos, data_size=None):
     """
     Reads a .cd signal record header, or None if one does not start at ``pos``.
 
@@ -672,15 +714,20 @@ def _read_record_header(raw, pos):
 
     """
     letter, after_letter = _read_pascal_string(raw, pos)
-    if letter is None or len(letter) != 1:
+    if letter is None or len(letter) != 1 or not _is_signal_letter(letter):
         return None
     description, after_description = _read_pascal_string(raw, after_letter)
     if description is None or after_description + 16 > len(raw):
         return None
     _, offset, _, num_times = struct.unpack_from('<IIII', raw, after_description)
     # A real record locates data inside the .cg; a coincidental byte pattern
-    # almost never does.
+    # almost never does. Where the .cg's size is known, requiring the record to
+    # fit inside it rules out nearly every such pattern - text read as a field
+    # gives implausibly large numbers.
     if offset < _DAD_HEADER_SIZE or num_times <= 0:
+        return None
+    if data_size is not None and (
+            offset + _AXIS_PREFIX_SIZE + num_times * 8 > data_size):
         return None
     return letter, description, offset, num_times, after_description + 16
 
@@ -689,19 +736,22 @@ def _find_unit(raw, start, end):
     """
     Returns the unit string inside a .cd signal record, or '' if absent.
 
-    The unit is the one short length-prefixed string between the signal's
-    numeric fields and the next record. Absorbance signals carry ``mAU``; the
-    detector's telemetry traces carry their own (``°C``, ``V``).
+    The unit is the last length-prefixed string before the next record, sitting
+    behind numeric fields we have no use for. Absorbance signals carry ``mAU``;
+    the detector's telemetry traces carry their own (``°C``, ``V``).
 
     """
+    unit = ''
     for i in range(start, min(end, len(raw))):
         text, _ = _read_pascal_string(raw, i)
-        # Any short printable string here is the unit: a unit may be a single
+        # Any short printable string here could be the unit: one may be a single
         # symbol ('%', 'V') as readily as a word, so it cannot be required to
-        # contain a letter.
+        # contain a letter. Take the last rather than the first, since only the
+        # last is pinned to a known position - a stray run of bytes in the
+        # numeric fields ahead of it can read as a string too.
         if text and 1 <= len(text) <= 8 and text.strip():
-            return text.strip()
-    return ''
+            unit = text.strip()
+    return unit
 
 
 def _signal_wavelength(description):
