@@ -16,10 +16,10 @@ to [Semantic Versioning](https://semver.org/).
   `.uv` files.
 
   The spectra become a single (retention time x wavelength) `DataFile` named
-  after the `.sp`, and each signal its own, named the way Chemstation names the
-  same signal on disk (`DAD1A.cg`, `DAD1B.cg`, ...). Both descriptors give the
-  byte offset and length of every record they describe, so the data files are
-  indexed rather than walked at an assumed stride - signals sampled at
+  after the `.sp`, and each signal its own, carrying the Chemstation signal
+  letter (`DAD1A.cg`, `DAD1B.cg`, ...) since here they share one file. Both
+  descriptors give the byte offset of every record they describe, so the data
+  files are indexed rather than walked at an assumed stride - signals sampled at
   different rates, and spectra that are not evenly spaced, are read correctly.
   Unlike the Chemstation `.uv`/`.ch` formats there is no delta encoding and no
   scaling factor: the values are plain little-endian float64.
@@ -28,7 +28,8 @@ to [Semantic Versioning](https://semver.org/).
   are declined with a warning rather than reshaped.
 - `rb.read(..., telemetry=True)` also parses the traces a DAD records beside
   its signals (lamp voltage, board and optical-unit temperature). Off by
-  default, matching the `.dx` telemetry flag, and returned as analog data.
+  default and returned as analog data, matching `.dx` telemetry — including
+  that naming one in `requested_files` parses it regardless of the flag.
 - `tests/test_masshunter.py::test_dad_*` and the `bronze.D` fixture: a
   four-retention-time slice of a real QQQ+DAD acquisition keeping all five
   absorbance signals, all three telemetry traces, and the full 190-550 nm axis,

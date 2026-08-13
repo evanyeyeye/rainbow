@@ -803,10 +803,13 @@ def test_dad_signals_are_described():
     assert all(s['unit'] == 'mAU' for s in absorbance)
     assert absorbance[0]['description'].startswith('Sig=254.0')
 
-    # The telemetry traces carry no unit and are sampled at their own rate.
+    # The telemetry traces carry their own units - which are UTF-8, not ASCII -
+    # and are sampled at their own rate.
     telemetry = [s for s in signals if not s['description'].startswith('Sig=')]
     assert [s['description'] for s in telemetry] == [
         "Board Temperature", "Optical Unit Temperature", "UV Lamp Anode Voltage"]
+    assert [s['unit'] for s in telemetry] == ["\N{DEGREE SIGN}C",
+                                              "\N{DEGREE SIGN}C", "V"]
     assert {s['num_times'] for s in telemetry} != {
         s['num_times'] for s in absorbance}
 
@@ -945,3 +948,149 @@ def test_dad_honors_requested_files():
         "DAD1A.cg", "DAD1B.cg", "DAD1C.cg", "DAD1D.cg", "DAD1E.cg"]
 
     assert rb.read(BRONZE_D, requested_files=["nothing.cg"]).datafiles == []
+    # A name that merely resembles a real one is not a request for it: there is
+    # no DAD1A.sp, so asking for one yields nothing.
+    assert rb.read(BRONZE_D, requested_files=["DAD1A.sp"]).datafiles == []
+    assert rb.read(BRONZE_D, requested_files=["DAD1.sd"]).datafiles == []
+
+
+def test_dad_telemetry_can_be_requested_by_name():
+    """ Naming a telemetry trace parses it whether or not the flag is set, as
+    it does for .dx telemetry. """
+    datadir = rb.read(BRONZE_D, requested_files=["DAD1I.cg"])
+    assert [df.name for df in datadir.analog] == ["DAD1I.cg"]
+    assert datadir.datafiles == []
+
+
+def _bronze_copy(tmp):
+    """ A writable copy of the bronze AcqData, for corrupting. """
+    acqdata = os.path.join(tmp, "AcqData")
+    shutil.copytree(BRONZE_ACQDATA, acqdata)
+    return acqdata
+
+
+def _patch(path, offset, value, fmt='<I'):
+    with open(path, 'rb') as f:
+        raw = bytearray(f.read())
+    struct.pack_into(fmt, raw, offset, value)
+    with open(path, 'wb') as f:
+        f.write(bytes(raw))
+
+
+def test_dad_short_descriptor_is_declined():
+    """ A truncated .cd yields no signals rather than a partial parse. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        path = os.path.join(acqdata, "DAD1.cd")
+        with open(path, 'rb') as f:
+            head = f.read(0x50)
+        with open(path, 'wb') as f:
+            f.write(head)
+        with pytest.warns(UserWarning, match="could be read"):
+            assert masshunter.read_dad_signals(path) == []
+
+
+def test_dad_missing_signals_are_reported():
+    """ Reading fewer signals than the descriptor declares is warned about,
+    not returned silently as a short list. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        path = os.path.join(acqdata, "DAD1.cd")
+        _patch(path, 0x4c, 9)          # claim one more signal than exists
+        with pytest.warns(UserWarning, match="describes 9 signals but only 8"):
+            signals = masshunter.read_dad_signals(path)
+        assert len(signals) == 8
+
+
+def test_dad_one_letter_unit_does_not_split_a_record():
+    """ A single-uppercase-letter unit ("V") has the same byte shape as a
+    record's leading letter, so boundaries are confirmed by reading a whole
+    record header rather than by that pattern alone. """
+    signals = masshunter.read_dad_signals(
+        os.path.join(BRONZE_ACQDATA, "DAD1.cd"))
+    assert [s['letter'] for s in signals] == list("ABCDEIJK")
+    assert signals[-1]['unit'] == "V"
+    # A bare pascal-"V" is exactly what the old pattern accepted as a record
+    # start; on its own it cannot yield a header, so it no longer splits one.
+    assert masshunter._read_record_header(b"\x01V\x00", 0) is None
+
+
+def test_dad_descriptor_pointing_outside_the_file_is_declined():
+    """ A spectrum offset past the end of the .sp is refused, not read. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+        data_offset = 164
+        _patch(desc_path, data_offset + 32, 10 ** 7)    # first spectrum offset
+        with pytest.warns(UserWarning, match="outside the file"):
+            assert masshunter.parse_dadspectra(
+                os.path.join(acqdata, "DAD1.sp"), desc_path) is None
+
+
+def test_dad_zero_wavelengths_is_declined():
+    """ A descriptor reporting no wavelengths is refused with a warning. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+        for i in range(4):
+            _patch(desc_path, 164 + i * 80 + 44, 0)
+        with pytest.warns(UserWarning, match="0 wavelengths"):
+            assert masshunter.parse_dadspectra(
+                os.path.join(acqdata, "DAD1.sp"), desc_path) is None
+
+
+def test_dad_axis_disagreement_is_declined():
+    """ The wavelength axis is stated in both the .sp and the .sd, so the two
+    are checked against each other. """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        spectra_path = os.path.join(acqdata, "DAD1.sp")
+        _patch(spectra_path, 68, 900.0, '<d')       # first spectrum's start nm
+        with pytest.warns(UserWarning, match="but its descriptor says"):
+            assert masshunter.parse_dadspectra(
+                spectra_path, os.path.join(acqdata, "DAD1.sd")) is None
+
+
+def test_dad_non_contiguous_spectra_are_read():
+    """ Spectra are located through the descriptor, so they need not be evenly
+    spaced in the .sp. Rebuild one with a gap between every spectrum. """
+    reference = rb.read(BRONZE_D).get_file("DAD1.sp")
+    gap = 7
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = _bronze_copy(tmp)
+        spectra_path = os.path.join(acqdata, "DAD1.sp")
+        desc_path = os.path.join(acqdata, "DAD1.sd")
+
+        with open(spectra_path, 'rb') as f:
+            raw = f.read()
+        stride = 16 + 181 * 8
+        spread = bytearray(raw[:68])
+        offsets = []
+        for i in range(4):
+            offsets.append(68 + len(spread) - 68)
+            spread += raw[68 + i * stride: 68 + (i + 1) * stride]
+            spread += b"\x00" * gap
+        with open(spectra_path, 'wb') as f:
+            f.write(bytes(spread))
+        for i, offset in enumerate(offsets):
+            _patch(desc_path, 164 + i * 80 + 32, offset)
+
+        spectra = masshunter.parse_dadspectra(spectra_path, desc_path)
+        assert spectra is not None
+        np.testing.assert_array_equal(spectra.data, reference.data)
+        np.testing.assert_array_equal(spectra.ylabels, reference.ylabels)
+
+
+def test_dad_accepts_other_detector_stems():
+    """ A multi- or variable-wavelength detector writes the same family under
+    its own name, so the parse is not tied to "DAD". """
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = os.path.join(tmp, "AcqData")
+        os.makedirs(acqdata)
+        for ext in (".cd", ".cg", ".sd", ".sp"):
+            shutil.copy(os.path.join(BRONZE_ACQDATA, "DAD1" + ext),
+                        os.path.join(acqdata, "MWD1" + ext))
+        datafiles = masshunter.parse_dadfiles(acqdata)
+        assert [df.name for df in datafiles] == [
+            "MWD1A.cg", "MWD1B.cg", "MWD1C.cg", "MWD1D.cg", "MWD1E.cg",
+            "MWD1.sp"]

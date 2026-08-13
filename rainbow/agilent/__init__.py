@@ -39,16 +39,10 @@ def read(path, precision='auto', hrms=False, requested_files=None,
     # MassHunter is always consulted, not only under the MS flags: a .d may also
     # hold DAD data, which is parsed unconditionally the way the Chemstation UV
     # formats are. The MS parsing inside stays gated on hrms/centroid.
-    try:
-        from rainbow.agilent import masshunter
-    except ModuleNotFoundError:
-        if hrms or centroid:
-            raise ModuleNotFoundError(
-                "You must install python-lzf to parse masshunter files.")
-    else:
-        datafiles.extend(masshunter.parse_allfiles(
-            path, precision, hrms, centroid, bin_width, telemetry,
-            requested_files))
+    from rainbow.agilent import masshunter
+    datafiles.extend(masshunter.parse_allfiles(
+        path, precision, hrms, centroid, bin_width, telemetry,
+        requested_files))
 
     metadata = chemstation.parse_metadata(path, datafiles)
 
