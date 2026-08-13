@@ -826,7 +826,8 @@ def test_dad_chromatograms_are_named_per_signal():
 
 def test_dad_spectra_form_one_grid():
     """ The .sp spectra land on the single wavelength axis the .sd describes. """
-    spectra = rb.read(BRONZE_D).get_file("DAD1.sp")
+    datadir = rb.read(BRONZE_D)
+    spectra = datadir.get_file("DAD1.sp")
     assert spectra.detector == 'UV'
     assert spectra.data.shape == (4, 181)
     assert spectra.ylabels[0] == 190
@@ -835,7 +836,7 @@ def test_dad_spectra_form_one_grid():
     # Retention times are minutes, ascending, and shared with the chromatograms.
     assert (spectra.xlabels[1:] > spectra.xlabels[:-1]).all()
     np.testing.assert_allclose(
-        spectra.xlabels, rb.read(BRONZE_D).get_file("DAD1A.cg").xlabels)
+        spectra.xlabels, datadir.get_file("DAD1A.cg").xlabels)
 
 
 def test_dad_spectra_agree_with_chromatograms():
@@ -915,11 +916,13 @@ def test_dad_varying_wavelength_axis_is_declined():
         acqdata = os.path.join(tmp, "AcqData")
         shutil.copytree(BRONZE_ACQDATA, acqdata)
         desc_path = os.path.join(acqdata, "DAD1.sd")
-        desc = bytearray(open(desc_path, 'rb').read())
+        with open(desc_path, 'rb') as descriptor:
+            desc = bytearray(descriptor.read())
         data_offset = struct.unpack_from('<I', desc, 0x4c)[0]
         # Give the second spectrum a different wavelength count.
         struct.pack_into('<I', desc, data_offset + 80 + 44, 180)
-        open(desc_path, 'wb').write(bytes(desc))
+        with open(desc_path, 'wb') as descriptor:
+            descriptor.write(bytes(desc))
 
         with pytest.warns(UserWarning, match="wavelength axis changes"):
             spectra = masshunter.parse_dadspectra(

@@ -158,9 +158,9 @@ def parse_allfiles(path, precision='auto', hrms=False, centroid=False,
     if not os.path.isdir(acqdata_path):
         return datafiles
 
-    datafiles.extend(parse_dadfiles(acqdata_path, telemetry, requested_files))
-
     acqdata_files = set(os.listdir(acqdata_path))
+    datafiles.extend(parse_dadfiles(
+        acqdata_path, telemetry, requested_files, acqdata_files))
     # MSTS.xml is no longer required: the scan count is recovered from the
     # MSScan.bin record geometry (see read_scan_records). This lets us parse
     # Agilent OpenLab .rslt/.sirslt result folders, which omit MSTS.xml.
@@ -233,7 +233,7 @@ _SP_PREFIX_SIZE = 16        # f64 start wavelength + f64 step
 _DAD_DEVICES = ('DAD', 'MWD', 'VWD')
 
 
-def parse_dadfiles(path, telemetry=False, requested_files=None):
+def parse_dadfiles(path, telemetry=False, requested_files=None, listing=None):
     """
     Finds and parses the Agilent Masshunter DAD files of a .d directory.
 
@@ -252,16 +252,20 @@ def parse_dadfiles(path, telemetry=False, requested_files=None):
         requested_files (list, optional): Lowercased filenames to restrict the
             parse to, as for the Chemstation parser. Both the file on disk
             (``dad1.cg``) and a per-signal name (``dad1a.cg``) select.
+        listing (iterable, optional): The contents of ``path``, when the caller
+            has already listed it. Saves re-listing the directory.
 
     Returns:
         List containing a DataFile for each parsed signal and spectrum.
 
     """
     datafiles = []
-    if not os.path.isdir(path):
-        return datafiles
+    if listing is None:
+        if not os.path.isdir(path):
+            return datafiles
+        listing = os.listdir(path)
 
-    for name in sorted(os.listdir(path)):
+    for name in sorted(listing):
         stem, ext = os.path.splitext(name)
         if ext.lower() != '.cd' or stem[:3].upper() not in _DAD_DEVICES:
             continue
