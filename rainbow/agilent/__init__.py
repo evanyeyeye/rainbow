@@ -46,9 +46,14 @@ def read(path, precision='auto', hrms=False, requested_files=None,
 
     metadata = chemstation.parse_metadata(path, datafiles)
 
-    # Surface unread MassHunter centroid data so the centroid flag is
-    # discoverable: a .D with MSPeak.bin holds a centroid spectrum that is only
-    # parsed when centroid=True.
+    # Surface unread MassHunter profile/centroid data so the hrms and centroid
+    # flags are discoverable: a .D with MSProfile.bin holds a profile spectrum
+    # parsed only when hrms=True, and MSPeak.bin a centroid spectrum parsed only
+    # when centroid=True. Otherwise read() returns an empty DataDirectory with
+    # no hint that the flag is what's missing.
+    if not hrms and os.path.isfile(
+            os.path.join(path, "AcqData", "MSProfile.bin")):
+        metadata['hrms_available'] = True
     if not centroid and os.path.isfile(
             os.path.join(path, "AcqData", "MSPeak.bin")):
         metadata['centroid_available'] = True
@@ -73,6 +78,36 @@ def read_metadata(path):
 
     datafiles = []
     metadata = chemstation.parse_metadata(path, datafiles)
+
+    # MassHunter acquisitions (a .D with an AcqData subfolder) keep their data
+    # in MSProfile.bin (profile/HRMS) and/or MSPeak.bin (centroid), which the
+    # Chemstation .uv/.ch/.ms scan below never finds - so they used to come
+    # back with an empty datafile list. Mirror masshunter.parse_allfiles'
+    # detection to surface the datafile names and the flags needed to read
+    # them (hrms / centroid), without parsing the binaries.
+    acqdata_path = os.path.join(path, "AcqData")
+    if os.path.isdir(acqdata_path):
+        from rainbow.agilent import masshunter
+        acqdata_files = set(os.listdir(acqdata_path))
+        mh_datafiles = []
+        # A diode-array detector writes its chromatograms and spectra here too,
+        # and read() returns those with no flag needed - so a run holding them
+        # must not be reported as MS-only.
+        for name in sorted(acqdata_files):
+            stem, ext = os.path.splitext(name)
+            if (ext.lower() in ('.cg', '.sp')
+                    and stem[:3].upper() in masshunter._DAD_DEVICES):
+                mh_datafiles.append(name)
+        if {"MSScan.xsd", "MSScan.bin"} <= acqdata_files:
+            if "MSProfile.bin" in acqdata_files:
+                mh_datafiles.append("MSProfile.bin")
+                metadata['hrms_available'] = True
+            if "MSPeak.bin" in acqdata_files:
+                mh_datafiles.append("MSPeak.bin")
+                metadata['centroid_available'] = True
+        if mh_datafiles:
+            return {'datafiles': mh_datafiles, 'metadata': metadata}
+
     if len(metadata) == 1:
         datadir = read(path)
         if datadir:

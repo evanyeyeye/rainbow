@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rainbow-api"
-version = "1.3.0"
+version = "1.4.0"
 description = "Read chromatography and mass spectrometry binary files"
 readme = "README.md"
 license = {text = "COPYING.LESSER"}
@@ -24,6 +24,11 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+# Agilent MassHunter profile data (MSProfile.bin) can carry LZF-compressed
+# segments whose decode needs python-lzf. It is only imported when such a
+# segment is actually encountered, so the base install stays pure-Python;
+# install rainbow-api[hrms] to parse those files (read(..., hrms=True)).
+hrms = ["python-lzf"]
 
 [project.urls]
 Repository = "https://github.com/evanyeyeye/rainbow"

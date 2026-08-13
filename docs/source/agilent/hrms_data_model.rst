@@ -10,7 +10,7 @@ where successive scans often have *different* mass labels. This page explains wh
 the exception exists, how *rainbow* stores these data, and how to work with the
 results.
 
-Some Terminology
+Some terminology
 ----------------
 
 A mass spectrometer reports **intensity** (how much signal was seen) as a
@@ -42,8 +42,9 @@ Centroid vs profile
 
 High-resolution instruments like Q-TOFs create a lot of data, so it is common to
 offer two storage options. A **profile** dataset keeps all the
-points from each scan, whereas a **centroid** dataset only keeps the peaks. One must
-consider the per-array vs. per-scan issue for both dataset formats.
+points from each scan, whereas a **centroid** dataset only keeps the peaks
+(:numref:`fig-centroid-profile`). One must consider the per-array vs. per-scan
+issue for both dataset formats.
 
 .. _fig-centroid-profile:
 
@@ -56,7 +57,7 @@ consider the per-array vs. per-scan issue for both dataset formats.
    ``(m/z, intensity)`` for that same peak.
 
 
-Why Do Mass Labels Change With Time? Drift.
+Why do mass labels change with time? Drift.
 -------------------------------------------
 
 As batches of ions go through the flight tube, the instrument counts ions on
@@ -87,8 +88,9 @@ polynomial fitted per scan. Its core is a quadratic in the flight time :math:`t`
 
 so *m/z* grows with the *square* of the flight time, with two fitted numbers
 :math:`A` and :math:`t_0` per scan. A small **polynomial correction** (up to six
-more coefficients :math:`c_n`, evaluated with :func:`numpy.polyval`) is then
-subtracted on top so the result reproduces the masses Agilent MassHunter reports.
+more coefficients :math:`c_n`, evaluated with :func:`numpy.polyval` on the flight
+time clamped to the calibration's valid range) is then subtracted on top so the
+result reproduces the masses Agilent MassHunter reports.
 Writing the whole conversion out for scan
 :math:`i` at flight time :math:`t_j = \mathrm{tof}[j]`:
 
