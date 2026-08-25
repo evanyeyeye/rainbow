@@ -20,9 +20,16 @@ rainbow/agilent/_uvdelta.c
 rainbow/agilent/_msprofile.c
 rainbow/agilent/_chdelta.c
 
-# local benchmark datasets (not part of the repo). The /data/ rule already
-# covers every real dataset; do not add dataset-named entries here (the names
-# themselves are confidential).
+# working notes, not part of the package
+/asm-notes/
+/asm-reference/
+
+# Local datasets and anything derived from them. Keep them here, under a path
+# this file already covers, rather than adding a new entry per dataset: a
+# per-dataset line is a poor guard (it protects only what someone remembered to
+# list) and the entry outlives the data. Anything outside these paths is not
+# ignored, so check `git status` before committing.
 /data/
-# exported ASM documents from real samples (never commit; real pharma data)
+/datasets/
+# exported ASM documents (never commit; these come from real samples)
 /ASMs/
