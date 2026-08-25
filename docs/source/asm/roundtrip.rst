@@ -58,24 +58,29 @@ fidelity:
      - Recovered when the document carried that identity, which for a sequence
        means the source had a top-level ``sequence.acaml``. Without it, the
        device system is sparse and there is nothing to rebuild.
+   * - **Export-only**
+     - non-absorbance cubes
+     - Import rebuilds absorbance channels. A CAD, ELSD, FID, or RID cube, and
+       a mass chromatogram, are written but not read back, so they survive the
+       export and are dropped at import.
    * - **Lossy**
-     - ``.D`` folder name, unexported method fields
-     - ASM does not store the original ``.D`` directory name (a run is renamed
-       from its sample identifier), nor the method values rainbow reads but does
-       not export, such as column temperature, flow rate, and dilution.
+     - run name, unexported method fields
+     - The ``.D`` directory name is not recovered: import names a run ``asm``
+       unless you pass ``name=``, even though the name may appear in the
+       document as an injection identifier. Nor are the method values rainbow
+       reads but does not export, such as column temperature, flow rate, and
+       dilution.
 
-The lossy fields are lost at export, not at import: they are simply not part of
-what :code:`to_asm` writes, so no reader could recover them. Everything ASM does
-carry comes back faithfully.
+The lossy fields are lost at export: they are not part of what :code:`to_asm`
+writes, so no reader could recover them. The export-only cubes are the other
+way round, present in the document but outside what :code:`from_asm` rebuilds.
 
 Idempotence
 -----------
 
-Because import is the clean inverse of export over the fields ASM stores, a
-second export reproduces the first. The one thing to supply is the run name:
-the run identifier in the document is the original ``.D`` folder name, which
-import otherwise replaces with its default, so pass the same name back to get an
-identical document.
+Over the channels import rebuilds, a second export reproduces the first. The one
+thing to supply is the run name, which import otherwise replaces with its
+default:
 
 .. code-block:: python
 
@@ -83,7 +88,13 @@ identical document.
    again = rb.from_asm(first, name=datadir.name).to_asm()
    assert again == first
 
-Re-exporting does not degrade the data; only the first export off the vendor
-binary drops the lossy fields. One caveat: retention times can differ in their
-last floating-point digit, because the seconds-to-minutes conversion is not
-always exactly reversible. The values themselves are unchanged.
+This holds for a run whose channels are all absorbance. A run that also carries
+a non-absorbance detector does **not** re-export identically: those cubes are
+export-only, so the second document is missing them. A UV and CAD run, for
+instance, comes back with its two absorbance channels and without its CAD
+channel. Compare the cubes you care about rather than the whole document.
+
+Re-exporting does not degrade the data that is rebuilt. One caveat: retention
+times can differ in their last floating-point digit, because the
+seconds-to-minutes conversion is not always exactly reversible. The values
+themselves are unchanged.

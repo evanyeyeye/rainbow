@@ -305,3 +305,43 @@ def test_masshunter_dad_survives_the_lap():
         np.testing.assert_allclose(
             source.data.astype(float), target.data.astype(float))
         np.testing.assert_allclose(source.xlabels, target.xlabels)
+
+
+def test_from_asm_tolerates_a_document_without_measurements():
+    """ A third-party document missing the measurement keys is not fatal. """
+    document = {
+        "liquid chromatography aggregate document": {
+            "liquid chromatography document": [{"analyst": "someone"}],
+        },
+    }
+    datadir = rb.from_asm(document)
+    assert datadir.datafiles == []
+    assert datadir.metadata["operator"] == "someone"
+
+
+def test_from_asm_accepts_a_lone_measurement_object():
+    """ Some writers emit one measurement object where the list is allowed. """
+    document = {
+        "liquid chromatography aggregate document": {
+            "liquid chromatography document": [{
+                "measurement aggregate document": {
+                    "measurement document": {
+                        "measurement identifier": "solo.ch",
+                        "chromatogram data cube": {
+                            "label": "solo.ch",
+                            "cube-structure": {
+                                "dimensions": [{"concept": "retention time",
+                                                "unit": "s"}],
+                                "measures": [{"concept": "absorbance",
+                                              "unit": "mAU"}],
+                            },
+                            "data": {"dimensions": [[0.0, 60.0]],
+                                     "measures": [[1.0, 2.0]]},
+                        },
+                    },
+                },
+            }],
+        },
+    }
+    datadir = rb.from_asm(document)
+    assert [df.name for df in datadir.datafiles] == ["solo.ch"]

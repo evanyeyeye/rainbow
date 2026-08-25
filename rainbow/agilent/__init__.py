@@ -13,8 +13,9 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     Args:
         path (str): Path of the directory or .dx file.
         display_precision (int or 'auto', optional): Decimals for the displayed
-            m/z labels (cosmetic). ``'auto'`` picks 6 for high-resolution data
-            and 0 otherwise, per file.
+            m/z labels (cosmetic). ``'auto'`` picks per file: 4 for the
+            high-resolution MassHunter profile and TOF centroids, and 0 (whole
+            numbers) for unit-resolution data.
         hrms (bool, optional): Flag for parsing the MassHunter profile
             spectrum (MSProfile.bin).
         requested_files (list, optional): List of filenames to parse.

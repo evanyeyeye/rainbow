@@ -57,6 +57,7 @@ http://purl.allotrope.org/json-schemas/adm/gas-chromatography/
 """
 import json
 import os
+import re
 import warnings
 
 import numpy as np
@@ -119,6 +120,24 @@ _MODULE_DEVICE_TYPES = {
     "autosampler": "autosampler",
     "column compartment": "column compartment",
     "detector": "ultraviolet detector",
+}
+
+# Detector modules that are not ultraviolet, keyed by what a vendor writes in a
+# module's name or type. The AFO classes are the ones _DETECTOR_CUBES uses, so
+# an inventory entry agrees with the cube it describes rather than calling every
+# detector ultraviolet. The acronyms are matched as whole words, since "rid" and
+# "cad" both appear inside ordinary ones.
+_SPECIFIC_DETECTOR_PHRASES = (
+    ("flame ionization", "flame ionization detector"),
+    ("refractive index", "refractive index detector"),
+    ("evaporative light scattering", "evaporative light scattering detector"),
+    ("charged aerosol", "liquid chromatography detector"),
+)
+_SPECIFIC_DETECTOR_WORDS = {
+    "fid": "flame ionization detector",
+    "rid": "refractive index detector",
+    "elsd": "evaporative light scattering detector",
+    "cad": "liquid chromatography detector",
 }
 
 # Each single-signal detector becomes a 1-D chromatogram cube. The table gives
@@ -610,6 +629,11 @@ def _module_device_type(module):
     module_type = (module.get("type") or "").lower()
     if "dad" in name or "diode array" in module_type:
         return "diode array detector"
+    # A non-UV detector has to be recognized before the mappings below, whose
+    # generic "detector" entry would otherwise report it as ultraviolet.
+    specific = _specific_detector_type(f"{name} {module_type}")
+    if specific:
+        return specific
     if module_type in _MODULE_DEVICE_TYPES:
         return _MODULE_DEVICE_TYPES[module_type]
     # When the module carries no type (the per-injection modules read from a
@@ -623,6 +647,20 @@ def _module_device_type(module):
         return "column compartment"
     if "detector" in name or name.startswith(("dad", "vwd", "mwd")):
         return "ultraviolet detector"
+    return None
+
+
+def _specific_detector_type(text):
+    """The AFO class for a non-ultraviolet detector named in ``text``, or None."""
+    for phrase, device_type in _SPECIFIC_DETECTOR_PHRASES:
+        if phrase in text:
+            return device_type
+    for acronym, device_type in _SPECIFIC_DETECTOR_WORDS.items():
+        # Vendors number their modules (FID1, RID1A), so allow a trailing
+        # index. The word boundaries keep "rid" out of "hybrid" and "ride",
+        # and "cad" out of "cascade".
+        if re.search(rf"\b{acronym}(\d+[a-z]?)?\b", text):
+            return device_type
     return None
 
 
@@ -1176,8 +1214,13 @@ def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
     analyst = lc_document.get("analyst")
     if analyst and analyst != "unknown":
         metadata.setdefault("operator", analyst)
-    measurements = (lc_document["measurement aggregate document"]
-                    ["measurement document"])
+    # A document rainbow did not write may carry neither key, or carry a single
+    # measurement where the schema allows a list. Absorbing what is there beats
+    # raising on a document that is merely shaped differently.
+    measurements = (lc_document.get("measurement aggregate document", {})
+                    .get("measurement document") or [])
+    if isinstance(measurements, dict):
+        measurements = [measurements]
     for measurement in measurements:
         datafile = _datafile_from_measurement(measurement)
         if datafile is None:

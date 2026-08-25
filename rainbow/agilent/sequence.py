@@ -71,21 +71,28 @@ def _stream(path, names):
     consumer sees the same sequence of elements.
     """
     wanted = set(names)
-    if _lxml is not None:
-        tags = tuple("{*}" + name for name in names)
-        context = _lxml.iterparse(path, events=("end",), tag=tags)
-        for _, element in context:
-            yield _local(element.tag), element
-            element.clear()
-            # Drop already-seen siblings so lxml does not retain the tree.
-            while element.getprevious() is not None:
-                del element.getparent()[0]
-    else:
-        for _, element in ET.iterparse(path, events=("end",)):
-            name = _local(element.tag)
-            if name in wanted:
-                yield name, element
+    # The consumer stops as soon as it has what it needs, which abandons this
+    # generator mid-parse. Owning the handle and closing it in a finally means
+    # an early break releases the file at once rather than at collection time.
+    fileobj = open(path, "rb")
+    try:
+        if _lxml is not None:
+            tags = tuple("{*}" + name for name in names)
+            context = _lxml.iterparse(fileobj, events=("end",), tag=tags)
+            for _, element in context:
+                yield _local(element.tag), element
                 element.clear()
+                # Drop already-seen siblings so lxml does not retain the tree.
+                while element.getprevious() is not None:
+                    del element.getparent()[0]
+        else:
+            for _, element in ET.iterparse(fileobj, events=("end",)):
+                name = _local(element.tag)
+                if name in wanted:
+                    yield name, element
+                    element.clear()
+    finally:
+        fileobj.close()
 
 
 def find(path):

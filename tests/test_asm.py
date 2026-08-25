@@ -652,3 +652,32 @@ def test_masshunter_dad_telemetry_is_not_exported(bronze):
     assert with_telemetry.analog
     assert _by_label(with_telemetry.to_asm()).keys() \
         == _by_label(bronze.to_asm()).keys()
+
+
+def test_non_uv_modules_are_not_reported_as_ultraviolet():
+    # The inventory has to agree with the cube: a module that is plainly an FID
+    # or an RID must not be filed under the generic ultraviolet fallback.
+    from rainbow.asm import _module_device_type
+    assert _module_device_type({"name": "FID1", "type": "detector"}) \
+        == "flame ionization detector"
+    assert _module_device_type({"name": "RID1A", "type": ""}) \
+        == "refractive index detector"
+    assert _module_device_type({"name": "", "type": "evaporative light "
+                                                    "scattering detector"}) \
+        == "evaporative light scattering detector"
+    assert _module_device_type({"name": "Charged Aerosol Detector"}) \
+        == "liquid chromatography detector"
+    # A genuine UV module still maps the way it did.
+    assert _module_device_type({"name": "DAD1", "type": "detector"}) \
+        == "diode array detector"
+    assert _module_device_type({"name": "VWD1", "type": "detector"}) \
+        == "ultraviolet detector"
+
+
+def test_detector_acronyms_are_matched_as_whole_words():
+    # "rid" and "cad" sit inside ordinary words, so a substring match would
+    # mislabel an unrelated module.
+    from rainbow.asm import _module_device_type
+    assert _module_device_type({"name": "Hybrid Column Compartment"}) \
+        == "column compartment"
+    assert _module_device_type({"name": "Cascade Pump"}) == "pump"

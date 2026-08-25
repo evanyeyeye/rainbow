@@ -55,9 +55,11 @@ to [Semantic Versioning](https://semver.org/).
 - **`rb.mz_resolution(path)`** reports the finest m/z spacing a run actually
   records, the practical ceiling on `bin_width`. It is opt-in and never runs
   during an ordinary `rb.read`.
-- **Optional `lxml` acceleration** for sequence parsing, installed with
-  `pip install rainbow-api[speed]`. It uses a tag-filtered iterparse for the
-  large `sequence.acaml`, with the same output as the standard-library fallback.
+- **`lxml`-accelerated sequence parsing.** The large `sequence.acaml` is read
+  with a tag-filtered iterparse, with the same output as the standard-library
+  fallback the module keeps. `lxml` is already a core dependency; the new
+  `pip install rainbow-api[speed]` extra pins the minimum version this path was
+  written against.
 - **Refractive index detector (RID) support** for Agilent data.
 - **More `.dx` archive manifest metadata** surfaced from the OpenLab `.dx`
   manifest.
@@ -83,6 +85,22 @@ to [Semantic Versioning](https://semver.org/).
   `bin_width=` to control the binning step.
 
 ### Fixed
+- **A non-ultraviolet detector module is no longer reported as an ultraviolet
+  one** in a document's instrument inventory. Any module whose type was
+  `detector`, or whose name merely contained the word, was filed under the
+  generic ultraviolet class, so an FID, RID, ELSD, or charged-aerosol module
+  contradicted the very cube it described. Each now maps to the AFO class its
+  cube already uses. The acronyms are matched as whole words with an optional
+  module index (`FID1`, `RID1A`), so `hybrid` and `cascade` are not mistaken
+  for detectors.
+- **`rb.from_asm` no longer raises on a third-party document that omits the
+  measurement keys**, or that carries a single measurement object where the
+  schema also allows a list. It reads what is present, in keeping with the rest
+  of its handling of documents rainbow did not write.
+- **The `sequence.acaml` reader closes its file deterministically.** The parse
+  stops as soon as it has the instrument, which abandons the iterator
+  mid-document and left the handle to be closed whenever the interpreter got
+  round to it. It is now closed as the reader unwinds.
 - **An Agilent MassHunter DAD signal now reports its optics.** The `.cd`
   descriptor gives each signal the same `Sig=`/`Ref=` description Chemstation
   writes, but it was left unparsed, so a `.cg` channel carried no `wavelength`,
