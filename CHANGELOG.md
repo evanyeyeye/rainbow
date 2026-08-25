@@ -55,11 +55,10 @@ to [Semantic Versioning](https://semver.org/).
 - **`rb.mz_resolution(path)`** reports the finest m/z spacing a run actually
   records, the practical ceiling on `bin_width`. It is opt-in and never runs
   during an ordinary `rb.read`.
-- **`lxml`-accelerated sequence parsing.** The large `sequence.acaml` is read
-  with a tag-filtered iterparse, with the same output as the standard-library
-  fallback the module keeps. `lxml` is already a core dependency; the new
-  `pip install rainbow-api[speed]` extra pins the minimum version this path was
-  written against.
+- **`lxml`-accelerated sequence parsing**, installed with
+  `pip install rainbow-api[speed]`. The large `sequence.acaml` is read with a
+  tag-filtered iterparse, with the same output as the standard-library
+  fallback.
 - **Refractive index detector (RID) support** for Agilent data.
 - **More `.dx` archive manifest metadata** surfaced from the OpenLab `.dx`
   manifest.
@@ -74,6 +73,21 @@ to [Semantic Versioning](https://semver.org/).
   channel.
 
 ### Changed
+- **`import rainbow` is about four times faster** (roughly 160 ms to 40 ms on
+  the machine this was measured on). `pandas`, needed only for the Waters
+  transition table, was imported at module load and was by a wide margin the
+  largest cost of importing the package. It is now imported where it is used,
+  as `matplotlib` already was. Both remain required, so calling either still
+  works on a plain install.
+- **`lxml` is now optional. Breaking for `rainbow.debug` only:** reading data
+  no longer needs it. The vendor XML paths that used lxml-only XPath were
+  rewritten against the standard library, and every bundled fixture parses to
+  an identical result with and without lxml, so a plain install reads the same
+  files it always did. `rainbow.debug` is the exception: it recovers structure
+  from malformed and mis-encoded sidecars, which needs lxml's recovering
+  parser, and now raises a message naming
+  `pip install rainbow-api[debug]` rather than failing at import. Install
+  `rainbow-api[speed]` to keep the faster XML path.
 - **m/z binning split into `display_precision` and `bin_width`. Breaking:** the
   `precision` argument to `rb.read` (and the vendor parsers) is replaced by two
   independent controls. `display_precision` (default `'auto'`) is cosmetic and

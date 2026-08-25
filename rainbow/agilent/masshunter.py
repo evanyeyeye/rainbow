@@ -6,7 +6,12 @@ import os
 import struct
 import warnings
 import numpy as np
-from lxml import etree
+# lxml is an optional accelerator; see the note in chemstation.py. This module
+# only parses well-formed vendor XML, which ElementTree handles too.
+try:
+    from lxml import etree
+except ImportError:
+    import xml.etree.ElementTree as etree
 from rainbow import DataFile
 from rainbow.agilent.chemstation import parse_optics
 
@@ -1784,7 +1789,11 @@ def parse_scan_xsd(xsd_path):
     """
     tree = etree.parse(xsd_path)
     root = tree.getroot()
-    namespace = tree.xpath('namespace-uri(.)')
+    # The schema's own namespace, which every type below is qualified by. It is
+    # the root tag's "{namespace}" prefix, or empty if the document declares
+    # none.
+    namespace = root.tag[1:root.tag.index('}')] \
+        if root.tag.startswith('{') else ''
     complextypes_dict = {}
     for complextype in root.findall(f"{{{namespace}}}complexType"):
         innertypes = []

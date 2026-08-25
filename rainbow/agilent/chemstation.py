@@ -8,7 +8,13 @@ import re
 import struct
 from collections import Counter
 import numpy as np
-from lxml import etree
+# lxml is an optional accelerator. Everything this module asks of it is in the
+# standard library's ElementTree too, so the fallback parses the same documents;
+# only rainbow.debug, which needs lxml's recovering parser, truly requires it.
+try:
+    from lxml import etree
+except ImportError:
+    import xml.etree.ElementTree as etree
 from rainbow.datafile import DataFile
 from rainbow._binning import bin_datapairs
 
@@ -996,7 +1002,9 @@ def parse_metadata(path, datafiles):
         if "sample_info.xml" in os.listdir(acqdata_path):
             tree = etree.parse(os.path.join(acqdata_path, "sample_info.xml"))
             root = tree.getroot()
-            for samplefield in root.xpath('//Field[Name="Sample Position"]'):
+            for samplefield in root.iter("Field"):
+                if samplefield.findtext("Name") != "Sample Position":
+                    continue
                 vialnum = samplefield.find("Value")
                 if vialnum is not None and len(vialnum.text.split()) == 1:
                     metadata['vialpos'] = vialnum.text
@@ -1106,10 +1114,21 @@ def get_xml_vialnum(path):
     """
     tree = etree.parse(path)
     root = tree.getroot()
-    for vialnum in root.xpath("//*[local-name()='VialNumber']"):
-        if vialnum.text:
-            return vialnum.text
+    for element in root.iter():
+        if _local_name(element.tag) == "VialNumber" and element.text:
+            return element.text
     return None
+
+
+def _local_name(tag):
+    """
+    The name of a tag without its namespace.
+
+    An element's tag is ``{namespace}name`` when the document declares one, so
+    matching on the local name finds it either way.
+
+    """
+    return tag.rpartition('}')[2] if isinstance(tag, str) else ''
 
 
 def get_nextstr(str_list, target_str):

@@ -14,7 +14,15 @@ streaming pass that stops at the first ``<scan>``: it never materializes the
 spectral data, the same "skip the bulk numeric payload, keep the identifiers"
 line the other parsers draw.
 """
-from lxml import etree
+# lxml's recovering parser is what lets a truncated mzXML still yield its
+# header; see the note in rainbow/debug/xml.py. Guarded so importing rainbow
+# does not require lxml.
+try:
+    from lxml import etree
+except ImportError:
+    etree = None
+
+from rainbow.debug._util import require_lxml
 
 NAME = "mzxml"
 
@@ -32,6 +40,9 @@ def parse(path):
     """
     Reads the mzXML header (everything before the first ``<scan>``).
 
+    Requires lxml, whose recovering parser is what lets a truncated file still
+    yield its header.
+
     Streams with ``iterparse`` and breaks at the first scan, so the megabytes of
     base64 peak data are never parsed. Returns the run-level attributes, the
     ``parentFile`` references, the instrument description, and the software
@@ -46,6 +57,7 @@ def parse(path):
         ``{'parser': 'mzxml', 'error': ...}`` if the header cannot be read.
 
     """
+    require_lxml(etree, "an mzXML header")
     msrun = {}
     parent_files = []
     instrument = {}

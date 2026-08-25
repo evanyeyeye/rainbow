@@ -9,7 +9,10 @@ import re
 import numpy as np
 from rainbow.datafile import DataFile
 from rainbow._binning import bin_datapairs
-import pandas as pd
+# pandas is imported where it is used, not here. It is the single largest cost
+# in importing rainbow, and only this module's transition table needs it, so
+# paying for it on every import would tax every read that never touches one.
+# matplotlib is deferred the same way, in datafile.plot.
 
 
 # Lookup tables for the per-pair exponents in the 6-byte _FUNC.DAT format.
@@ -792,6 +795,7 @@ def parse_compound_names(path):
     for i in range(0, len(data), 3):
         compounds.append(data[i])
         transition.append(data[i+1])
+    import pandas as pd
     df = pd.DataFrame({"compounds": compounds, "transition": transition})
 
     df["index"] =  [i for i in range(1, len(transition)+1)]

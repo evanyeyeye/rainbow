@@ -15,10 +15,13 @@ authors = [
 classifiers = [
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
 ]
+# matplotlib (DataFile.plot) and pandas (the Waters transition table) are
+# imported where they are used rather than at module load, so importing rainbow
+# does not pay for them. They stay required so that calling either still works
+# on a plain install. lxml is genuinely optional and lives in the extras below.
 dependencies = [
     "numpy",
     "matplotlib",
-    "lxml",
     "pandas"
 ]
 
@@ -33,11 +36,14 @@ hrms = ["python-lzf"]
 # jsonschema >= 4.18 pulls in the `referencing` registry used to resolve the
 # Allotrope schema's cross-references.
 validate = ["jsonschema>=4.18"]
-# lxml is already a core dependency, so the sequence.acaml reader's filtered
-# iterparse path (see rainbow/agilent/sequence.py) is always available; it keeps
-# an xml.etree fallback only so the module works if that ever stops being true.
-# This extra exists to pin the newer minimum that path was written against.
+# Optional accelerator: with lxml the vendor XML and the large sequence.acaml
+# are read through its parser and filtered iterparse (see
+# rainbow/agilent/sequence.py). Without it the standard library's ElementTree
+# reads the same documents to the same result, just more slowly.
 speed = ["lxml>=4.9"]
+# rainbow.debug genuinely requires lxml: it recovers structure from malformed
+# and mis-encoded vendor sidecars, which ElementTree cannot do at all.
+debug = ["lxml>=4.9"]
 
 [project.urls]
 Repository = "https://github.com/evanyeyeye/rainbow"

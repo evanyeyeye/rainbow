@@ -36,3 +36,24 @@ def decode_text(raw):
         return raw.decode(enc, "replace")
     except (LookupError, ValueError):
         return raw.decode("latin-1", "replace")
+
+
+def require_lxml(etree, what):
+    """
+    Raises a clear error when a debug parser is used without lxml installed.
+
+    The debug parsers recover structure from malformed and mis-encoded
+    sidecars, which the standard library's parser cannot do, so lxml is a real
+    requirement here rather than an accelerator. Callers pass the ``etree`` they
+    imported, which is None when lxml is absent.
+
+    Args:
+        etree: The imported lxml etree module, or None.
+        what (str): What the caller was trying to read, for the message.
+
+    """
+    if etree is None:
+        raise ImportError(
+            f"Reading {what} needs lxml, which recovers structure from the "
+            f"malformed sidecars vendors write. Install it with "
+            f"'pip install rainbow-api[debug]'.")

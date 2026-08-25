@@ -19,9 +19,16 @@ See ``docs/debug/formats/xml.md`` for the per-schema field documentation.
 """
 import re
 
-from lxml import etree
+# This module recovers structure from malformed and mis-encoded sidecars, which
+# needs lxml's recovering parser; the standard library has no equivalent. The
+# import is guarded so that rainbow itself still imports without lxml, and only
+# using the debug subsystem asks for it.
+try:
+    from lxml import etree
+except ImportError:
+    etree = None
 
-from rainbow.debug._util import decode_text
+from rainbow.debug._util import decode_text, require_lxml
 
 NAME = "xml"
 
@@ -120,6 +127,9 @@ def parse(path):
     """
     Parses an XML sidecar into its faithful nested-dict structure.
 
+    Requires lxml, whose recovering parser is what makes a malformed sidecar
+    readable.
+
     Args:
         path (str): Path of the XML file.
 
@@ -128,6 +138,7 @@ def parse(path):
         'tree': {...}}``, or ``{'parser': 'xml', 'error': ...}`` if unparseable.
 
     """
+    require_lxml(etree, "an XML sidecar")
     with open(path, "rb") as f:
         raw = f.read()
     # An empty (or whitespace-only, or BOM-only) file is a benign vendor
