@@ -594,3 +594,61 @@ def test_sequence_routes_by_an_injection_technique():
     # And the sequence-level override still wins.
     assert _aggregate_key(sequence.to_asm(technique="LC")) \
         == "liquid chromatography aggregate document"
+
+
+# ---------------------------------------------------------------------------
+# Agilent MassHunter DAD (.cd/.cg/.sd/.sp).
+#
+# The exporter routes on the detector, not the file format, so a MassHunter
+# DAD's channels export the same way a Chemstation .ch and .uv pair does: one
+# chromatogram cube per single-wavelength signal, one spectrum cube for the
+# wavelength grid. These pin that down, since the two formats reach it by
+# different parsers.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def bronze():
+    return rb.read("tests/inputs/bronze.D")
+
+
+def test_masshunter_dad_exports_every_signal_and_the_spectrum(bronze):
+    by_label = _by_label(bronze.to_asm())
+    assert sorted(by_label) == [
+        "DAD1.sp", "DAD1A.cg", "DAD1B.cg", "DAD1C.cg", "DAD1D.cg", "DAD1E.cg"]
+    assert _SPECTRUM_KEY in by_label["DAD1.sp"]
+    for letter in "ABCDE":
+        assert _CHROM_KEY in by_label[f"DAD1{letter}.cg"]
+
+
+def test_masshunter_dad_carries_the_detector_wavelength_setting(bronze):
+    # The signal descriptions follow the Chemstation convention, so each
+    # channel's optics reach the document the same way a .ch channel's do.
+    by_label = _by_label(bronze.to_asm())
+    for label, expected in (("DAD1A.cg", 254.0), ("DAD1B.cg", 210.0),
+                            ("DAD1C.cg", 280.0), ("DAD1D.cg", 400.0),
+                            ("DAD1E.cg", 260.0)):
+        control = (by_label[label]["device control aggregate document"]
+                   ["device control document"][0])
+        assert control["detector wavelength setting"] == {
+            "value": expected, "unit": "nm"}
+
+
+def test_masshunter_dad_cube_off_keeps_the_signals(bronze):
+    by_label = _by_label(bronze.to_asm(export_dad_cube=False))
+    assert "DAD1.sp" not in by_label
+    assert len(by_label) == 5
+
+
+def test_masshunter_dad_wavelengths_subset_the_spectrum(bronze):
+    cube = _by_label(bronze.to_asm(wavelengths=[254, 280]))["DAD1.sp"]
+    assert cube[_SPECTRUM_KEY]["data"]["dimensions"][1] == [254.0, 280.0]
+
+
+def test_masshunter_dad_telemetry_is_not_exported(bronze):
+    # Telemetry is analog data, not a detector channel, so it stays out of the
+    # document even when parsed. It also carries a different point count from
+    # the absorbance signals, so a leak would not go unnoticed.
+    with_telemetry = rb.read("tests/inputs/bronze.D", telemetry=True)
+    assert with_telemetry.analog
+    assert _by_label(with_telemetry.to_asm()).keys() \
+        == _by_label(bronze.to_asm()).keys()

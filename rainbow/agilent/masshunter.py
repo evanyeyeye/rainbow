@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 from lxml import etree
 from rainbow import DataFile
+from rainbow.agilent.chemstation import parse_optics
 
 # NOTE: `lzf` (python-lzf) is imported lazily inside parse_msdata, and only
 # when an LZF-compressed MSProfile.bin segment is actually encountered. The
@@ -568,7 +569,13 @@ def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
             times,
             np.array([_signal_wavelength(signal['description'])]),
             values.reshape(-1, 1).copy(),
-            {'signal': signal['description'], 'unit': signal['unit']}))
+            # The description follows the Chemstation convention, so its optics
+            # are surfaced by the same parser the .ch and .dx readers use. A
+            # telemetry trace has no Sig= clause and simply adds nothing. This
+            # is what lets an export record the channel's wavelength setting
+            # rather than leaving it to be inferred from the ylabel.
+            {'signal': signal['description'], 'unit': signal['unit'],
+             **parse_optics(signal['description'])}))
 
     return datafiles
 

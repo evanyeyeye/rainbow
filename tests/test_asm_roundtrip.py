@@ -285,3 +285,23 @@ def test_from_asm_skips_mass_chromatogram_keeps_uv():
 
     assert [df.name for df in datadir.datafiles] == ["trace-uv"]
     assert datadir.datafiles[0].detector == 'UV'
+
+
+def test_masshunter_dad_survives_the_lap():
+    """ A MassHunter DAD's signals and spectra come back unchanged. """
+    original = rb.read(os.path.join(INPUTS, "bronze.D"))
+    reconstructed = rb.from_asm(original.to_asm())
+
+    before = {df.name: df for df in original.datafiles}
+    after = {df.name: df for df in reconstructed.datafiles}
+    assert before.keys() == after.keys()
+    for name, source in before.items():
+        target = after[name]
+        # The wavelength of a single-signal channel travels as the detector
+        # wavelength setting, so it survives rather than coming back blank.
+        np.testing.assert_allclose(
+            np.asarray(source.ylabels, dtype=float),
+            np.asarray(target.ylabels, dtype=float))
+        np.testing.assert_allclose(
+            source.data.astype(float), target.data.astype(float))
+        np.testing.assert_allclose(source.xlabels, target.xlabels)

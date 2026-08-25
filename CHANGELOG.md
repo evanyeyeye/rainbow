@@ -63,6 +63,13 @@ to [Semantic Versioning](https://semver.org/).
   manifest.
 - **Opt-in ASM conformance tests** against a pinned Allotrope schema and the
   Allotrope Foundation Ontology (AFO), enabled with `RAINBOW_TEST_ASM_SCHEMA=1`.
+- **ASM export covers Agilent MassHunter DAD data**, added in 1.4.0. Export
+  routes on the detector rather than the file format, so a MassHunter run's
+  signals and spectra map exactly as a Chemstation `.ch`/`.uv` pair does: one
+  chromatogram cube per single-wavelength signal and one 3D spectrum cube for
+  the wavelength grid, both honouring `export_dad_cube` and `wavelengths`. A
+  DAD's telemetry stays analog data and is never exported as a detector
+  channel.
 
 ### Changed
 - **m/z binning split into `display_precision` and `bin_width`. Breaking:** the
@@ -74,6 +81,16 @@ to [Semantic Versioning](https://semver.org/).
   and the per-scan axis for HRMS profile data), so binned output is unchanged by
   default. Code passing `precision=` must now pass `display_precision=`, or
   `bin_width=` to control the binning step.
+
+### Fixed
+- **An Agilent MassHunter DAD signal now reports its optics.** The `.cd`
+  descriptor gives each signal the same `Sig=`/`Ref=` description Chemstation
+  writes, but it was left unparsed, so a `.cg` channel carried no `wavelength`,
+  `bandwidth`, or reference band in its metadata while the equivalent `.ch`
+  channel did. They are now read with the parser the `.ch` and `.dx` readers
+  already share. An ASM export of a MassHunter DAD consequently records each
+  channel's detector wavelength setting, and a document that had lost the
+  wavelength on the way back through `rb.from_asm` now round-trips intact.
 
 ## [1.4.0] - 2026-08-13
 

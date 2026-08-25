@@ -1474,3 +1474,24 @@ def test_bin_to_grid_sparse_path_matches_dense(monkeypatch):
     np.testing.assert_array_equal(grid, np.array([[5, 7, 0],
                                                   [3, 0, 9],
                                                   [0, 10, 0]], dtype=np.uint64))
+
+
+def test_dad_signals_carry_their_optics():
+    """ A DAD signal surfaces the optics its description encodes. """
+    datafiles = masshunter.parse_dadfiles(BRONZE_ACQDATA)
+    by_name = {df.name: df for df in datafiles}
+    signal = by_name["DAD1A.cg"]
+    assert signal.metadata["wavelength"] == 254.0
+    assert signal.metadata["bandwidth"] == 4.0
+    assert signal.metadata["reference_wavelength"] == 360.0
+    # "Ref=off" means there is no reference band to record.
+    assert "reference_wavelength" not in by_name["DAD1D.cg"].metadata
+
+
+def test_dad_telemetry_has_no_optics():
+    """ A telemetry trace has no Sig= clause, so it gains no optics. """
+    datafiles = masshunter.parse_dadfiles(BRONZE_ACQDATA, telemetry=True)
+    telemetry = [df for df in datafiles if df.detector is None]
+    assert telemetry
+    for datafile in telemetry:
+        assert "wavelength" not in datafile.metadata
