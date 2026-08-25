@@ -119,7 +119,6 @@ _MODULE_DEVICE_TYPES = {
     "auto sampler": "autosampler",
     "autosampler": "autosampler",
     "column compartment": "column compartment",
-    "detector": "ultraviolet detector",
 }
 
 # Detector modules that are not ultraviolet, keyed by what a vendor writes in a
@@ -132,13 +131,32 @@ _SPECIFIC_DETECTOR_PHRASES = (
     ("refractive index", "refractive index detector"),
     ("evaporative light scattering", "evaporative light scattering detector"),
     ("charged aerosol", "liquid chromatography detector"),
+    # An analog input channel is how a vendor exposes a detector it does not
+    # model: red.D's charged-aerosol detector arrives as one. Generic, because
+    # what is wired into it is not knowable from the name.
+    ("analog/digital converter", "liquid chromatography detector"),
+    ("analog to digital converter", "liquid chromatography detector"),
+    ("mass spectrometer", "mass spectrometer"),
+    ("mass selective", "mass spectrometer"),
 )
+# Matched as whole words with an optional module index, so "rid" stays out of
+# "hybrid" and "cad" out of "cascade". Both the bare and the -D spellings are
+# listed, since a word boundary does not span "els" into "elsd".
 _SPECIFIC_DETECTOR_WORDS = {
     "fid": "flame ionization detector",
     "rid": "refractive index detector",
+    "ri": "refractive index detector",
     "elsd": "evaporative light scattering detector",
+    "els": "evaporative light scattering detector",
     "cad": "liquid chromatography detector",
+    "adc": "liquid chromatography detector",
+    "msd": "mass spectrometer",
+    "qqq": "mass spectrometer",
+    "qtof": "mass spectrometer",
 }
+# Names that genuinely say ultraviolet. Anything else that is merely "a
+# detector" gets the generic class rather than an invented absorbance claim.
+_UV_NAME = re.compile(r"\b(uv|vwd|mwd)(\d+[a-z]?)?\b")
 
 # Each single-signal detector becomes a 1-D chromatogram cube. The table gives
 # the AFO device type and the cube's measure concept and unit:
@@ -627,13 +645,15 @@ def _module_device_type(module):
     """The AFO device type for a module, or None if it cannot be mapped."""
     name = (module.get("name") or "").lower()
     module_type = (module.get("type") or "").lower()
-    if "dad" in name or "diode array" in module_type:
+    text = f"{name} {module_type}"
+    if "dad" in name or "diode array" in text:
         return "diode array detector"
-    # A non-UV detector has to be recognized before the mappings below, whose
-    # generic "detector" entry would otherwise report it as ultraviolet.
-    specific = _specific_detector_type(f"{name} {module_type}")
+    # A detector that can be named must be recognized before anything below
+    # falls back to a generic class.
+    specific = _specific_detector_type(text)
     if specific:
         return specific
+    # A declared non-detector type is unambiguous, so it wins over the name.
     if module_type in _MODULE_DEVICE_TYPES:
         return _MODULE_DEVICE_TYPES[module_type]
     # When the module carries no type (the per-injection modules read from a
@@ -645,8 +665,14 @@ def _module_device_type(module):
         return "autosampler"
     if "column" in name:
         return "column compartment"
-    if "detector" in name or name.startswith(("dad", "vwd", "mwd")):
+    if _UV_NAME.search(text) or "absorbance" in text:
         return "ultraviolet detector"
+    # Plainly a detector, but not one that can be named. The generic AFO
+    # detector class says that much without asserting an absorbance measurement
+    # the module may not make: an inventory entry that contradicts the cube it
+    # describes is worse than one that is merely unspecific.
+    if "detector" in text:
+        return "liquid chromatography detector"
     return None
 
 
@@ -1134,6 +1160,54 @@ def from_asm(document, name="asm"):
     return _directory(name, datafiles, metadata, peak_groups)
 
 
+def _first(value):
+    """
+    The first entry of a field the schema declares as a list, or ``{}``.
+
+    Documents rainbow did not write are shaped more freely than its own: a
+    writer may emit a lone object where a list is declared, or an empty list
+    where rainbow assumes one entry. Callers want whichever object is there, or
+    nothing, never an IndexError on someone else's document.
+
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list) and value and isinstance(value[0], dict):
+        return value[0]
+    return {}
+
+
+def _as_documents(value):
+    """A schema list field normalized to a list, tolerating a lone object."""
+    if isinstance(value, dict):
+        return [value]
+    return value if isinstance(value, list) else []
+
+
+def _cube_data(cube):
+    """
+    A cube's inlined ``(dimensions, measures)``, or None when it has none.
+
+    The published cube structure does not require the ``data`` member, so a
+    conforming document may describe a cube's shape while carrying its values
+    somewhere rainbow cannot follow. Such a cube is skipped the way an
+    unrepresentable one is, rather than taking the whole read down.
+
+    """
+    if not isinstance(cube, dict):
+        return None
+    data = cube.get("data")
+    if not isinstance(data, dict):
+        return None
+    dimensions = data.get("dimensions")
+    measures = data.get("measures")
+    if not isinstance(dimensions, list) or not dimensions:
+        return None
+    if not isinstance(measures, list) or not measures:
+        return None
+    return dimensions, measures
+
+
 def _aggregate_and_documents(document):
     """The aggregate document and its per-injection documents, either technique.
 
@@ -1143,8 +1217,8 @@ def _aggregate_and_documents(document):
     """
     for technique in (_LC, _GC):
         aggregate = document.get(technique["aggregate"])
-        if aggregate is not None:
-            return aggregate, aggregate.get(technique["document"], [])
+        if isinstance(aggregate, dict):
+            return aggregate, _as_documents(aggregate.get(technique["document"]))
     raise KeyError(
         "document has no liquid- or gas-chromatography aggregate document")
 
@@ -1211,17 +1285,20 @@ def _directory(name, datafiles, metadata, peak_groups):
 
 def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
     """Reads one liquid chromatography document into datafiles and metadata."""
+    if not isinstance(lc_document, dict):
+        return
     analyst = lc_document.get("analyst")
     if analyst and analyst != "unknown":
         metadata.setdefault("operator", analyst)
-    # A document rainbow did not write may carry neither key, or carry a single
-    # measurement where the schema allows a list. Absorbing what is there beats
+    # A document rainbow did not write may carry neither key, or emit a single
+    # measurement where a list is declared. Absorbing what is there beats
     # raising on a document that is merely shaped differently.
-    measurements = (lc_document.get("measurement aggregate document", {})
-                    .get("measurement document") or [])
-    if isinstance(measurements, dict):
-        measurements = [measurements]
+    measurements = _as_documents(
+        _first(lc_document.get("measurement aggregate document"))
+        .get("measurement document"))
     for measurement in measurements:
+        if not isinstance(measurement, dict):
+            continue
         datafile = _datafile_from_measurement(measurement)
         if datafile is None:
             continue  # a measurement rainbow did not write (no UV cube)
@@ -1234,7 +1311,7 @@ def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
 
 def _absorb_envelope(measurement, metadata):
     """Lifts a measurement's envelope fields up to directory metadata."""
-    sample = measurement.get("sample document", {})
+    sample = _first(measurement.get("sample document"))
     identifier = sample.get("sample identifier")
     if identifier and identifier != "unknown":
         metadata.setdefault("sample", identifier)
@@ -1259,25 +1336,30 @@ def _datafile_from_measurement(measurement):
     name = measurement.get("measurement identifier", "trace")
     file_metadata = {}
 
-    control = (measurement.get("device control aggregate document", {})
-               .get("device control document", [{}])[0])
+    control = _first(_first(measurement.get(
+        "device control aggregate document")).get("device control document"))
     setting = control.get("detector wavelength setting")
-    wavelength = setting["value"] if setting else None
+    wavelength = setting.get("value") if isinstance(setting, dict) else None
 
     if _SPECTRUM_CUBE in measurement:
-        cube = measurement[_SPECTRUM_CUBE]["data"]
-        times, wavelengths = cube["dimensions"][0], cube["dimensions"][1]
+        cube = _cube_data(measurement[_SPECTRUM_CUBE])
+        if cube is None or len(cube[0]) < 2:
+            return None  # no inlined grid to rebuild
+        dimensions, measures = cube
+        times, wavelengths = dimensions[0], dimensions[1]
         xlabels = np.array(times, dtype=float) / _SECONDS_PER_MINUTE
         ylabels = np.array(wavelengths, dtype=float)
         # Un-flatten the grid (wavelength varied fastest, i.e. C order).
-        data = np.array(cube["measures"][0], dtype=float).reshape(
+        data = np.array(measures[0], dtype=float).reshape(
             len(times), len(wavelengths))
     elif _CHROMATOGRAM_CUBE in measurement and _is_absorbance(
             measurement[_CHROMATOGRAM_CUBE]):
-        cube = measurement[_CHROMATOGRAM_CUBE]["data"]
-        xlabels = np.array(cube["dimensions"][0], dtype=float) \
-            / _SECONDS_PER_MINUTE
-        data = np.array(cube["measures"][0], dtype=float).reshape(-1, 1)
+        cube = _cube_data(measurement[_CHROMATOGRAM_CUBE])
+        if cube is None:
+            return None  # no inlined values to rebuild
+        dimensions, measures = cube
+        xlabels = np.array(dimensions[0], dtype=float) / _SECONDS_PER_MINUTE
+        data = np.array(measures[0], dtype=float).reshape(-1, 1)
         if wavelength is not None:
             ylabels = np.array([wavelength])
             file_metadata["wavelength"] = wavelength
@@ -1296,26 +1378,22 @@ def _datafile_from_measurement(measurement):
 
 def _is_absorbance(cube):
     """Whether a chromatogram cube's measure is absorbance (a UV trace)."""
-    measures = cube.get("cube-structure", {}).get("measures", [])
-    return bool(measures) and measures[0].get("concept") == "absorbance"
+    measures = _first(cube.get("cube-structure")).get("measures")
+    return _first(measures).get("concept") == "absorbance"
 
 
 def _peaks_from_measurement(measurement):
     """Reconstructs a peak group from a measurement's processed data, or None."""
-    processed = measurement.get(_PROCESSED_DATA)
-    if not processed:
-        return None
-    documents = processed.get("processed data document", [])
-    if not documents:
-        return None
-    asm_peaks = documents[0].get("peak list", {}).get("peak", [])
+    processed = _first(measurement.get(_PROCESSED_DATA))
+    document = _first(processed.get("processed data document"))
+    asm_peaks = _as_documents(_first(document.get("peak list")).get("peak"))
     if not asm_peaks:
         return None
 
     channel = measurement.get("measurement identifier")
     wavelength = None
-    control = (measurement.get("device control aggregate document", {})
-               .get("device control document", [{}])[0])
+    control = _first(_first(measurement.get(
+        "device control aggregate document")).get("device control document"))
     setting = control.get("detector wavelength setting")
     if setting:
         wavelength = setting.get("value")

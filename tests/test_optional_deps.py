@@ -105,18 +105,28 @@ def test_plot_without_matplotlib_names_the_extra(without):
         datafile.plot(datafile.ylabels[0])
 
 
-def test_transition_table_without_pandas_names_the_extra(without, tmp_path):
-    from rainbow.waters import masslynx
-    # A minimal _FUNC001.CMP: a 7-byte header, then NUL-separated triples of
-    # compound, transition, and a trailing field the reader steps over.
+@pytest.fixture
+def transition_dir(tmp_path):
+    """A minimal _FUNC001.CMP: a 7-byte header, then NUL-separated fields."""
     raw = b"HEADER!" + b"\x00".join(
         [b"caffeine", b"195>138", b"1", b"", b""]) + b"\x00"
     (tmp_path / "_FUNC001.CMP").write_bytes(raw)
+    return str(tmp_path)
 
-    # It parses normally when pandas is importable.
-    table = masslynx.parse_compound_names(str(tmp_path))
+
+def test_transition_table_parses_when_pandas_is_installed(transition_dir):
+    # Skipped rather than failed where pandas is absent, since it is an extra:
+    # a bare `pip install -e .[test]` does not bring it.
+    pytest.importorskip("pandas", reason="pip install -e .[waters]")
+    from rainbow.waters import masslynx
+    table = masslynx.parse_compound_names(transition_dir)
     assert list(table["compounds"]) == ["caffeine"]
 
+
+def test_transition_table_without_pandas_names_the_extra(without,
+                                                         transition_dir):
+    # This half needs no pandas: it asserts the failure, so it runs everywhere.
+    from rainbow.waters import masslynx
     without("pandas")
     with pytest.raises(ImportError, match=r"pandas.*rainbow-api\[waters\]"):
-        masslynx.parse_compound_names(str(tmp_path))
+        masslynx.parse_compound_names(transition_dir)

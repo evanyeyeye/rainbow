@@ -26,7 +26,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+# The suite exercises the optional paths as well as the core ones, so it wants
+# the extras too; each such test skips rather than fails if one is missing.
+test = ["pytest", "matplotlib", "pandas"]
 # Agilent MassHunter profile data (MSProfile.bin) can carry LZF-compressed
 # segments whose decode needs python-lzf. It is only imported when such a
 # segment is actually encountered, so the base install stays pure-Python;

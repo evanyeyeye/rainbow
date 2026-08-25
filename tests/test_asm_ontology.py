@@ -99,7 +99,7 @@ def test_emitted_terms_are_afo_classes():
     # module device type.
     for path in ("tests/inputs/red.D", "tests/inputs/teal.dx",
                  "tests/inputs/green.D", "tests/inputs/pink.D",
-                 "tests/inputs/orange.D"):
+                 "tests/inputs/orange.D", "tests/inputs/bronze.D"):
         _collect_terms(rb.read(path).to_asm(), terms)
     _collect_terms(_document_with_all_device_types(), terms)
 

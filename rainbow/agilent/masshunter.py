@@ -6,8 +6,8 @@ import os
 import struct
 import warnings
 import numpy as np
-# lxml is an optional accelerator; see the note in chemstation.py. This module
-# only parses well-formed vendor XML, which ElementTree handles too.
+# See the note in chemstation.py: lxml is a dependency, and the ElementTree
+# fallback is insurance. This module only parses well-formed vendor XML.
 try:
     from lxml import etree
 except ImportError:
@@ -847,15 +847,14 @@ def _signal_wavelength(description):
     Pulls the wavelength out of a signal description, or 0 if it has none.
 
     The descriptions follow the Chemstation convention, e.g.
-    ``Sig=254.0,4.0  Ref=360.0,100.0`` for a signal at 254 nm.
+    ``Sig=254.0,4.0  Ref=360.0,100.0`` for a signal at 254 nm, sometimes with
+    the channel prefixed (``DAD1B, Sig=280.0,4.0``).
 
     """
-    if not description.startswith('Sig='):
-        return 0.0
-    try:
-        return float(description[4:].split(',', 1)[0])
-    except ValueError:
-        return 0.0
+    # Uses the same parser the metadata does, so the ylabel and the recorded
+    # wavelength cannot disagree on a prefixed description such as
+    # "DAD1B, Sig=280.0,4.0".
+    return parse_optics(description).get('wavelength', 0.0)
 
 
 """

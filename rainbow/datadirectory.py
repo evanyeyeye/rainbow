@@ -99,7 +99,12 @@ class DataDirectory:
         Prints a summary of the miscellaneous analog data.
 
         """
-        print("\n".join(f"{datafile.name}: {datafile.metadata['description']}"
+        # Vendors name the field differently ('description' for a .dx trace,
+        # 'signal' for a MassHunter DAD's telemetry), and a trace may carry
+        # neither, so a listing must not depend on one key being present.
+        print("\n".join(
+            f"{datafile.name}: "
+            f"{datafile.metadata.get('description') or datafile.metadata.get('signal', '')}"
             for datafile in self.analog) + "\n")
         
     def extract_traces(self, filename, labels=None):

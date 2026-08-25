@@ -8,9 +8,10 @@ import re
 import struct
 from collections import Counter
 import numpy as np
-# lxml is an optional accelerator. Everything this module asks of it is in the
-# standard library's ElementTree too, so the fallback parses the same documents;
-# only rainbow.debug, which needs lxml's recovering parser, truly requires it.
+# lxml is a dependency, and reading is measurably faster with it, but nothing
+# this module asks of it is missing from the standard library's ElementTree.
+# The fallback is there so a stripped environment still reads correctly, not so
+# lxml can be left out on purpose. rainbow.debug does require it outright.
 try:
     from lxml import etree
 except ImportError:
@@ -1003,7 +1004,12 @@ def parse_metadata(path, datafiles):
             tree = etree.parse(os.path.join(acqdata_path, "sample_info.xml"))
             root = tree.getroot()
             for samplefield in root.iter("Field"):
-                if samplefield.findtext("Name") != "Sample Position":
+                # Any Name child whose full text (markup flattened, as XPath's
+                # string-value would) names the position, not merely the first
+                # child's direct text.
+                if not any("".join(field.itertext()).strip()
+                           == "Sample Position"
+                           for field in samplefield.findall("Name")):
                     continue
                 vialnum = samplefield.find("Value")
                 if vialnum is not None and len(vialnum.text.split()) == 1:

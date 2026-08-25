@@ -60,9 +60,10 @@ fidelity:
        device system is sparse and there is nothing to rebuild.
    * - **Export-only**
      - non-absorbance cubes
-     - Import rebuilds absorbance channels. A CAD, ELSD, FID, or RID cube, and
-       a mass chromatogram, are written but not read back, so they survive the
-       export and are dropped at import.
+     - Import rebuilds absorbance channels. A CAD, ELSD, or FID cube, and a
+       mass chromatogram, are written but not read back, so they survive the
+       export and are dropped at import. RID is not among them: it rides the
+       absorbance cube, so it returns (as a UV ``DataFile``, per above).
    * - **Lossy**
      - run name, unexported method fields
      - The ``.D`` directory name is not recovered: import names a run ``asm``
@@ -90,9 +91,9 @@ default:
 
 This holds for a run whose channels are all absorbance. A run that also carries
 a non-absorbance detector does **not** re-export identically: those cubes are
-export-only, so the second document is missing them. A UV and CAD run, for
-instance, comes back with its two absorbance channels and without its CAD
-channel. Compare the cubes you care about rather than the whole document.
+export-only, so the second document is missing them. A run with UV and CAD
+channels comes back with its absorbance channels and without its CAD channel.
+Compare the cubes you care about rather than the whole document.
 
 Re-exporting does not degrade the data that is rebuilt. One caveat: retention
 times can differ in their last floating-point digit, because the

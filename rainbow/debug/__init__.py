@@ -157,6 +157,10 @@ def inspect(path):
             continue
         try:
             out[rel] = module.parse(full)
+        except ImportError:
+            # A missing dependency is the caller's environment, not a bad file:
+            # reporting it per-file would bury it in every entry at once.
+            raise
         except Exception as e:  # never let one bad sidecar abort the inspection
             out[rel] = {"parser": module.NAME, "error": repr(e)}
     return out
@@ -188,6 +192,9 @@ def fields(path):
             continue
         try:
             contributed = module.canonical(module.parse(full))
+        except ImportError:
+            # Otherwise a missing dependency looks like a run with no metadata.
+            raise
         except Exception:
             continue
         for key, value in contributed.items():

@@ -3,7 +3,7 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [1.5.0] - Unreleased
+## [1.5.0] - 2026-08-25
 
 ### Added
 - **`rainbow.debug` metadata-inspection subsystem.** A new opt-in module with
@@ -55,18 +55,17 @@ to [Semantic Versioning](https://semver.org/).
 - **`rb.mz_resolution(path)`** reports the finest m/z spacing a run actually
   records, the practical ceiling on `bin_width`. It is opt-in and never runs
   during an ordinary `rb.read`.
-- **`lxml`-accelerated sequence parsing**, installed with
-  `pip install rainbow-api[speed]`. The large `sequence.acaml` is read with a
-  tag-filtered iterparse, with the same output as the standard-library
+- **`lxml`-accelerated sequence parsing.** The large `sequence.acaml` is read
+  with a tag-filtered iterparse, with the same output as the standard-library
   fallback.
 - **Refractive index detector (RID) support** for Agilent data.
 - **More `.dx` archive manifest metadata** surfaced from the OpenLab `.dx`
   manifest.
 - **Opt-in ASM conformance tests** against a pinned Allotrope schema and the
   Allotrope Foundation Ontology (AFO), enabled with `RAINBOW_TEST_ASM_SCHEMA=1`.
-- **ASM export covers Agilent MassHunter DAD data**, added in 1.4.0. Export
-  routes on the detector rather than the file format, so a MassHunter run's
-  signals and spectra map exactly as a Chemstation `.ch`/`.uv` pair does: one
+- **ASM export covers the Agilent MassHunter DAD support added in 1.4.0.**
+  Export routes on the detector rather than the file format, so a MassHunter
+  run's signals and spectra map as a Chemstation `.ch`/`.uv` pair does: one
   chromatogram cube per single-wavelength signal and one 3D spectrum cube for
   the wavelength grid, both honouring `export_dad_cube` and `wavelengths`. A
   DAD's telemetry stays analog data and is never exported as a detector
@@ -77,8 +76,7 @@ to [Semantic Versioning](https://semver.org/).
   the machine this was measured on). `pandas`, needed only for the Waters
   transition table, was imported at module load and was by a wide margin the
   largest cost of importing the package. It is now imported where it is used,
-  as `matplotlib` already was. Both remain required, so calling either still
-  works on a plain install.
+  as `matplotlib` already was.
 - **`matplotlib` and `pandas` are no longer installed by default. Breaking:**
   neither is needed to read a file. `DataFile.plot` is the only thing that
   draws, and one Waters helper is the only thing that returns a DataFrame, so
@@ -97,25 +95,53 @@ to [Semantic Versioning](https://semver.org/).
   `precision` argument to `rb.read` (and the vendor parsers) is replaced by two
   independent controls. `display_precision` (default `'auto'`) is cosmetic and
   rounds only the displayed m/z labels; `bin_width` is the lossy step that sums
-  intensities into a shared m/z grid. `bin_width` defaults to the grid the
-  binary records (about 0.1 Da for Agilent quadrupole MS, 0.05 Da for Waters,
-  and the per-scan axis for HRMS profile data), so binned output is unchanged by
-  default. Code passing `precision=` must now pass `display_precision=`, or
-  `bin_width=` to control the binning step.
+  intensities into a shared m/z grid. `bin_width` defaults to nominal mass
+  (1 Da) for unit-resolution data, and for HRMS profile data defaults to the
+  per-scan axis (no shared grid at all), so binned output is unchanged by
+  default. Use `rb.mz_resolution(path)` to see how fine a `bin_width` a run can
+  actually support. Code passing `precision=` must now pass
+  `display_precision=`, or `bin_width=` to control the binning step.
+- **`rb.read(path, centroid=True)` returns a `CentroidDataFile`. Breaking:** a
+  MassHunter `MSPeak.bin` holds a separate peak list per scan, so there is no
+  one m/z axis to put them on. The returned object exposes `scan(i)` and
+  `mass_labels(i)` and deliberately refuses the shared-axis operations
+  (`ylabels`, `data`, `extract_traces`, `to_csvstr`, `plot`), each with an
+  explanation, rather than inventing a grid. Pass a `bin_width` to opt into one.
+- **`ProfileDataFile.tof` is renamed `flight_times`. Breaking:** the attribute
+  holds the shared flight-time axis, and the old name read as though it were the
+  instrument rather than the quantity.
 
 ### Fixed
 - **A non-ultraviolet detector module is no longer reported as an ultraviolet
   one** in a document's instrument inventory. Any module whose type was
   `detector`, or whose name merely contained the word, was filed under the
-  generic ultraviolet class, so an FID, RID, ELSD, or charged-aerosol module
-  contradicted the very cube it described. Each now maps to the AFO class its
-  cube already uses. The acronyms are matched as whole words with an optional
-  module index (`FID1`, `RID1A`), so `hybrid` and `cascade` are not mistaken
-  for detectors.
-- **`rb.from_asm` no longer raises on a third-party document that omits the
-  measurement keys**, or that carries a single measurement object where the
-  schema also allows a list. It reads what is present, in keeping with the rest
-  of its handling of documents rainbow did not write.
+  ultraviolet class, so an FID, RID, ELSD, mass-spectrometer, or
+  charged-aerosol module contradicted the very cube it described. Each now maps
+  to the AFO class its cube already uses, matched as whole words with an
+  optional module index (`FID1`, `RID1A`) so `hybrid` and `cascade` are not
+  mistaken for detectors. A detector the name does not identify (an analog
+  input, a `TCD`, an `ECD`) now takes the generic detector class rather than an
+  invented absorbance claim.
+- **`rb.from_asm` no longer raises on documents rainbow did not write.** It
+  tolerated one shape and crashed on the rest: a missing measurement aggregate,
+  a lone object where a list is declared, an empty device-control list, and a
+  cube described without its `data` member, which the published cube structure
+  does not require. Anything it cannot represent is skipped, as an
+  unrepresentable cube always was.
+- **`rb.read(path, centroid=True, bin_width=...)` no longer warns falsely.** The
+  m/z floors describe unit-resolution data, but were applied to calibrated
+  MassHunter TOF centroids, which resolve far below them, so a perfectly
+  sensible bin was reported as too fine.
+- **`rb.mz_resolution(path, centroid=True)`** can inspect a centroid run. MS
+  data in an `MSPeak.bin` is parsed only under that flag, so such a run
+  previously came back as though it had no MS at all.
+- **`DataDirectory.list_analog()` no longer raises on a MassHunter DAD's
+  telemetry.** It read a trace's description from a key MassHunter does not
+  use, so listing the analog traces of a run acquired with a DAD raised
+  `KeyError` instead of printing them.
+- **`rainbow.debug` reports a missing `lxml` instead of hiding it.**
+  `inspect()` recorded the failure per file and `fields()` returned an empty
+  record, so an environment without `lxml` looked like a run with no metadata.
 - **The `sequence.acaml` reader closes its file deterministically.** The parse
   stops as soon as it has the instrument, which abandons the iterator
   mid-document and left the handle to be closed whenever the interpreter got

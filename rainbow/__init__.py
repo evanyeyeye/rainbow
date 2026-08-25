@@ -17,17 +17,23 @@ _MZ_FLOORS = {'agilent': 0.1, 'waters': 0.05}
 _HRMS_MZ_FLOOR = 1e-6
 
 
-def _check_bin_width(bin_width, vendor, hrms):
+def _check_bin_width(bin_width, vendor, hrms, centroid=False):
     """Validates ``bin_width`` and warns if it is finer than the binary records.
 
     The lossy m/z bin cannot resolve finer than the m/z grid the vendor binary
     actually stores, so a ``bin_width`` below that floor only inserts empty bins.
+
+    The vendor floors describe unit-resolution data. Calibrated MassHunter
+    TOF data, profile or centroid, resolves far below them, so no floor is
+    asserted for it rather than warning about a bin the run can in fact support.
     """
     if bin_width is None:
         return
     if (isinstance(bin_width, bool)
             or not isinstance(bin_width, (int, float)) or bin_width <= 0):
         raise Exception(f"Invalid bin_width: {bin_width}.")
+    if centroid and not hrms:
+        return
     floor = _HRMS_MZ_FLOOR if hrms else _MZ_FLOORS.get(vendor)
     if floor is not None and bin_width < floor:
         import warnings
@@ -200,7 +206,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     # because the shared grid has no sensible universal width. (If precision is
     # too coarse to label the bins distinctly, parse_msdata warns; it is not an
     # error.)
-    _check_bin_width(bin_width, vendor, hrms)
+    _check_bin_width(bin_width, vendor, hrms, centroid)
 
     if requested_files is not None and not isinstance(requested_files, list):
         raise Exception(f"The requested_files argument must be a list.")
@@ -222,7 +228,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     return datadir
 
 
-def mz_resolution(path, hrms=False, requested_files=None):
+def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
     """
     Inspects the m/z grid a run records, the finest spacing the binary
     actually stores.
@@ -238,11 +244,14 @@ def mz_resolution(path, hrms=False, requested_files=None):
         path (str): Path of the directory.
         hrms (bool, optional): Inspect the Agilent HRMS profile (MSProfile.bin).
         requested_files (list, optional): Limit to these filenames.
+        centroid (bool, optional): Inspect the Agilent MassHunter centroid
+            (MSPeak.bin). A centroid run's MS data is parsed only under this
+            flag, so without it such a run looks like one with no MS at all.
 
     Returns:
         dict: Each MS channel name mapped to its finest m/z spacing in
-            daltons. Empty if the run has no MS. Agilent quadrupole MS resolves
-            to about 0.1 Da, Waters to about 0.05 Da.
+            daltons. Empty if the run has no MS that was parsed. Agilent
+            quadrupole MS resolves to about 0.1 Da, Waters to about 0.05 Da.
 
     """
     import warnings
@@ -254,6 +263,12 @@ def mz_resolution(path, hrms=False, requested_files=None):
             # Display the per-scan m/z finely, or the default 4-decimal rounding
             # would hide a true sub-mDa profile spacing (or collapse it to 0).
             datadir = read(path, hrms=True, display_precision=8,
+                           centroid=centroid,
+                           requested_files=requested_files)
+        elif centroid:
+            # Centroid peak lists are per scan and already at the instrument's
+            # own resolution, so they are read as they are rather than binned.
+            datadir = read(path, centroid=True, display_precision=8,
                            requested_files=requested_files)
         else:
             # A grid far finer than any vendor lattice exposes the underlying
@@ -382,7 +397,7 @@ def read_sequence(path, display_precision='auto', hrms=False,
     if not isinstance(peaks, bool):
         raise Exception("The peaks flag must be a boolean.")
 
-    _check_bin_width(bin_width, vendor, hrms)
+    _check_bin_width(bin_width, vendor, hrms, centroid)
 
     if requested_files is not None and not isinstance(requested_files, list):
         raise Exception("The requested_files argument must be a list.")

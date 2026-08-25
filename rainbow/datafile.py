@@ -163,6 +163,6 @@ class DataFile:
             raise ImportError(
                 "Plotting needs matplotlib, which rainbow does not install by "
                 "default because reading a file does not require it. Install "
-                "it with 'pip install rainbow-api[plot]'.")
+                "it with 'pip install rainbow-api[plot]'.") from None
         plt.plot(self.xlabels, self.extract_traces(label).T, **kwargs)
         plt.show()

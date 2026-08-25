@@ -667,6 +667,12 @@ def test_non_uv_modules_are_not_reported_as_ultraviolet():
         == "evaporative light scattering detector"
     assert _module_device_type({"name": "Charged Aerosol Detector"}) \
         == "liquid chromatography detector"
+    assert _module_device_type({"name": "RI Detector", "type": ""}) \
+        == "refractive index detector"
+    assert _module_device_type({"name": "2424 ELS Detector", "type": ""}) \
+        == "evaporative light scattering detector"
+    assert _module_device_type({"name": "MSD1", "type": "Detector"}) \
+        == "mass spectrometer"
     # A genuine UV module still maps the way it did.
     assert _module_device_type({"name": "DAD1", "type": "detector"}) \
         == "diode array detector"
@@ -681,3 +687,29 @@ def test_detector_acronyms_are_matched_as_whole_words():
     assert _module_device_type({"name": "Hybrid Column Compartment"}) \
         == "column compartment"
     assert _module_device_type({"name": "Cascade Pump"}) == "pump"
+    assert _module_device_type({"name": "Ride Control"}) is None
+    assert _module_device_type({"name": "Cadmium Trap"}) is None
+
+
+def test_an_unnameable_detector_is_generic_not_ultraviolet():
+    # A detector whose name does not identify it must not be guessed as
+    # ultraviolet. This is the shape red.D's charged-aerosol channel arrives
+    # in: an analog input the vendor does not model as a detector kind.
+    from rainbow.asm import _module_device_type
+    for name in ("Analog/digital converter", "TCD Back", "ECD1", "Detector"):
+        assert _module_device_type({"name": name, "type": "Detector"}) \
+            == "liquid chromatography detector", name
+
+
+def test_the_real_cad_instrument_inventory_agrees_with_its_cube():
+    # End to end on the fixture the inventory used to contradict: red.D's
+    # CAD channel exports an electric-current cube, so its module must not be
+    # inventoried as an ultraviolet detector.
+    from rainbow.agilent import sequence
+    header = sequence.parse_header("tests/inputs/red.D/sequence.acam_")
+    modules = header["instrument"]["modules"]
+    from rainbow.asm import _module_device_type
+    types = {m["name"]: _module_device_type(m) for m in modules}
+    assert types["Analog/digital converter"] == "liquid chromatography detector"
+    assert "ultraviolet detector" not in \
+        {v for k, v in types.items() if k != "DAD"}

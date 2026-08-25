@@ -345,3 +345,115 @@ def test_from_asm_accepts_a_lone_measurement_object():
     }
     datadir = rb.from_asm(document)
     assert [df.name for df in datadir.datafiles] == ["solo.ch"]
+
+
+def test_documented_idempotence_holds_for_an_absorbance_run():
+    """ The recipe in docs/source/asm/roundtrip.rst, kept honest. """
+    datadir = rb.read(os.path.join(INPUTS, "brown.D"))
+    assert not datadir.detectors - {"UV"}, "fixture must be absorbance-only"
+    first = datadir.to_asm()
+    again = rb.from_asm(first, name=datadir.name).to_asm()
+    assert again == first
+
+
+def test_a_non_absorbance_channel_is_export_only():
+    """ The documented exception: a CAD cube does not survive re-export. """
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    assert "CAD" in datadir.detectors
+    first = datadir.to_asm()
+    again = rb.from_asm(first, name=datadir.name).to_asm()
+    assert again != first
+
+    def labels(document):
+        aggregate = document["liquid chromatography aggregate document"]
+        return {cube["label"]
+                for injection in aggregate["liquid chromatography document"]
+                for measurement in (injection["measurement aggregate document"]
+                                    ["measurement document"])
+                for key, cube in measurement.items() if key.endswith("cube")}
+
+    dropped = labels(first) - labels(again)
+    assert dropped == {"ADC1A.CH"}
+
+
+def test_rid_rides_the_absorbance_cube_and_returns():
+    """ RID is documented as NOT export-only, unlike CAD/ELSD/FID. """
+    import numpy as np
+    from rainbow.datafile import DataFile
+    from rainbow.datadirectory import DataDirectory
+    rid = DataFile("RID1A.ch", "RID", np.array([0.0, 1.0]), np.array([1.0]),
+                   np.array([[10.0], [20.0]]), {})
+    reconstructed = rb.from_asm(DataDirectory("/rid.D", [rid], {}).to_asm())
+    assert [df.name for df in reconstructed.datafiles] == ["RID1A.ch"]
+
+
+# ---------------------------------------------------------------------------
+# from_asm against documents rainbow did not write. The published cube schema
+# does not require the `data` member, and writers differ on whether a
+# single-entry list is emitted as a list, so none of these shapes may raise.
+# ---------------------------------------------------------------------------
+
+def _lc(*measurements):
+    return {"liquid chromatography aggregate document": {
+        "liquid chromatography document": [
+            {"measurement aggregate document": {
+                "measurement document": list(measurements)}}]}}
+
+
+_STRUCTURE = {"cube-structure": {
+    "dimensions": [{"concept": "retention time", "unit": "s"}],
+    "measures": [{"concept": "absorbance", "unit": "mAU"}]}}
+
+
+@pytest.mark.parametrize("document", [
+    pytest.param(_lc({"chromatogram data cube": dict(_STRUCTURE)}),
+                 id="chromatogram-cube-without-data"),
+    pytest.param(_lc({"three-dimensional ultraviolet spectrum data cube":
+                      dict(_STRUCTURE)}),
+                 id="spectrum-cube-without-data"),
+    pytest.param(_lc({"chromatogram data cube": dict(
+        _STRUCTURE, data={"dimensions": [[0.0]], "measures": []})}),
+        id="cube-with-empty-measures"),
+    pytest.param(_lc({"three-dimensional ultraviolet spectrum data cube": dict(
+        _STRUCTURE, data={"dimensions": [[0.0]], "measures": [[1.0]]})}),
+        id="spectrum-cube-missing-its-second-axis"),
+    pytest.param(_lc({"device control aggregate document":
+                      {"device control document": []}}),
+                 id="empty-device-control-document"),
+    pytest.param(_lc({"device control aggregate document":
+                      {"device control document": {"device type": "x"}}}),
+                 id="lone-device-control-object"),
+    pytest.param(_lc({"sample document": [{"sample identifier": "s"}]}),
+                 id="sample-document-as-a-list"),
+    pytest.param(_lc({"processed data aggregate document":
+                      {"processed data document": {"peak list": {"peak": []}}}}),
+                 id="lone-processed-data-object"),
+    pytest.param({"liquid chromatography aggregate document": {
+        "liquid chromatography document": {"analyst": "someone"}}},
+        id="lone-lc-document-object"),
+    pytest.param({"liquid chromatography aggregate document": {
+        "liquid chromatography document": ["not a document"]}},
+        id="lc-document-is-not-an-object"),
+    pytest.param({"liquid chromatography aggregate document": {
+        "liquid chromatography document": [
+            {"measurement aggregate document": []}]}},
+        id="measurement-aggregate-as-a-list"),
+])
+def test_from_asm_does_not_raise_on_a_foreign_document_shape(document):
+    datadir = rb.from_asm(document)
+    # Whatever it could not represent is skipped, not fatal.
+    assert isinstance(datadir.datafiles, list)
+
+
+def test_from_asm_still_reads_a_lone_measurement_object():
+    document = _lc({
+        "measurement identifier": "solo.ch",
+        "chromatogram data cube": dict(_STRUCTURE, data={
+            "dimensions": [[0.0, 60.0]], "measures": [[1.0, 2.0]]})})
+    document["liquid chromatography aggregate document"][
+        "liquid chromatography document"][0][
+        "measurement aggregate document"]["measurement document"] = \
+        document["liquid chromatography aggregate document"][
+            "liquid chromatography document"][0][
+            "measurement aggregate document"]["measurement document"][0]
+    assert [df.name for df in rb.from_asm(document).datafiles] == ["solo.ch"]

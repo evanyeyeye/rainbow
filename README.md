@@ -34,6 +34,7 @@ because most callers never reach them:
 | `plot` | `pip install rainbow-api[plot]` | `matplotlib`, for `DataFile.plot` |
 | `waters` | `pip install rainbow-api[waters]` | `pandas`, for the Waters compound transition table |
 | `hrms` | `pip install rainbow-api[hrms]` | `python-lzf`, for LZF-compressed MassHunter `MSProfile.bin` |
+| `validate` | `pip install rainbow-api[validate]` | `jsonschema`, for the opt-in ASM conformance tests |
 
 Each says which extra to install if you call it without one, so nothing fails
 mysteriously.

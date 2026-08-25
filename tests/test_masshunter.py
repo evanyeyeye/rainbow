@@ -1495,3 +1495,19 @@ def test_dad_telemetry_has_no_optics():
     assert telemetry
     for datafile in telemetry:
         assert "wavelength" not in datafile.metadata
+
+
+def test_mz_resolution_sees_centroid_data():
+    """ Without the flag a centroid run looks like one with no MS at all. """
+    assert rb.mz_resolution(GOLD_D) == {}
+    resolved = rb.mz_resolution(GOLD_D, centroid=True)
+    assert "MSPeak.bin" in resolved
+    assert 0 < resolved["MSPeak.bin"] < 2
+
+
+def test_list_analog_handles_masshunter_telemetry(capsys):
+    """ MassHunter keys a trace's description 'signal', not 'description'. """
+    rb.read(BRONZE_D, telemetry=True).list_analog()
+    printed = capsys.readouterr().out
+    assert "Board Temperature" in printed
+    assert "UV Lamp Anode Voltage" in printed

@@ -152,6 +152,12 @@ def test_elsd_intensity_conforms_to_lc_schema():
     _assert_conforms(_lc_validator(), rb.read("tests/inputs/orange.D").to_asm())
 
 
+def test_masshunter_dad_conforms():
+    # bronze.D reaches the same cubes through the MassHunter DAD parser rather
+    # than the Chemstation one, so it is worth conforming in its own right.
+    _assert_conforms(_lc_validator(), rb.read("tests/inputs/bronze.D").to_asm())
+
+
 def _peaks_on(channel):
     return [{"signal": channel.split(".")[0].upper(), "wavelength": None,
              "description": None, "channel_file": channel,

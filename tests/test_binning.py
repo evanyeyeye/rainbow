@@ -105,3 +105,21 @@ def test_matches_reference_on_random_data(data_dtype, prec):
         np.testing.assert_allclose(y, y_ref)
         np.testing.assert_array_equal(d, d_ref)
         assert d.dtype == d_ref.dtype
+
+
+def test_no_floor_warning_for_tof_centroids():
+    """ A calibrated TOF centroid resolves far below the quadrupole floor. """
+    import warnings
+    import rainbow as rb
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rb.read("tests/inputs/gold.D", centroid=True, bin_width=0.01)
+    assert not [w for w in caught if "finer than" in str(w.message)]
+
+
+def test_unit_resolution_data_still_warns():
+    """ The floor still applies where it is true: quadrupole .ms is 0.1 Da. """
+    import warnings
+    import rainbow as rb
+    with pytest.warns(UserWarning, match="finer than"):
+        rb.read("tests/inputs/orange.D", bin_width=0.001)
