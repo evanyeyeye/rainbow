@@ -26,6 +26,18 @@ There is [documentation](http://rainbow-api.readthedocs.io/) for *rainbow* that 
 pip install rainbow-api
 ```
 
+That installs everything needed to read a file. Three things are separate,
+because most callers never reach them:
+
+| Extra | Install | What it adds |
+| --- | --- | --- |
+| `plot` | `pip install rainbow-api[plot]` | `matplotlib`, for `DataFile.plot` |
+| `waters` | `pip install rainbow-api[waters]` | `pandas`, for the Waters compound transition table |
+| `hrms` | `pip install rainbow-api[hrms]` | `python-lzf`, for LZF-compressed MassHunter `MSProfile.bin` |
+
+Each says which extra to install if you call it without one, so nothing fails
+mysteriously.
+
 Prebuilt wheels include an optional compiled accelerator (see
 [Performance](#performance)); installation never requires a compiler, and
 *rainbow* works the same with or without it.

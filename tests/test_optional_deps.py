@@ -65,7 +65,7 @@ def test_masshunter_xsd_namespace_without_lxml(without_lxml):
 def test_debug_xml_without_lxml_raises_a_useful_error(without_lxml):
     from rainbow.debug import xml as debug_xml
     importlib.reload(debug_xml)
-    with pytest.raises(ImportError, match=r"lxml.*rainbow-api\[debug\]"):
+    with pytest.raises(ImportError, match=r"lxml.*pip install lxml"):
         debug_xml.parse("tests/inputs/gold.D/AcqData/DefaultMassCal.xml")
     importlib.reload(debug_xml)
 
@@ -81,3 +81,42 @@ def test_importing_rainbow_does_not_pull_in_matplotlib_or_pandas():
         [sys.executable, "-c", code], capture_output=True, text=True,
         check=True).stdout.strip()
     assert out == "False False"
+
+
+@pytest.fixture
+def without(monkeypatch):
+    """Makes a named module unimportable for the duration of a test."""
+    def block(name):
+        real = builtins.__import__
+
+        def guarded(mod, *args, **kwargs):
+            if mod == name or mod.startswith(name + "."):
+                raise ImportError(f"No module named {name!r}")
+            return real(mod, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", guarded)
+    return block
+
+
+def test_plot_without_matplotlib_names_the_extra(without):
+    without("matplotlib")
+    datafile = rb.read("tests/inputs/red.D").datafiles[0]
+    with pytest.raises(ImportError, match=r"matplotlib.*rainbow-api\[plot\]"):
+        datafile.plot(datafile.ylabels[0])
+
+
+def test_transition_table_without_pandas_names_the_extra(without, tmp_path):
+    from rainbow.waters import masslynx
+    # A minimal _FUNC001.CMP: a 7-byte header, then NUL-separated triples of
+    # compound, transition, and a trailing field the reader steps over.
+    raw = b"HEADER!" + b"\x00".join(
+        [b"caffeine", b"195>138", b"1", b"", b""]) + b"\x00"
+    (tmp_path / "_FUNC001.CMP").write_bytes(raw)
+
+    # It parses normally when pandas is importable.
+    table = masslynx.parse_compound_names(str(tmp_path))
+    assert list(table["compounds"]) == ["caffeine"]
+
+    without("pandas")
+    with pytest.raises(ImportError, match=r"pandas.*rainbow-api\[waters\]"):
+        masslynx.parse_compound_names(str(tmp_path))

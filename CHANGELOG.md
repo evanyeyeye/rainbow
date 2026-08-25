@@ -79,15 +79,20 @@ to [Semantic Versioning](https://semver.org/).
   largest cost of importing the package. It is now imported where it is used,
   as `matplotlib` already was. Both remain required, so calling either still
   works on a plain install.
-- **`lxml` is now optional. Breaking for `rainbow.debug` only:** reading data
-  no longer needs it. The vendor XML paths that used lxml-only XPath were
-  rewritten against the standard library, and every bundled fixture parses to
-  an identical result with and without lxml, so a plain install reads the same
-  files it always did. `rainbow.debug` is the exception: it recovers structure
-  from malformed and mis-encoded sidecars, which needs lxml's recovering
-  parser, and now raises a message naming
-  `pip install rainbow-api[debug]` rather than failing at import. Install
-  `rainbow-api[speed]` to keep the faster XML path.
+- **`matplotlib` and `pandas` are no longer installed by default. Breaking:**
+  neither is needed to read a file. `DataFile.plot` is the only thing that
+  draws, and one Waters helper is the only thing that returns a DataFrame, so
+  a default install no longer carries either. Both now say which extra to
+  install if called without it: `pip install rainbow-api[plot]` and
+  `pip install rainbow-api[waters]`. `lxml` stays a default dependency, since
+  without it `rb.read_metadata` is about 2.5 times slower.
+- **rainbow reads without `lxml` if it has to.** The vendor XML paths that used
+  lxml-only XPath were rewritten against the standard library, and the parsers
+  fall back to it when lxml is absent; every bundled fixture parses to an
+  identical result either way. This is a robustness fallback, not the intended
+  configuration, and `rainbow.debug` still needs lxml outright: recovering
+  structure from malformed and mis-encoded sidecars is exactly what its
+  recovering parser is for.
 - **m/z binning split into `display_precision` and `bin_width`. Breaking:** the
   `precision` argument to `rb.read` (and the vendor parsers) is replaced by two
   independent controls. `display_precision` (default `'auto'`) is cosmetic and

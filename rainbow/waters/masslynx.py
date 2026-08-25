@@ -795,7 +795,13 @@ def parse_compound_names(path):
     for i in range(0, len(data), 3):
         compounds.append(data[i])
         transition.append(data[i+1])
-    import pandas as pd
+    try:
+        import pandas as pd
+    except ImportError:
+        raise ImportError(
+            "The compound transition table is returned as a pandas DataFrame, "
+            "and rainbow does not install pandas by default because nothing "
+            "else needs it. Install it with 'pip install rainbow-api[waters]'.")
     df = pd.DataFrame({"compounds": compounds, "transition": transition})
 
     df["index"] =  [i for i in range(1, len(transition)+1)]

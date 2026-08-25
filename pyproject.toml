@@ -15,14 +15,14 @@ authors = [
 classifiers = [
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
 ]
-# matplotlib (DataFile.plot) and pandas (the Waters transition table) are
-# imported where they are used rather than at module load, so importing rainbow
-# does not pay for them. They stay required so that calling either still works
-# on a plain install. lxml is genuinely optional and lives in the extras below.
+# What every install needs to read a file, and nothing more. lxml is here for
+# speed, not correctness: the parsers fall back to the standard library and
+# reach the same answer, but rb.read_metadata is about 2.5x slower that way, so
+# a default install should have it. matplotlib (plotting) and pandas (the
+# Waters transition table) are neither, and are extras below.
 dependencies = [
     "numpy",
-    "matplotlib",
-    "pandas"
+    "lxml>=4.9"
 ]
 
 [project.optional-dependencies]
@@ -36,14 +36,13 @@ hrms = ["python-lzf"]
 # jsonschema >= 4.18 pulls in the `referencing` registry used to resolve the
 # Allotrope schema's cross-references.
 validate = ["jsonschema>=4.18"]
-# Optional accelerator: with lxml the vendor XML and the large sequence.acaml
-# are read through its parser and filtered iterparse (see
-# rainbow/agilent/sequence.py). Without it the standard library's ElementTree
-# reads the same documents to the same result, just more slowly.
-speed = ["lxml>=4.9"]
-# rainbow.debug genuinely requires lxml: it recovers structure from malformed
-# and mis-encoded vendor sidecars, which ElementTree cannot do at all.
-debug = ["lxml>=4.9"]
+# DataFile.plot draws with matplotlib. Reading a file never needs it, and it is
+# the single heaviest thing rainbow can import, so it is not installed by
+# default; plot() says so if it is missing.
+plot = ["matplotlib"]
+# The Waters compound transition table is returned as a pandas DataFrame, the
+# only thing in rainbow that uses pandas.
+waters = ["pandas"]
 
 [project.urls]
 Repository = "https://github.com/evanyeyeye/rainbow"

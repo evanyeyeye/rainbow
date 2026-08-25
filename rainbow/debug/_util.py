@@ -55,5 +55,6 @@ def require_lxml(etree, what):
     if etree is None:
         raise ImportError(
             f"Reading {what} needs lxml, which recovers structure from the "
-            f"malformed sidecars vendors write. Install it with "
-            f"'pip install rainbow-api[debug]'.")
+            f"malformed sidecars vendors write. rainbow installs it by "
+            f"default, so this environment has had it removed; reinstall it "
+            f"with 'pip install lxml'.")

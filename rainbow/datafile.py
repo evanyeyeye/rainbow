@@ -146,11 +146,23 @@ class DataFile:
         """
         Shows a basic matplotlib plot for the specified :code:`label`.
 
+        Requires matplotlib, which reading a file does not, so it is an extra:
+        ``pip install rainbow-api[plot]``.
+
         Args:
-            label (int/float): Ylabel to be plotted. 
+            label (int/float): Ylabel to be plotted.
             **kwargs (optional): Keyword arguments for matplotlib.
 
         """
-        import matplotlib.pyplot as plt
+        # Imported here rather than at module load: matplotlib is the slowest
+        # thing rainbow can pull in, and drawing is not what most callers came
+        # for. See the plot extra in pyproject.toml.
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError(
+                "Plotting needs matplotlib, which rainbow does not install by "
+                "default because reading a file does not require it. Install "
+                "it with 'pip install rainbow-api[plot]'.")
         plt.plot(self.xlabels, self.extract_traces(label).T, **kwargs)
         plt.show()
