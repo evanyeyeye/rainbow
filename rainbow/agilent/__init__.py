@@ -91,8 +91,12 @@ def injection_dirs(path):
 
     A ChemStation/OpenLab sequence directory holds one .D subdirectory per
     injection (the sequence-level method and acaml live alongside them). The
-    .D names are sorted so injections come back in acquisition order, which
-    their leading line number encodes.
+    .D names are sorted, which is acquisition order for the names ChemStation
+    writes by default, since it prefixes each with the sequence line number.
+
+    It is name order, though, not a timestamp: nothing here reads one. Names
+    that do not zero-pad that number sort 1, 10, 2, and a directory renamed by
+    hand sorts wherever its new name falls.
 
     Args:
         path (str): Path of the sequence directory.
@@ -119,7 +123,8 @@ def read_sequence(path, display_precision='auto', hrms=False,
 
     Each injection .D subdirectory is read with :func:`read`, so the per-
     injection result is exactly what a single read returns. The injections are
-    returned in acquisition order.
+    returned in sorted-name order, which is acquisition order for ChemStation's
+    default naming (see :func:`injection_dirs`).
 
     Args:
         path (str): Path of the sequence directory.

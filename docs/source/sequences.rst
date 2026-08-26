@@ -79,7 +79,11 @@ works, one injection at a time:
 Reading a sequence
 ------------------
 
-Injections come back in acquisition order. Reach them by position, by name, or
+Injections come back in sorted-name order. ChemStation prefixes each injection
+directory with its sequence line number, so for the names it writes by default
+that is acquisition order; rainbow sorts the names rather than reading a
+timestamp, so hand-renamed directories sort by their new names. Reach them by
+position, by name, or
 by iterating:
 
 .. code-block:: python

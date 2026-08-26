@@ -13,7 +13,7 @@ try:
 except ImportError:
     import xml.etree.ElementTree as etree
 from rainbow import DataFile
-from rainbow._binning import HRMS_MZ_FLOOR, MZ_FLOORS, label_precision
+from rainbow._binning import HRMS_MZ_FLOOR, label_precision
 from rainbow.agilent.chemstation import parse_optics
 
 # NOTE: `lzf` (python-lzf) is imported lazily inside parse_msdata, and only
@@ -99,9 +99,19 @@ class ProfileDataFile(DataFile):
     def plot(self, label, **kwargs):
         raise self._no_shared_axis("plot")
 
+    @property
+    def tof(self):
+        # Renamed in 1.5.0. A property rather than __getattr__, which would be
+        # reached by every attribute lookup that fails - including the ylabels
+        # and data properties above, which raise AttributeError on purpose to
+        # explain themselves, and whose message __getattr__ would replace.
+        raise AttributeError(
+            "'tof' was renamed to 'flight_times' in 1.5.0: the axis is a "
+            "flight time per column, shared by every scan.")
+
     def mass_labels(self, i):
         """ The calibrated m/z values for scan ``i`` (rounded to
-        :attr:`mz_decimals`). """
+        :attr:`mz_decimals`, or exact when that is None). """
         mz = calibrate_mz(self.flight_times, self._calib[i], self._use_flags[i])
         if self.mz_decimals is not None:
             mz = np.round(mz, self.mz_decimals)
@@ -1499,8 +1509,15 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
         # is no separate display of it to round - so rounding them here would
         # discard measured precision under a control documented as cosmetic.
         # The lossy control for this channel is bin_width, below.
-        return CentroidDataFile(
+        centroid = CentroidDataFile(
             "MSPeak.bin", times, mz_per_scan, inten_per_scan, {})
+        # Whether the peak m/z land on a lattice. An uncalibrated quadrupole
+        # writes them near nominal mass, so pooling the run shows a real
+        # quantization; a calibrated TOF writes continuous m/z that drift
+        # between scans, so there is nothing to find and pooling reports the
+        # drift. rb.mz_resolution reads this.
+        centroid._mz_is_quantized = calib_vals is None
+        return centroid
 
     # A bin_width projects the per-scan peaks onto one shared m/z grid (lossy),
     # the same way the profile binning does. display_precision plays no part in

@@ -1637,12 +1637,34 @@ def test_dad_telemetry_has_no_optics():
         assert "wavelength" not in datafile.metadata
 
 
-def test_mz_resolution_sees_centroid_data():
-    """ Without the flag a centroid run looks like one with no MS at all. """
-    assert rb.mz_resolution(GOLD_D) == {}
-    resolved = rb.mz_resolution(GOLD_D, centroid=True)
-    assert "MSPeak.bin" in resolved
-    assert 0 < resolved["MSPeak.bin"] < 2
+def test_a_calibrated_centroid_reports_no_grid():
+    """ Calibrated peaks are continuous, so no spacing describes them.
+
+    gold.D is a calibrated TOF centroid. Pooling its scans finds 2.8e-05
+    between 103.0739155 and 103.0739436 - the same ion in two scans, differing
+    by the calibration drift between them, not a lattice. Reporting that as
+    "the finest m/z spacing the binary stores" is wrong, and it degrades with
+    run length: the closest of N pooled values falls as N grows, so a full-size
+    Q-TOF run rounded to 0.0, a width read() then refuses outright.
+
+    Nothing is reported instead, matching the fact that the channel records no
+    m/z floor either. Both say the same thing: a peak list has no lattice.
+    """
+    assert rb.mz_resolution(GOLD_D) == {}                    # no flag, no MS
+    assert rb.mz_resolution(GOLD_D, centroid=True) == {}
+    # And it is not fabricated from the probe read's own 1e-3 grid.
+    assert 0.001 not in rb.mz_resolution(GOLD_D, centroid=True).values()
+
+
+def test_an_uncalibrated_centroid_reports_the_quantization_it_has():
+    """ Where the peaks really are on a lattice, it is measured.
+
+    An uncalibrated quadrupole writes peak m/z near nominal mass, so pooling
+    the run shows a genuine quantization rather than drift.
+    """
+    resolved = rb.mz_resolution(
+        os.path.join("tests", "inputs", "yellow.D"), centroid=True)
+    assert resolved["MSPeak.bin"] == pytest.approx(0.09, abs=0.001)
 
 
 def test_mz_resolution_centroid_flag_leaves_binned_channels_alone():
@@ -1658,7 +1680,10 @@ def test_mz_resolution_centroid_flag_leaves_binned_channels_alone():
     assert binned["data.ms"] == 0.1
     with_centroid = rb.mz_resolution(yellow, centroid=True)
     assert with_centroid["data.ms"] == binned["data.ms"]
-    assert with_centroid["dataSim.ms"] == binned["dataSim.ms"]
+    # dataSim.ms is selected-ion, so neither read reports a grid for it: the
+    # gaps between monitored ions are the method's choice, not a lattice.
+    assert "dataSim.ms" not in binned
+    assert "dataSim.ms" not in with_centroid
     # The centroid channel is still measured per scan, not on the probe grid.
     assert with_centroid["MSPeak.bin"] > 1e-3
 

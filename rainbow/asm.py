@@ -1689,14 +1689,17 @@ def sequence_from_asm(document, name="asm"):
         metadata["instrument"] = instrument
 
     injections = []
+    taken = set()
     for index, lc_document in enumerate(documents):
         injection_metadata = {}
         datafiles = []
         peak_groups = []
         _absorb_lc_document(
             lc_document, injection_metadata, datafiles, peak_groups)
-        injection_name = injection_metadata.get("sample") \
-            or f"injection_{index + 1}"
+        injection_name = _unique_injection_name(
+            injection_metadata.get("sample") or f"injection_{index + 1}",
+            taken)
+        taken.add(injection_name)
         injections.append(_directory(
             injection_name, datafiles, injection_metadata, peak_groups))
 
@@ -1705,6 +1708,25 @@ def sequence_from_asm(document, name="asm"):
     if len(operators) == 1:
         metadata["operator"] = operators.pop()
     return DataSequence(name, injections, metadata)
+
+
+def _unique_injection_name(name, taken):
+    """``name`` if free, else suffixed ``_2``, ``_3``, ... within a sequence.
+
+    Injections are named after their sample, and a sequence of replicates is
+    many injections of one sample: a stability study or a bracketed standard
+    gives every document the same sample identifier. DataSequence.by_name is a
+    dict, so identical names silently collapse to the last one, leaving len()
+    and iteration reporting every injection while get_injection reaches only
+    one of them. The exporter already suffixes its per-injection filenames for
+    the same reason.
+    """
+    if name not in taken:
+        return name
+    index = 2
+    while f"{name}_{index}" in taken:
+        index += 1
+    return f"{name}_{index}"
 
 
 def _directory(name, datafiles, metadata, peak_groups):

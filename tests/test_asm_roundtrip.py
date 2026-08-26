@@ -748,3 +748,28 @@ def test_exact_equality_is_not_the_round_trip_contract():
                            _asm_cube(after[name])["dimensions"][0])
         assert _asm_cube(source)["measures"] == \
             _asm_cube(after[name])["measures"]
+
+
+def test_replicate_injections_survive_as_separate_injections(tmp_path):
+    """ A sequence of replicates must not collapse on the way back.
+
+    Injections are named after their sample, and replicates share one sample
+    identifier, so every rebuilt injection got the same name. DataSequence
+    keys by_name with a dict, so all but the last silently vanished from it
+    while len() and iteration still reported them all: the loss showed up only
+    when someone called get_injection.
+    """
+    import shutil
+    sequence_dir = tmp_path / "Seq"
+    sequence_dir.mkdir()
+    for name in ("001-A1_01.D", "002-A2_02.D", "003-A3_03.D"):
+        shutil.copytree(os.path.join(INPUTS, "red.D"), sequence_dir / name)
+    original = rb.read_sequence(str(sequence_dir))
+    assert len({inj.metadata.get("sample") for inj in original}) == 1
+
+    back = rb.sequence_from_asm(original.to_asm())
+    assert len(back) == len(original) == 3
+    assert len(back.by_name) == 3
+    assert len(set(inj.name for inj in back)) == 3
+    for injection in back:
+        assert back.get_injection(injection.name) is not None

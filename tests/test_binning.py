@@ -264,18 +264,33 @@ def test_a_centroid_resolution_is_measured_over_the_whole_run():
     assert truth < 0.1                                 # the real grid
 
 
-def test_the_probe_still_reaches_a_centroid_with_no_binned_sibling():
-    """ A centroid-only run must still be measured.
+def test_the_probe_reaches_a_channel_the_first_read_could_not_measure(tmp_path):
+    """ A binned channel beside a per-scan one must still be measured.
 
-    The probe used to run only when a binned channel was present. Deciding it
-    that way meant a run whose only MS channel needs the probe never got one.
+    mz_resolution measures per-scan channels on the first read and everything
+    else on a second, finer probe read. The probe used to run only when a
+    binned MS channel was present, which named a channel type rather than
+    asking what was still missing.
+
+    No bundled fixture pairs an HRMS profile with a binned channel, so one is
+    built here: without it the probe never runs and this asserts nothing, which
+    is exactly how the previous version of this test passed while the bug it
+    was named for was reintroduced.
     """
+    import shutil
     import rainbow as rb
-    for fixture in ("tests/inputs/gold.D", "tests/inputs/copper.D"):
-        answer = rb.mz_resolution(fixture, centroid=True)
-        assert "MSPeak.bin" in answer, fixture
-        # A measured high-resolution spacing, not the probe's own 1e-3 grid.
-        assert 0 < answer["MSPeak.bin"] < 1e-3, (fixture, answer)
+    mixed = tmp_path / "mixed.D"
+    shutil.copytree("tests/inputs/amber.D", mixed)
+    shutil.copy("tests/inputs/orange.D/MSD1.MS", mixed / "MSD1.MS")
+
+    alone = rb.mz_resolution("tests/inputs/amber.D", hrms=True)
+    together = rb.mz_resolution(str(mixed), hrms=True)
+    # The profile keeps its own measurement, taken from one scan's axis...
+    assert together["MSProfile.bin"] == alone["MSProfile.bin"] > 1e-3
+    # ...and the binned sibling is measured too, on the probe grid.
+    assert together["MSD1.MS"] == 0.1
+    # Not the probe's own 1e-3 constant, which is what overwriting produced.
+    assert together["MSProfile.bin"] != 1e-3
 
 
 def test_bin_width_does_not_touch_a_waters_uv_function():
@@ -321,3 +336,25 @@ def test_the_vendor_floor_never_contradicts_a_measured_grid():
             for width in rb.mz_resolution(path).values():
                 rb.read(path, bin_width=width)
         assert not [w for w in caught if "finer than" in str(w.message)], name
+
+
+def test_a_selected_ion_channel_reports_no_grid():
+    """ Monitored ions are the method's choice, not a lattice.
+
+    A SIM channel records only the m/z the method asked the instrument to
+    watch, so the gap between them says nothing about what the binary can
+    resolve. yellow.D watches 131 and 202, and reporting 71 Da as "the finest
+    m/z spacing the binary actually stores" sent a caller to a bin_width 700
+    times too coarse - while rb.read warned, correctly, that anything below
+    0.1 Da on that run was too fine. The two APIs contradicted each other.
+    """
+    import rainbow as rb
+    sim = rb.read("tests/inputs/yellow.D").get_file("dataSim.ms")
+    assert sim.metadata["acquisition_mode"] == "SIM"
+    assert list(sim.ylabels) == [131.0, 202.0]      # the shape that misled it
+    answer = rb.mz_resolution("tests/inputs/yellow.D")
+    assert "dataSim.ms" not in answer
+    # The scan channel beside it is still measured.
+    assert answer["data.ms"] == 0.1
+    # A run whose MS is all selected-ion reports nothing rather than nonsense.
+    assert rb.mz_resolution("tests/inputs/green.D") == {}

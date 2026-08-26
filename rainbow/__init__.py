@@ -192,8 +192,42 @@ def _resolve_vendor(path, format):
     return _detect_vendor(path)
 
 
+# Arguments removed in 1.5.0, and what replaced them. `precision` set the m/z
+# grid and the label rounding together; the two are now separate controls with
+# different meanings, so there is no value to forward it to. Naming the
+# replacement costs one dictionary and saves a user reading a diff, which
+# matters more than usual here: `precision` is positionally where
+# `display_precision` now sits, so a positional call keeps working and quietly
+# means something else.
+_REMOVED_ARGUMENTS = {
+    'precision': (
+        "precision was split in 1.5.0 into bin_width (the lossy m/z grid, in "
+        "daltons) and display_precision (label rounding, in decimals). "
+        "precision=N behaved like bin_width=10**-N; pass that for the same "
+        "data, or display_precision=N to only round the labels. See "
+        "rb.mz_resolution(path) for how fine a bin_width a run supports."),
+    'prec': (
+        "prec was renamed to precision in 1.3.0 and split in 1.5.0 into "
+        "bin_width and display_precision; prec=N behaved like "
+        "bin_width=10**-N."),
+}
+
+
+def _reject_removed_arguments(function, removed):
+    """Raises for a removed keyword argument, naming what replaced it."""
+    for name in removed:
+        explanation = _REMOVED_ARGUMENTS.get(name)
+        if explanation:
+            raise TypeError(
+                "{}() no longer takes {}. {}".format(
+                    function, name, explanation))
+    raise TypeError("{}() got an unexpected keyword argument {!r}".format(
+        function, sorted(removed)[0]))
+
+
 def read(path, display_precision='auto', hrms=False, requested_files=None,
-         telemetry=False, centroid=False, format=None, bin_width=None):
+         telemetry=False, centroid=False, format=None, bin_width=None,
+         **removed):
     """
     Reads a chromatogram data directory. Main method of the package.
 
@@ -250,6 +284,8 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
         DataDirectory representing the directory.
 
     """
+    if removed:
+        _reject_removed_arguments("read", removed)
     vendor = _resolve_vendor(path, format)
 
     ext = os.path.splitext(path)[1].lower() if isinstance(path, str) else ''
@@ -324,16 +360,25 @@ def _mz_spacings(datadir, only=None):
     binned ones, so a caller that read one kind on the wrong grid can measure
     each kind on the read that suits it.
 
-    The two per-scan kinds are measured differently, because the same
-    arithmetic does not mean the same thing on both:
+    The per-scan kinds are measured differently, because the same arithmetic
+    does not mean the same thing on all of them:
 
     * An HRMS profile samples every scan on one shared flight-time grid, so a
       single scan's m/z axis *is* the instrument's grid. Pooling scans would
       measure the calibration drift between them instead.
     * A centroid keeps only picked peaks, so within a scan the gaps are peak
-      separations, not a grid. Scan 0 of a run whose first scan holds two peaks
-      reported the distance between those two peaks: 71 Da, on a run that
-      quantizes to 0.09. Pooling the scans is what shows the quantization.
+      separations, not a grid: scan 0 of a run whose first scan holds two peaks
+      reported the distance between those two peaks, 71 Da, on a run that
+      quantizes to 0.09. Where the peak m/z really are quantized - an
+      uncalibrated quadrupole writes them near nominal mass - pooling the scans
+      is what shows that quantization.
+    * A calibrated (TOF) centroid is not measured at all. Its peaks carry
+      continuous calibrated m/z, so there is no lattice to find: pooling it
+      returns the calibration drift between scans, which on gold.D means the
+      same ion at 103.0739 in two scans, 2.8e-05 apart. Worse, the closest of
+      N pooled values falls as N grows, so an ordinary Q-TOF run reported 0.0
+      once it rounded below 5e-8 - a width read() then refuses. This is the
+      same reason such a channel records no m/z floor: no lattice to state.
 
     """
     import numpy as np
@@ -342,19 +387,29 @@ def _mz_spacings(datadir, only=None):
     for datafile in datadir.datafiles:
         if datafile.detector != 'MS':
             continue
+        if _has_no_measurable_grid(datafile):
+            # No lattice to report. A selected-ion channel records the few m/z
+            # the method asked the instrument to watch, so the gaps between
+            # them are the method's choice: yellow.D watches 131 and 202, and
+            # reporting 71 Da as the finest spacing the binary stores would
+            # send a caller to a bin_width 700 times too coarse. A calibrated
+            # centroid has continuous m/z, covered in this function's docstring.
+            continue
         per_scan = hasattr(datafile, 'mass_labels')
         if only is not None and per_scan is not only:
             continue
+        # Defaults to True: a per-scan axis is a grid unless the class that
+        # built it says otherwise. The flag names the exception, and getting it
+        # wrong in that direction costs a measurement from one scan; the other
+        # way round pools a whole HRMS profile, which on the small fixtures
+        # already answers two orders of magnitude low.
         try:
             if not per_scan:
                 mz = np.asarray(datafile.ylabels, dtype=float)
-            elif getattr(datafile, '_per_scan_axis_is_a_grid', False):
+            elif getattr(datafile, '_per_scan_axis_is_a_grid', True):
                 mz = np.asarray(datafile.mass_labels(0), dtype=float)
             else:
-                mz = np.concatenate([
-                    np.asarray(datafile.mass_labels(i), dtype=float)
-                    for i in range(len(datafile.xlabels))]) \
-                    if len(datafile.xlabels) else np.empty(0)
+                mz = _pooled_mz(datafile)
         except Exception:
             continue                   # a per-scan channel with no shared axis
         mz = np.unique(mz)
@@ -363,6 +418,56 @@ def _mz_spacings(datadir, only=None):
             # high-resolution (HRMS) spacing, which can be well below 1e-4 Da.
             resolutions[datafile.name] = round(float(np.min(np.diff(mz))), 7)
     return resolutions
+
+
+def _pooled_mz(datafile):
+    """Every distinct m/z a per-scan channel records, over the whole run.
+
+    Uniqued in chunks so the peak memory is the number of distinct values
+    rather than the number of peaks: a long run holds millions of the latter
+    and, being quantized, few of the former.
+    """
+    import numpy as np
+
+    pooled = np.empty(0)
+    chunk = []
+    for index in range(len(datafile.xlabels)):
+        chunk.append(np.asarray(datafile.mass_labels(index), dtype=float))
+        if len(chunk) >= 256:
+            pooled = np.unique(np.concatenate([pooled] + chunk))
+            chunk = []
+    if chunk:
+        pooled = np.unique(np.concatenate([pooled] + chunk))
+    return pooled
+
+
+def _has_no_measurable_grid(datafile):
+    """Whether no m/z spacing describes this channel at all.
+
+    Two shapes qualify, and both must be invisible to the probe as well as to
+    the first read. Reporting nothing is the honest answer; falling through to
+    the probe would report its 1e-3 grid, a number the file never had.
+    """
+    if _is_selected_ion(datafile):
+        return True                 # chosen ions, not a swept range
+    return (hasattr(datafile, 'mass_labels')
+            and not getattr(datafile, '_per_scan_axis_is_a_grid', True)
+            and not getattr(datafile, '_mz_is_quantized', False))
+
+
+def _is_selected_ion(datafile):
+    """Whether an MS channel monitors chosen ions rather than sweeping a range.
+
+    The same rule :func:`rainbow.asm._is_sim` applies, kept here rather than
+    imported so measuring a run does not pull in the exporter: trust the
+    acquisition method's own tag, and with no tag treat a single-column channel
+    as selected-ion.
+    """
+    mode = datafile.metadata.get('acquisition_mode')
+    if mode in ('SIM', 'Scan'):
+        return mode == 'SIM'
+    return getattr(datafile, 'data', None) is not None \
+        and datafile.data.ndim == 2 and datafile.data.shape[1] == 1
 
 
 def _needs_the_probe(datadir, measured):
@@ -376,6 +481,7 @@ def _needs_the_probe(datadir, measured):
     read cannot silently drop out of the answer.
     """
     return any(datafile.detector == 'MS' and datafile.name not in measured
+               and not _has_no_measurable_grid(datafile)
                for datafile in datadir.datafiles)
 
 
@@ -488,14 +594,15 @@ def _detect_sequence_vendor(path):
 
 def read_sequence(path, display_precision='auto', hrms=False,
                   requested_files=None, telemetry=False, centroid=False,
-                  peaks=False, format=None, bin_width=None):
+                  peaks=False, format=None, bin_width=None, **removed):
     """
     Reads a multi-injection sequence directory.
 
     Where :func:`read` reads a single injection, this reads the whole run: a
     directory holding one injection subdirectory per sample, plus the
     sequence-level method and metadata. Each injection is read with
-    :func:`read`, and the injections are returned in acquisition order inside a
+    :func:`read`, and the injections are returned in sorted-name order, which is
+    acquisition order for ChemStation's default naming, inside a
     DataSequence.
 
     The vendor is detected from the injection subdirectories (.D means Agilent,
@@ -549,6 +656,9 @@ def read_sequence(path, display_precision='auto', hrms=False,
 
     if not isinstance(peaks, bool):
         raise Exception("The peaks flag must be a boolean.")
+
+    if removed:
+        _reject_removed_arguments("read_sequence", removed)
 
     _validate_bin_width(bin_width)
 
