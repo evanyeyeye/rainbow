@@ -79,3 +79,45 @@ def test_read_metadata_format_override(tmp_path):
 def test_read_metadata_invalid_format_raises():
     with pytest.raises(Exception):
         rb.read_metadata(WATERS_FIXTURE, format="thermo")
+
+
+# The 1.5.0 migration affordance: `precision` was split into `bin_width` and
+# `display_precision`, and `precision` sits positionally where
+# `display_precision` now does, so a caller who misses the change gets a wrong
+# answer rather than an error. Every documented entry point must say so; this
+# had no test at all, and replacing the whole guard with a no-op passed the
+# suite.
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: rb.read(AGILENT_FIXTURE, precision=3),
+        lambda: rb.read_sequence("tests/inputs", precision=3),
+        lambda: rb.agilent.read(AGILENT_FIXTURE, precision=3),
+        lambda: rb.agilent.read_sequence("tests/inputs", precision=3),
+        lambda: rb.waters.read(WATERS_FIXTURE, precision=3),
+    ],
+)
+def test_precision_names_what_replaced_it(call):
+    with pytest.raises(TypeError) as excinfo:
+        call()
+    message = str(excinfo.value)
+    assert "no longer takes precision" in message
+    assert "bin_width" in message and "display_precision" in message
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: rb.read(AGILENT_FIXTURE, prec=3),
+        lambda: rb.waters.read(WATERS_FIXTURE, prec=3),
+    ],
+)
+def test_prec_names_what_replaced_it(call):
+    with pytest.raises(TypeError, match="no longer takes prec"):
+        call()
+
+
+def test_an_argument_that_never_existed_still_reads_as_a_typo():
+    # The guard must not turn every unknown keyword into a migration lecture.
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        rb.agilent.read(AGILENT_FIXTURE, nonsense=1)

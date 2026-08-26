@@ -1,12 +1,13 @@
 import os
 
+from rainbow._arguments import reject_removed_arguments
 from rainbow.agilent import chemstation
 from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
 
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,
-         telemetry=False, centroid=False, bin_width=None):
+         telemetry=False, centroid=False, bin_width=None, **removed):
     """
     Reads an Agilent .D directory or .dx archive.
 
@@ -34,6 +35,8 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
         DataDirectory representing the Agilent data.
 
     """
+    if removed:
+        reject_removed_arguments("agilent.read", removed)
     if os.path.splitext(path)[1].lower() == '.dx':
         from rainbow.agilent import openlab
         return openlab.read(
@@ -117,7 +120,7 @@ def injection_dirs(path):
 
 def read_sequence(path, display_precision='auto', hrms=False,
                   requested_files=None, telemetry=False, centroid=False,
-                  peaks=False, bin_width=None):
+                  peaks=False, bin_width=None, **removed):
     """
     Reads an Agilent ChemStation/OpenLab sequence directory.
 
@@ -143,6 +146,8 @@ def read_sequence(path, display_precision='auto', hrms=False,
         DataSequence representing the sequence, or None if no injections.
 
     """
+    if removed:
+        reject_removed_arguments("agilent.read_sequence", removed)
     injection_paths = injection_dirs(path)
     if not injection_paths:
         return None

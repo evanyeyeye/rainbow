@@ -50,6 +50,24 @@ class DataSequence:
     def __iter__(self):
         return iter(self.injections)
 
+    def __contains__(self, name):
+        """Whether an injection with that directory ``name`` is in the sequence.
+
+        Without this, ``"x.D" in sequence`` fell back to iterating and comparing
+        each injection object against a string, so it answered False for a name
+        that is present. A membership test that quietly says no is worse than
+        one that raises.
+        """
+        return name in self.by_name
+
+    def __getitem__(self, key):
+        """An injection by position, slice, or directory name."""
+        if isinstance(key, str):
+            return self.get_injection(key)
+        if isinstance(key, slice):
+            return self.injections[key]
+        return self.injections[key]
+
     def get_injection(self, name):
         """
         Returns an injection by its directory :code:`name`.
@@ -61,7 +79,12 @@ class DataSequence:
 
         """
         if name not in self.by_name:
-            raise Exception(f"Injection {name} not found in {self.name}.")
+            known = ", ".join(sorted(self.by_name)[:5])
+            if len(self.by_name) > 5:
+                known += ", ..."
+            raise KeyError(
+                f"Injection {name!r} not found in {self.name}. "
+                f"This sequence has {len(self.by_name)}: {known}")
         return self.by_name[name]
 
     def get_info(self):

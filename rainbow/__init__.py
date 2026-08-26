@@ -199,30 +199,15 @@ def _resolve_vendor(path, format):
 # matters more than usual here: `precision` is positionally where
 # `display_precision` now sits, so a positional call keeps working and quietly
 # means something else.
-_REMOVED_ARGUMENTS = {
-    'precision': (
-        "precision was split in 1.5.0 into bin_width (the lossy m/z grid, in "
-        "daltons) and display_precision (label rounding, in decimals). "
-        "precision=N behaved like bin_width=10**-N; pass that for the same "
-        "data, or display_precision=N to only round the labels. See "
-        "rb.mz_resolution(path) for how fine a bin_width a run supports."),
-    'prec': (
-        "prec was renamed to precision in 1.3.0 and split in 1.5.0 into "
-        "bin_width and display_precision; prec=N behaved like "
-        "bin_width=10**-N."),
-}
+# Kept as module attributes for compatibility with anything that imported them
+# from here; the rules themselves live in rainbow._arguments so the vendor read
+# entry points can apply exactly the same ones.
+from rainbow._arguments import _REMOVED_ARGUMENTS, reject_removed_arguments
 
 
 def _reject_removed_arguments(function, removed):
     """Raises for a removed keyword argument, naming what replaced it."""
-    for name in removed:
-        explanation = _REMOVED_ARGUMENTS.get(name)
-        if explanation:
-            raise TypeError(
-                "{}() no longer takes {}. {}".format(
-                    function, name, explanation))
-    raise TypeError("{}() got an unexpected keyword argument {!r}".format(
-        function, sorted(removed)[0]))
+    reject_removed_arguments(function, removed)
 
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,

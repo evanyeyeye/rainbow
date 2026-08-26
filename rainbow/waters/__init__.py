@@ -1,11 +1,13 @@
 import os
 import re
 
+from rainbow._arguments import reject_removed_arguments
 from rainbow.waters import masslynx
 from rainbow.datadirectory import DataDirectory
 
 
-def read(path, display_precision='auto', requested_files=None, bin_width=None):
+def read(path, display_precision='auto', requested_files=None,
+         bin_width=None, **removed):
     """
     Reads a Waters .raw directory.
 
@@ -22,6 +24,8 @@ def read(path, display_precision='auto', requested_files=None, bin_width=None):
         DataDirectory representing the Waters .raw directory.
 
     """
+    if removed:
+        reject_removed_arguments("waters.read", removed)
     if display_precision == 'auto':
         display_precision = 0
     if bin_width is None:

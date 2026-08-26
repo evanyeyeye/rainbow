@@ -1949,9 +1949,13 @@ def sequence_from_asm(document, name="asm"):
     the injections they belong to.
 
     Round-trip caveat: only what :func:`sequence_to_asm` writes is recoverable.
-    The injection's original .D folder name is not stored, so injections are
-    named from their sample identifier; metadata rainbow reads but does not
-    export (column temperature, flow rate, dilution) is not restored.
+    Injections are named from the ``injection identifier`` the document
+    carries, which is the .D folder name rainbow exported them under, falling
+    back to the sample identifier and then to position. A liquid chromatography
+    run that records no injection volume has no injection document at all (the
+    schema requires the volume in the same document as the identifier), so such
+    a run comes back under its sample identifier. Metadata rainbow reads but
+    does not export (column temperature, flow rate, dilution) is not restored.
 
     Args:
         document (dict): An ASM document (e.g. from ``json.load``).
@@ -1978,8 +1982,15 @@ def sequence_from_asm(document, name="asm"):
         peak_groups = []
         _absorb_lc_document(
             lc_document, injection_metadata, datafiles, peak_groups)
+        # The injection identifier is the name the injection was exported
+        # under, so it restores the caller's own name. The sample identifier is
+        # the fallback because a sequence's replicates share one, which used to
+        # collapse three injections into "usp", "usp_2", "usp_3" while the real
+        # names sat unread in the document.
         injection_name = _unique_injection_name(
-            injection_metadata.get("sample") or f"injection_{index + 1}",
+            injection_metadata.get("injection_identifier")
+            or injection_metadata.get("sample")
+            or f"injection_{index + 1}",
             taken)
         taken.add(injection_name)
         injections.append(_directory(
@@ -2058,7 +2069,15 @@ def _absorb_envelope(measurement, metadata):
     date = _text(measurement.get("measurement time"))
     if date:
         metadata.setdefault("date", date)
-    volume = _number(_first(measurement.get("injection document")).get(
+    injection = _first(measurement.get("injection document"))
+    # The name the injection was exported under. rainbow writes the .D folder
+    # name here, so a round trip can put the injection back under the name the
+    # caller knows it by instead of falling back to the sample identifier,
+    # which several injections in a sequence routinely share.
+    injection_identifier = _text(injection.get("injection identifier"))
+    if injection_identifier and injection_identifier != "unknown":
+        metadata.setdefault("injection_identifier", injection_identifier)
+    volume = _number(injection.get(
         "autosampler injection volume setting (chromatography)"))
     if volume is not None:
         # ASM stores mm^3; rainbow reports uL (1 mm^3 == 1 uL).

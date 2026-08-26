@@ -285,3 +285,50 @@ def test_asm_peak_converts_times_to_seconds():
     assert peak["peak start"] == {"value": 90.0, "unit": "s"}
     assert peak["peak end"] == {"value": 150.0, "unit": "s"}
     assert peak["peak area"] == {"value": 50.0, "unit": "mAU.s"}
+
+
+def test_a_round_trip_restores_the_injection_names(tmp_path):
+    # The document already carries an "injection identifier" per injection, the
+    # .D folder name it was exported under. Reading it back off the sample
+    # identifier instead collapsed a set of replicates (which share a sample)
+    # into name, name_2, name_3, so get_injection could not find any of them
+    # under the name the caller knows.
+    from rainbow.datasequence import DataSequence
+
+    names = ["001-A1_01.D", "002-A2_02.D", "003-A3_03.D"]
+    injections = []
+    for name in names:
+        injection = rb.read(FIXTURE)
+        injection.name = name
+        injection.metadata["sample"] = "usp"   # replicates share a sample
+        # The LC schema requires the volume in the same injection document that
+        # carries the identifier, so a run that records no volume has nowhere
+        # to put its name; see sequence_from_asm.
+        injection.metadata["injection_volume"] = {"value": 5.0, "unit": "uL"}
+        injections.append(injection)
+    seq = DataSequence(str(tmp_path / "Seq"), injections, {})
+
+    back = rb.sequence_from_asm(seq.to_asm())
+    assert [i.name for i in back.injections] == names
+    for name in names:
+        assert name in back
+        assert back.get_injection(name).name == name
+
+
+def test_sequence_membership_and_indexing(sequence):
+    first = sequence.injections[0]
+    # Without __contains__, this fell back to iterating and comparing each
+    # injection object against a string, so it answered False for a name that
+    # is present: a membership test that quietly says no.
+    assert first.name in sequence
+    assert "not-an-injection.D" not in sequence
+    # Indexing by position, by slice, and by name.
+    assert sequence[0] is first
+    assert sequence[0:1] == [first]
+    assert sequence[first.name] is first
+
+
+def test_an_unknown_injection_name_says_what_is_there(sequence):
+    with pytest.raises(KeyError) as excinfo:
+        sequence.get_injection("nope.D")
+    assert sequence.injections[0].name in str(excinfo.value)

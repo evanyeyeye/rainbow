@@ -132,10 +132,22 @@ def test_injections_named_by_index_without_a_sample_identifier(reconstructed):
     assert [inj.name for inj in reconstructed] == ["injection_1", "injection_2"]
 
 
-def test_injection_named_from_sample_identifier_when_present():
-    # red.D has sample 'usp'; the reconstructed injection takes that name,
-    # since the .D folder name is not stored in ASM.
+def test_injection_named_from_the_identifier_the_document_carries():
+    # The .D folder name IS stored, as the injection document's "injection
+    # identifier", so the injection comes back under the name the caller knows
+    # rather than its sample identifier ('usp' here), which a set of replicates
+    # would share.
     back = rb.sequence_from_asm(rb.read("tests/inputs/red.D").to_asm())
+    assert back.injections[0].name == "red.D"
+
+
+def test_injection_falls_back_to_the_sample_without_an_injection_document():
+    # A liquid chromatography run that records no injection volume gets no
+    # injection document at all, because the schema requires the volume beside
+    # the identifier. Such a run still comes back under its sample identifier.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.metadata.pop("injection_volume", None)
+    back = rb.sequence_from_asm(datadir.to_asm())
     assert back.injections[0].name == "usp"
 
 
