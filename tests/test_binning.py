@@ -7,9 +7,12 @@ bin_datapairs now bins by ``bin_width`` (the lossy control) and labels the bins
 at ``display_precision`` (cosmetic). Binning by ``bin_width`` is equivalent to
 the old "round to N decimals then sum" with ``bin_width = 10**-N``.
 """
+import warnings
+
 import numpy as np
 import pytest
 
+import rainbow as rb
 from rainbow._binning import bin_datapairs
 
 
@@ -403,3 +406,50 @@ def test_labels_only_on_empty_input():
     labels, data = bin_datapairs(
         np.array([]), np.array([]), np.array([0, 0]), 1.0, labels_only=True)
     assert labels.size == 0 and data.shape == (2, 0)
+
+
+@pytest.mark.parametrize(
+    "path,flags,name",
+    [
+        # The Chemstation binner, the MassHunter profile, and the MassHunter
+        # centroid are three separate implementations, and the probe reaches
+        # all three. It reached only the first, which left the flag off for
+        # exactly the channels large enough to need it.
+        ("tests/inputs/yellow.D", {}, "data.ms"),
+        ("tests/inputs/cyan.D", {"hrms": True}, "MSProfile.bin"),
+        ("tests/inputs/yellow.D", {"centroid": True}, "MSPeak.bin"),
+    ],
+)
+def test_every_binned_reader_can_return_the_labels_alone(path, flags, name):
+    import numpy as np
+
+    kwargs = dict(bin_width=1e-3, display_precision=4, **flags)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        full = rb.read(path, **kwargs).get_file(name)
+        lean = rb.read(path, _labels_only=True, **kwargs).get_file(name)
+
+    assert np.array_equal(full.ylabels, lean.ylabels)
+    assert lean.ylabels.size > 1
+    assert lean.data.shape == (full.data.shape[0], 0)
+    assert full.data.shape == (full.data.shape[0], full.ylabels.size)
+
+
+def test_the_probe_does_not_build_the_grid_it_never_reads():
+    # The measurement the flag exists for. mz_resolution reads nothing but the
+    # m/z axis, and yellow.D holds a MassHunter centroid beside a Chemstation
+    # channel, which is the shape that sends the probe through both.
+    import tracemalloc
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        tracemalloc.start()
+        try:
+            rb.mz_resolution("tests/inputs/yellow.D", centroid=True)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+    # Building both grids costs about 64 MB here against 26. The bound is
+    # generous: it is meant to catch a grid coming back, not to pin a number.
+    assert peak < 45e6

@@ -52,7 +52,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     from rainbow.agilent import masshunter
     datafiles.extend(masshunter.parse_allfiles(
         path, display_precision, hrms, centroid, bin_width, telemetry,
-        requested_files))
+        requested_files, labels_only))
 
     metadata = chemstation.parse_metadata(path, datafiles)
 

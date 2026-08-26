@@ -223,7 +223,8 @@ MAIN PARSING METHOD
 """
 
 def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
-                   bin_width=None, telemetry=False, requested_files=None):
+                   bin_width=None, telemetry=False, requested_files=None,
+                   labels_only=False):
     """
     Finds and parses Agilent Masshunter data files.
 
@@ -250,6 +251,9 @@ def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
         telemetry (bool, optional): Parse the DAD's non-absorbance traces.
         requested_files (list, optional): Lowercased filenames to restrict the
             DAD parse to. The MS files are selected by their flags instead.
+        labels_only (bool, optional): Return each binned MS channel's m/z
+            labels against an empty grid, for a caller that reads nothing but
+            the axis; see :obj:`bin_to_grid`.
 
     Returns:
         List containing a DataFile for each parsed file.
@@ -279,9 +283,10 @@ def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
         else:
             if centroid and "MSPeak.bin" in acqdata_files:
                 datafiles.append(parse_mspeakdata(
-                    acqdata_path, display_precision, bin_width))
+                    acqdata_path, display_precision, bin_width, labels_only))
             if hrms and "MSProfile.bin" in acqdata_files:
-                profile = parse_msdata(acqdata_path, display_precision, bin_width)
+                profile = parse_msdata(
+                    acqdata_path, display_precision, bin_width, labels_only)
                 if bin_width is not None:
                     datafiles.append(profile)         # single shared-grid file
                 else:
@@ -899,7 +904,8 @@ def _with_mz_floor(datafile, floor):
     return datafile
 
 
-def parse_msdata(path, display_precision='auto', bin_width=None):
+def parse_msdata(path, display_precision='auto', bin_width=None,
+                 labels_only=False):
     """
     Parses Masshunter MS data.
 
@@ -936,6 +942,10 @@ def parse_msdata(path, display_precision='auto', bin_width=None):
             representation (a list of :class:`ProfileDataFile`, one per
             flight-time grid); pass a width in daltons to project onto the shared
             grid.
+        labels_only (bool, optional): With a ``bin_width``, return the m/z
+            labels against an empty grid, for a caller that reads nothing but
+            the axis; see :obj:`bin_to_grid`. The per-scan representation is
+            unaffected, having no grid to build.
 
     Returns:
         A list of :class:`ProfileDataFile` (one per grid), or, when a
@@ -1095,7 +1105,8 @@ def parse_msdata(path, display_precision='auto', bin_width=None):
     intensities = np.concatenate(inten_arrs).astype(np.uint64)
     rows = np.repeat(np.arange(num_times), num_mz_per_time.astype(np.int64))
     mz_ylabels, data = bin_to_grid(
-        mz_arr, intensities, rows, num_times, display_precision, bin_width)
+        mz_arr, intensities, rows, num_times, display_precision, bin_width,
+        labels_only)
 
     return _with_mz_floor(
         DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {}),
@@ -1338,7 +1349,8 @@ def _scatter_sum(idx, intensities, size):
     return grid
 
 
-def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_width=None):
+def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision,
+                bin_width=None, labels_only=False):
     """
     Bins per-point (mz, intensity) values into a (retention time x mz) grid.
 
@@ -1364,6 +1376,9 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
         display_precision (int): Number of decimals to round the returned mz labels to.
         bin_width (float, optional): Width of each shared-grid bin in daltons.
             Defaults to ``10**-display_precision``.
+        labels_only (bool, optional): Return the m/z labels with an empty
+            ``(num_times, 0)`` grid, for a caller that reads nothing but the
+            axis. The labels are identical either way.
 
     Returns:
         Tuple ``(mz_ylabels, data)``: the sorted bin-center mz values that occur,
@@ -1393,6 +1408,19 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
     # nothing there; an explicit bin_width finer than the labels would round
     # neighbouring bins onto one label without it.
     decimals = label_precision(display_precision, width)
+
+    if labels_only:
+        # Both paths below return the bins some scan actually filled, and an
+        # intensity is never negative, so a bin is returned exactly when one of
+        # its points carries signal. That is answerable from the keys alone, at
+        # the cost of one pass, where the grid it is otherwise read off is
+        # num_times by the number of bins: at the width mz_resolution probes
+        # with, an 8.7 MB run peaks at 350 MB and a long one runs to gigabytes,
+        # all of it to be discarded unread.
+        filled = np.unique(keys[intensities > 0])
+        return (np.round(filled * width, decimals),
+                np.zeros((num_times, 0), dtype=np.uint64))
+
     low = int(keys.min())
     span = int(keys.max()) - low + 1
 
@@ -1425,7 +1453,8 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
 _PEAK_DTYPES = {8: ('<f4', '<f4'), 12: ('<f8', '<f4'), 16: ('<f8', '<f8')}
 
 
-def parse_mspeakdata(path, display_precision='auto', bin_width=None):
+def parse_mspeakdata(path, display_precision='auto', bin_width=None,
+                     labels_only=False):
     """
     Parses Masshunter centroided MS data stored in MSPeak.bin.
 
@@ -1455,6 +1484,10 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
         bin_width (float, optional): Omit (the default) for the per-scan
             :class:`CentroidDataFile`; pass a width in daltons to project the
             peaks onto one shared m/z grid.
+        labels_only (bool, optional): With a ``bin_width``, return the m/z
+            labels against an empty grid, for a caller that reads nothing but
+            the axis; see :obj:`bin_to_grid`. The per-scan representation is
+            unaffected, having no grid to build.
 
     Returns:
         A :class:`CentroidDataFile` (per-scan), or a single
@@ -1557,7 +1590,8 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
         [len(m) for m in mz_per_scan], dtype=np.int64)
     rows = np.repeat(np.arange(num_times), num_peaks_per_time)
     mz_ylabels, data = bin_to_grid(
-        mz_arr, intensities, rows, num_times, display_precision, bin_width)
+        mz_arr, intensities, rows, num_times, display_precision, bin_width,
+        labels_only)
     return _with_mz_floor(
         DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data, {}), floor)
 

@@ -548,8 +548,12 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         # probe without the flag would not see it in either read.
         # Labels only: _mz_spacings reads nothing but the m/z axis, and the
         # intensity grid at this width is num_times x num_ylabels, which dwarfs
-        # the file it came from (an 8.7 MB run peaked at 350 MB, and a long run
-        # extrapolates to tens of gigabytes) purely to be discarded.
+        # the file it came from purely to be discarded. Every binned reader
+        # honours the flag - Chemstation .ms, the MassHunter profile and the
+        # MassHunter centroid - because the largest channels are the MassHunter
+        # ones. On the bundled fixtures the probe peaks at 25 MB against 136 for
+        # cyan.D, and 26 against 64 on yellow.D; a long high-resolution run
+        # extrapolates to gigabytes.
         return read(path, bin_width=1e-3, display_precision=4, hrms=hrms,
                     centroid=centroid, requested_files=requested_files,
                     _labels_only=True)
