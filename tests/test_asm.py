@@ -1227,3 +1227,63 @@ def test_absorbance_in_au_is_scaled_to_the_milli_absorbance_the_schema_pins():
     channel.metadata["unit"] = "mAU"
     again = _by_label(DataDirectory("run", [channel], {}).to_asm())["UV1.dat"]
     assert again[_CHROM_KEY]["data"]["measures"][0] == [-1.6, 2.5]
+
+
+def test_a_run_with_no_parsed_channels_says_which_flag_parses_it():
+    # The other half of the nothing-to-export warning: a centroid run read
+    # without centroid=True has no channels at all, which is a different cause
+    # and a different remedy from a run whose channels are not exported.
+    datadir = rb.read("tests/inputs/gold.D")
+    assert not datadir.datafiles
+    with pytest.warns(UserWarning, match="centroid=True"):
+        document = datadir.to_asm()
+    assert not _measurements(document)
+
+
+def test_a_json_integer_is_not_turned_into_a_float():
+    from rainbow import asm
+
+    assert asm._number(5) == 5 and isinstance(asm._number(5), int)
+    assert asm._number({"value": 7}) == 7 and isinstance(
+        asm._number({"value": 7}), int)
+    # Out of float64 range is the one case that cannot be represented.
+    assert asm._number(10 ** 400) is None
+
+
+def test_only_an_absorbance_cube_can_carry_a_peak_list():
+    # The schema models processed data only on an absorbance measurement, so
+    # this decides whether peaks are attached or the channel is relabeled.
+    from rainbow import asm
+
+    def cube(concept):
+        return {asm._CHROMATOGRAM_CUBE:
+                {"cube-structure": {"measures": [{"concept": concept}]}}}
+
+    assert asm._admits_peaks(cube("absorbance"))
+    assert not asm._admits_peaks(cube("electric current"))
+    assert not asm._admits_peaks(cube("voltage"))
+    assert not asm._admits_peaks({})
+    assert not asm._admits_peaks(
+        {asm._CHROMATOGRAM_CUBE: {"cube-structure": {"measures": []}}})
+
+
+def test_a_per_injection_filename_cannot_escape_its_directory():
+    # The injection name becomes a filename, and a .D name carrying a separator
+    # would otherwise write outside the directory the caller named.
+    from rainbow import asm
+
+    assert asm._injection_filename("plain.D") == "plain.asm.json"
+    assert "/" not in asm._injection_filename("a/b.D")
+    assert "\\" not in asm._injection_filename("x\\y.D")
+
+
+def test_colliding_per_injection_filenames_are_suffixed_not_overwritten():
+    from rainbow import asm
+
+    taken = set()
+    names = []
+    for _ in range(3):
+        name = asm._unique_filename("brown.asm.json", taken)
+        taken.add(name)
+        names.append(name)
+    assert names == ["brown.asm.json", "brown_2.asm.json", "brown_3.asm.json"]

@@ -121,3 +121,29 @@ def test_an_argument_that_never_existed_still_reads_as_a_typo():
     # The guard must not turn every unknown keyword into a migration lecture.
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         rb.agilent.read(AGILENT_FIXTURE, nonsense=1)
+
+
+# Flag validation. Each of these was a live check that no test exercised, so
+# deleting the check passed the suite.
+@pytest.mark.parametrize(
+    "kwargs,message",
+    [
+        ({"telemetry": "yes"}, "telemetry flag must be a boolean"),
+        ({"hrms": "yes"}, "hrms flag must be a boolean"),
+        ({"centroid": 1}, "centroid flag must be a boolean"),
+    ],
+)
+def test_flags_must_be_booleans(kwargs, message):
+    with pytest.raises(Exception, match=message):
+        rb.read(AGILENT_FIXTURE, **kwargs)
+
+
+def test_display_precision_and_bin_width_are_validated():
+    with pytest.raises(Exception, match="display_precision"):
+        rb.read(AGILENT_FIXTURE, display_precision=-1)
+    with pytest.raises(Exception, match="display_precision"):
+        rb.read(AGILENT_FIXTURE, display_precision=True)
+    with pytest.raises(Exception, match="bin_width"):
+        rb.read(AGILENT_FIXTURE, bin_width=0)
+    with pytest.raises(Exception, match="bin_width"):
+        rb.read(AGILENT_FIXTURE, bin_width=-1.0)

@@ -2,6 +2,7 @@ import os
 import shutil
 import struct
 import tempfile
+import warnings
 
 import numpy as np
 import pytest
@@ -1717,3 +1718,40 @@ def test_list_analog_handles_masshunter_telemetry(capsys):
     printed = capsys.readouterr().out
     assert "Board Temperature" in printed
     assert "UV Lamp Anode Voltage" in printed
+
+
+def test_tof_names_what_replaced_it():
+    # The attribute was renamed in 1.5.0. A property is used rather than
+    # __getattr__ because a property that raises AttributeError falls back to
+    # __getattr__, which swallowed the message and gave the generic one.
+    datadir = rb.read(os.path.join("tests", "inputs", "amber.D"), hrms=True)
+    profile = next(f for f in datadir.datafiles if hasattr(f, "mass_labels"))
+    with pytest.raises(AttributeError, match="renamed to 'flight_times'"):
+        profile.tof
+
+
+def test_the_hrms_profile_floor_is_not_the_vendor_floor():
+    # The profile resolves far below Agilent's unit-resolution floor, so the
+    # vendor constant would warn about a bin width the data supports. Setting
+    # this to the vendor floor passed the whole suite.
+    from rainbow._binning import MZ_FLOORS
+    from rainbow.agilent.masshunter import HRMS_MZ_FLOOR
+
+    assert HRMS_MZ_FLOOR < MZ_FLOORS["agilent"]
+    path = os.path.join("tests", "inputs", "amber.D")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rb.read(path, hrms=True, bin_width=1e-4)
+    assert not [w for w in caught if "only inserts empty bins" in str(w.message)]
+    # Below the profile's own floor it does warn.
+    with pytest.warns(UserWarning, match="only inserts empty bins"):
+        rb.read(path, hrms=True, bin_width=HRMS_MZ_FLOOR / 10)
+
+
+def test_bin_to_grid_refuses_a_width_that_overflows_the_bin_index():
+    # Without the guard every m/z casts to the same index and the run collapses
+    # into one column holding the total signal, silently.
+    with pytest.raises(ValueError, match="bin index overflows"):
+        masshunter.bin_to_grid(
+            np.array([1e300]), np.array([1], dtype=np.uint64),
+            np.array([0]), 1, 4, bin_width=1e-300)

@@ -53,3 +53,34 @@ def test_function_type_helpers_degrade_and_map():
     assert masslynx._acquisition_mode(0) == "Scan"
     assert masslynx._acquisition_mode(1) == "SIM"
     assert masslynx._acquisition_mode(12) is None  # diode array: not an MS mode
+
+
+def test_a_diode_array_axis_ignores_the_m_z_bin_width():
+    """The DAD wavelength axis is in nanometres on a 1 nm step, whatever
+    bin_width the caller passed for the MS channels in the same run."""
+    import numpy as np
+    for bin_width in (1.0, 0.05):
+        datadir = rb.read("tests/inputs/violet.raw", bin_width=bin_width)
+        labels = np.asarray(
+            datadir.get_file("_FUNC003.DAT").ylabels, dtype=float)
+        assert np.allclose(np.diff(labels), 1.0), bin_width
+        # The MS channels in the same run do follow bin_width.
+        ms = np.asarray(datadir.get_file("_FUNC001.DAT").ylabels, dtype=float)
+        assert np.min(np.diff(ms)) <= bin_width
+
+
+def test_the_uv_wavelength_step_is_not_the_ms_bin_width():
+    from rainbow.waters.masslynx import (
+        _UV_WAVELENGTH_STEP, _FUNC_TYPE_DIODE_ARRAY)
+
+    assert _UV_WAVELENGTH_STEP == 1.0
+    assert _FUNC_TYPE_DIODE_ARRAY == 12
+
+
+# NOT COVERED, and no bundled fixture can cover it: reading the axis from the
+# declared function type rather than from the guessed detector only changes an
+# answer for a function that is (a) not type 12, (b) typed UV by the polarity
+# fallback, and (c) in the 6/8 format, which is the only one that bins rather
+# than taking its labels from _FUNCTNS.INF. white.raw is (a) and (b) but is in
+# the 2/4 format, so reverting the change leaves every bundled fixture
+# byte-identical. Covering it needs a fixture that does not exist yet.
