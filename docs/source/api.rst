@@ -25,6 +25,24 @@ on :code:`read`'s :code:`bin_width`:
 
    mz_resolution
 
+:code:`mz_resolution` reads the run to answer for that run. Two module
+constants answer more cheaply, without reading anything:
+
+.. code-block:: python
+
+   >>> rb.VENDORS
+   ('agilent', 'waters')
+   >>> rb.MZ_FLOORS
+   {'agilent': 0.1, 'waters': 0.03}
+
+:code:`MZ_FLOORS` is the coarsest grid each vendor's unit-resolution MS is
+known to record, in daltons, and is what :code:`read` warns against when a
+:code:`bin_width` is finer than the data supports. It is a floor for the
+vendor, not for a particular run: a high-resolution MassHunter profile resolves
+far below its entry, and a calibrated centroid has no lattice at all. Use it to
+pick a starting :code:`bin_width` without opening a file, and
+:code:`mz_resolution` when the run itself matters.
+
 To read a whole multi-injection sequence, and to convert to and from the
 Allotrope Simple Model (ASM), use the following. See the :ref:`sequences`
 guide for an overview.

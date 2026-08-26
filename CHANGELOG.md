@@ -50,6 +50,11 @@ to [Semantic Versioning](https://semver.org/).
   `metadata['acquisition_mode']` of `'SIM'` or `'Scan'`, read from authoritative
   vendor metadata (Agilent `acqmeth.txt`, Waters `_FUNCTNS.INF` function types)
   rather than guessed from the data.
+- **The ASM export options are keyword-only.** `to_asm`, `export_asm`, their
+  sequence equivalents and the `DataDirectory` / `DataSequence` methods take
+  their run or file positionally and everything else by name, so no caller has
+  to remember an order and the list stays free to grow. Nothing here shipped
+  before 1.5.0, so no existing call changes meaning.
 - **Controls for ASM document size.** `to_asm` / `export_asm` accept
   `export_dad_cube=False` to omit the large diode-array spectrum cube,
   `wavelengths=[...]` to keep only chosen wavelengths, and `decimal_places=N` to
@@ -164,7 +169,7 @@ to [Semantic Versioning](https://semver.org/).
   will not invent one: a fabricated offset would move the recorded instant by
   up to a day. So the default output is ISO 8601 without an offset, which is
   not strict RFC 3339 (what `format: date-time` means). Pass the new
-  `timezone=` argument to `to_asm`, `export_asm`, and their sequence
+  `utc_offset=` argument to `to_asm`, `export_asm`, and their sequence
   equivalents to supply the offset and get a fully conforming document; an
   offset the source did record is never overridden. See the ASM documentation.
 - **The ASM conformance test now checks string formats.** It built its

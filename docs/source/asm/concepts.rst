@@ -195,9 +195,9 @@ and the document becomes fully conforming:
 
 .. code-block:: python
 
-   datadir.to_asm(timezone="-05:00")   # or "+00:00", or "Z"
+   datadir.to_asm(utc_offset="-05:00")   # or "+00:00", or "Z"
 
-An offset the source *did* record always wins: passing ``timezone`` fills in
+An offset the source *did* record always wins: passing ``utc_offset`` fills in
 what is missing, it never overrides what the instrument said. That holds even
 when the offset is in a different file from the timestamp that won the vote. A
 ChemStation run spells the same instant differently per detector, and often
@@ -213,7 +213,7 @@ Most ASM producers, including Benchling's ``allotropy``, default to stamping
 UTC on a zone-less timestamp rather than leaving it bare. rainbow does not,
 for the reason above. And a consumer that reads a bare timestamp will usually
 apply *its* default, so an offset-less value often becomes a UTC one downstream
-anyway. Passing ``timezone`` is how you keep that decision yours.
+anyway. Passing ``utc_offset`` is how you keep that decision yours.
 
 A timestamp rainbow cannot parse at all is normally left out rather than passed
 through, since a vendor-format string in that field is a value no ASM reader

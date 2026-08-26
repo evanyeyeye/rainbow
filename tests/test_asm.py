@@ -1111,19 +1111,19 @@ def test_timezone_fills_in_a_missing_offset_but_never_overrides_one():
 
 
 def test_an_offset_a_sibling_file_recorded_outranks_the_callers():
-    """ timezone= must fill in a missing zone, never overwrite a recorded one.
+    """ utc_offset= must fill in a missing zone, never overwrite a recorded one.
 
     A ChemStation run spells the same instant differently per detector, and
     only the MS spelling carries a UTC offset. Which spelling wins the
     directory-level vote comes down to how many channels the run happened to
-    have, so without this a caller passing timezone= would silently move
+    have, so without this a caller passing utc_offset= would silently move
     orange.D's timestamps five hours while the right offset sat in a sibling.
     """
     datadir = rb.read("tests/inputs/orange.D")
     # The vote is unchanged: the .ch spelling is the more precise one.
     assert datadir.metadata["date"] == "14-Nov-19, 15:08:08"
     assert datadir.metadata["utc_offset"] == "-05:00"
-    lc = datadir.to_asm(timezone="+00:00")[
+    lc = datadir.to_asm(utc_offset="+00:00")[
         "liquid chromatography aggregate document"][
         "liquid chromatography document"][0]
     for measurement in lc["measurement aggregate document"][
@@ -1131,7 +1131,7 @@ def test_an_offset_a_sibling_file_recorded_outranks_the_callers():
         assert measurement["measurement time"] == "2019-11-14T15:08:08-05:00"
 
 
-def test_timezone_option_is_validated():
+def test_utc_offset_option_is_validated():
     from rainbow.asm import _utc_offset
     assert _utc_offset(None) is None
     assert _utc_offset("Z") == "+00:00"
@@ -1148,7 +1148,7 @@ def test_timezone_option_is_validated():
                 "+24:00", "+99:99", "+05:60", "+14:01",
                 # \d is Unicode-aware, so digits need pinning to ASCII.
                 "+٠٥:٣٠"):
-        with pytest.raises(Exception, match="timezone must be"):
+        with pytest.raises(Exception, match="utc_offset must be"):
             _utc_offset(bad)
 
 
@@ -1287,3 +1287,37 @@ def test_colliding_per_injection_filenames_are_suffixed_not_overwritten():
         taken.add(name)
         names.append(name)
     assert names == ["brown.asm.json", "brown_2.asm.json", "brown_3.asm.json"]
+
+
+def test_the_export_options_are_keyword_only():
+    # Seven options behind one positional argument is an ordering nobody should
+    # have to remember, and pinning it forever would stop the list ever being
+    # reordered. ASM export is new in 1.5.0, so this costs no caller anything.
+    from rainbow import asm
+
+    datadir = rb.read("tests/inputs/red.D")
+    with pytest.raises(TypeError):
+        asm.to_asm(datadir, False)               # was export_dad_cube
+    with pytest.raises(TypeError):
+        datadir.to_asm(False)
+    # The keyword form is the only form, and it works.
+    assert asm.to_asm(datadir, export_dad_cube=False)
+    assert datadir.to_asm(export_dad_cube=False)
+
+
+@pytest.mark.parametrize("bad", ["", 0, "XX", "gas"])
+def test_a_technique_override_is_judged_on_being_given(bad):
+    # "" and 0 are falsy, so they slipped past the check and fell through to
+    # auto-detection: the caller asked for a technique and silently got
+    # whichever one the detectors implied, while "XX" raised.
+    datadir = rb.read("tests/inputs/red.D")
+    with pytest.raises(ValueError, match="technique must be"):
+        datadir.to_asm(technique=bad)
+
+
+def test_an_unrecorded_technique_in_metadata_still_falls_through():
+    # An empty value in the metadata means the method recorded nothing, which
+    # is not the same as the caller naming a technique badly.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.metadata["technique"] = ""
+    assert "liquid chromatography aggregate document" in datadir.to_asm()

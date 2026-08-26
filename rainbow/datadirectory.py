@@ -147,8 +147,8 @@ class DataDirectory:
         """
         self.get_file(filename).plot(label, **kwargs)
 
-    def to_asm(self, export_dad_cube=True, wavelengths=None, ions=None,
-               decimal_places=None, technique=None, timezone=None):
+    def to_asm(self, *, export_dad_cube=True, wavelengths=None, ions=None,
+               decimal_places=None, technique=None, utc_offset=None):
         """
         Returns an Allotrope Simple Model (ASM) document for this directory.
 
@@ -172,7 +172,7 @@ class DataDirectory:
             technique (str, optional): Force the export technique, ``"GC"`` or
                 ``"LC"``, overriding the method's declaration and the
                 FID-presence fallback.
-            timezone (str, optional): UTC offset such as
+            utc_offset (str, optional): UTC offset such as
                 ``"-05:00"`` or ``"Z"``, stamped on timestamps the
                 instrument recorded without one. An offset the source
                 did record is never overridden.
@@ -182,12 +182,14 @@ class DataDirectory:
 
         """
         from rainbow import asm
-        return asm.to_asm(self, export_dad_cube, wavelengths, ions,
-                          decimal_places, technique, timezone)
+        return asm.to_asm(self, export_dad_cube=export_dad_cube,
+                          wavelengths=wavelengths, ions=ions,
+                          decimal_places=decimal_places, technique=technique,
+                          utc_offset=utc_offset)
 
-    def export_asm(self, filename, export_dad_cube=True, wavelengths=None,
+    def export_asm(self, filename, *, export_dad_cube=True, wavelengths=None,
                    ions=None, decimal_places=None, technique=None,
-                   timezone=None, indent=2):
+                   utc_offset=None, indent=2):
         """
         Writes an Allotrope Simple Model (ASM) JSON document for this directory.
 
@@ -211,7 +213,7 @@ class DataDirectory:
             technique (str, optional): Force the export technique, ``"GC"`` or
                 ``"LC"``, overriding the method's declaration and the
                 FID-presence fallback.
-            timezone (str, optional): UTC offset such as
+            utc_offset (str, optional): UTC offset such as
                 ``"-05:00"`` or ``"Z"``, stamped on timestamps the
                 instrument recorded without one. An offset the source
                 did record is never overridden.
@@ -220,5 +222,7 @@ class DataDirectory:
         """
         from rainbow import asm
         with open(filename, 'w', encoding="utf-8") as f:
-            asm.export_asm(self, f, export_dad_cube, wavelengths, ions,
-                           decimal_places, technique, timezone, indent)
+            asm.export_asm(self, f, export_dad_cube=export_dad_cube,
+                           wavelengths=wavelengths, ions=ions,
+                           decimal_places=decimal_places, technique=technique,
+                           utc_offset=utc_offset, indent=indent)

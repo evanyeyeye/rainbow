@@ -265,8 +265,8 @@ _DETECTOR_CUBES = {
 }
 
 
-def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
-           decimal_places=None, technique=None, timezone=None):
+def to_asm(datadir, *, export_dad_cube=True, wavelengths=None, ions=None,
+           decimal_places=None, technique=None, utc_offset=None):
     """
     Builds an ASM liquid- or gas-chromatography document from a DataDirectory.
 
@@ -295,7 +295,7 @@ def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
             ``"LC"``, overriding what the method declares and the FID-presence
             fallback. By default the technique is read from the acquisition
             method (see :func:`_technique`).
-        timezone (str, optional): UTC offset such as
+        utc_offset (str, optional): UTC offset such as
             ``"-05:00"`` or ``"Z"``, stamped on timestamps the
             instrument recorded without one. A usable offset the
             source did record is never overridden; an unusable one
@@ -306,7 +306,7 @@ def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
 
     """
     options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
-                       timezone)
+                       utc_offset)
     metadata = datadir.metadata
     technique = _technique(datadir.datafiles, metadata, technique)
     return _aggregate_document(
@@ -315,9 +315,9 @@ def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
         [_injection_document(datadir, metadata, options, technique)])
 
 
-def sequence_to_asm(datasequence, export_dad_cube=True, wavelengths=None,
+def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
                     ions=None, decimal_places=None, technique=None,
-                    timezone=None):
+                    utc_offset=None):
     """
     Builds one ASM document from a DataSequence.
 
@@ -344,7 +344,7 @@ def sequence_to_asm(datasequence, export_dad_cube=True, wavelengths=None,
         technique (str, optional): Force the export technique, ``"GC"`` or
             ``"LC"``, overriding the method's declaration and the FID-presence
             fallback.
-        timezone (str, optional): UTC offset such as
+        utc_offset (str, optional): UTC offset such as
             ``"-05:00"`` or ``"Z"``, stamped on timestamps the
             instrument recorded without one. A usable offset the
             source did record is never overridden; an unusable one
@@ -355,7 +355,7 @@ def sequence_to_asm(datasequence, export_dad_cube=True, wavelengths=None,
 
     """
     options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
-                       timezone)
+                       utc_offset)
     metadata = _sequence_metadata(datasequence)
     technique = _technique(
         _sequence_datafiles(datasequence), metadata, technique)
@@ -415,8 +415,15 @@ def _technique(datafiles, metadata, override=None):
     document also admits the run's UV and MS cubes, so a mixed GC-MS or
     UV-plus-FID run stays lossless.
     """
-    declared = override or metadata.get("technique")
-    if declared:
+    # The caller's override is judged on being given, not on being truthy: ""
+    # and 0 are wrong answers to "which technique", and letting them fall
+    # through to auto-detection answered a different question than the one
+    # asked, silently, while "XX" raised. An empty value in the metadata is
+    # different: it means the method recorded nothing, so it does fall through.
+    declared = override
+    if declared is None:
+        declared = metadata.get("technique") or None
+    if declared is not None:
         normalized = str(declared).upper()
         if normalized == "GC":
             return _GC
@@ -429,22 +436,26 @@ def _technique(datafiles, metadata, override=None):
     return _LC
 
 
-def to_asm_str(datadir, export_dad_cube=True, wavelengths=None, ions=None,
-               decimal_places=None, technique=None, timezone=None, indent=2):
+def to_asm_str(datadir, *, export_dad_cube=True, wavelengths=None, ions=None,
+               decimal_places=None, technique=None, utc_offset=None, indent=2):
     """Returns the DataDirectory ASM document as a JSON string."""
     return json.dumps(
-        to_asm(datadir, export_dad_cube, wavelengths, ions, decimal_places,
-               technique, timezone),
+        to_asm(datadir, export_dad_cube=export_dad_cube,
+               wavelengths=wavelengths, ions=ions,
+               decimal_places=decimal_places, technique=technique,
+               utc_offset=utc_offset),
         indent=indent, ensure_ascii=False)
 
 
-def sequence_to_asm_str(datasequence, export_dad_cube=True, wavelengths=None,
+def sequence_to_asm_str(datasequence, *, export_dad_cube=True, wavelengths=None,
                         ions=None, decimal_places=None, technique=None,
-                        timezone=None, indent=2):
+                        utc_offset=None, indent=2):
     """Returns the DataSequence ASM document as a JSON string."""
     return json.dumps(
-        sequence_to_asm(datasequence, export_dad_cube, wavelengths, ions,
-                        decimal_places, technique, timezone),
+        sequence_to_asm(datasequence, export_dad_cube=export_dad_cube,
+                        wavelengths=wavelengths, ions=ions,
+                        decimal_places=decimal_places, technique=technique,
+                        utc_offset=utc_offset),
         indent=indent, ensure_ascii=False)
 
 
@@ -454,9 +465,9 @@ def sequence_to_asm_str(datasequence, export_dad_cube=True, wavelengths=None,
 _DOCUMENTS_PLACEHOLDER = "@@RAINBOW_INJECTION_DOCUMENTS@@"
 
 
-def export_asm(datadir, fileobj, export_dad_cube=True, wavelengths=None,
+def export_asm(datadir, fileobj, *, export_dad_cube=True, wavelengths=None,
                ions=None, decimal_places=None, technique=None,
-               timezone=None, indent=2):
+               utc_offset=None, indent=2):
     """Streams a DataDirectory ASM document to an open text file.
 
     Equivalent to writing :func:`to_asm_str`, but the (potentially large) data
@@ -464,16 +475,16 @@ def export_asm(datadir, fileobj, export_dad_cube=True, wavelengths=None,
     string is never held in memory. See :func:`to_asm` for the arguments.
     """
     options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
-                       timezone)
+                       utc_offset)
     metadata = datadir.metadata
     technique = _technique(datadir.datafiles, metadata, technique)
     _stream_aggregate(fileobj, technique, _device_system(metadata, technique),
                        [(datadir, metadata)], options, indent)
 
 
-def sequence_export_asm(datasequence, fileobj, export_dad_cube=True,
+def sequence_export_asm(datasequence, fileobj, *, export_dad_cube=True,
                         wavelengths=None, ions=None, decimal_places=None,
-                        technique=None, timezone=None, indent=2):
+                        technique=None, utc_offset=None, indent=2):
     """Streams a DataSequence ASM document to an open text file.
 
     Like :func:`sequence_to_asm_str`, but each injection document is built and
@@ -482,7 +493,7 @@ def sequence_export_asm(datasequence, fileobj, export_dad_cube=True,
     arguments.
     """
     options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
-                       timezone)
+                       utc_offset)
     metadata = _sequence_metadata(datasequence)
     technique = _technique(
         _sequence_datafiles(datasequence), metadata, technique)
@@ -492,10 +503,10 @@ def sequence_export_asm(datasequence, fileobj, export_dad_cube=True,
                        specs, options, indent)
 
 
-def sequence_export_asm_per_injection(datasequence, directory,
+def sequence_export_asm_per_injection(datasequence, directory, *,
                                       export_dad_cube=True, wavelengths=None,
                                       ions=None, decimal_places=None,
-                                      technique=None, timezone=None,
+                                      technique=None, utc_offset=None,
                                       indent=2):
     """Streams one standalone ASM document per injection into ``directory``.
 
@@ -506,7 +517,7 @@ def sequence_export_asm_per_injection(datasequence, directory,
     created if needed. Returns the list of paths written, in injection order.
     """
     options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
-                       timezone)
+                       utc_offset)
     metadata = _sequence_metadata(datasequence)
     technique = _technique(
         _sequence_datafiles(datasequence), metadata, technique)
@@ -612,7 +623,7 @@ _WAVELENGTH_TOLERANCE = 1.0
 
 # The wall-clock spellings the vendor parsers hand back. Only the ChemStation
 # MS-file form carries a UTC offset, and not always; the rest record local time
-# with no zone at all, which is the whole reason `timezone=` exists.
+# with no zone at all, which is the whole reason `utc_offset=` exists.
 #
 #   27-Feb-18, 10:11:50         ChemStation .ch/.uv header
 #   06-Aug-2021 10:52:20        Waters _HEADER.TXT
@@ -656,39 +667,40 @@ def _offset_in_range(hours, minutes):
     return minutes <= 59 and (hours < 14 or (hours == 14 and not minutes))
 
 
-def _normalize_offset(timezone):
+def _normalize_offset(utc_offset):
     """A UTC offset normalized to ``+HH:MM``, or None if it is not one.
 
     The single place the rule lives, so an offset reaching a document through
-    the caller's ``timezone`` and one harvested from a vendor file are held to
+    the caller's ``utc_offset`` and one harvested from a vendor file are held to
     the same standard. Callers that must reject rather than ignore a bad value
     raise on the None (see :func:`_utc_offset`).
     """
-    if not isinstance(timezone, str):
+    if not isinstance(utc_offset, str):
         return None
     # An offset arriving from a config file or a shell capture keeps its
     # trailing newline, and the offset is concatenated onto every timestamp in
     # the document, so a stray one would corrupt all of them at once.
-    timezone = timezone.strip()
-    if timezone in ("Z", "z"):
+    utc_offset = utc_offset.strip()
+    if utc_offset in ("Z", "z"):
         return "+00:00"
-    if not _UTC_OFFSET.fullmatch(timezone):
+    if not _UTC_OFFSET.fullmatch(utc_offset):
         return None
-    normalized = timezone if ":" in timezone else timezone[:3] + ":" + timezone[3:]
+    normalized = (utc_offset if ":" in utc_offset
+                  else utc_offset[:3] + ":" + utc_offset[3:])
     if not _offset_in_range(int(normalized[1:3]), int(normalized[4:6])):
         return None
     return normalized
 
 
-def _utc_offset(timezone):
-    """Validates a ``timezone`` export option, returning a UTC offset string."""
-    if timezone is None:
+def _utc_offset(utc_offset):
+    """Validates a ``utc_offset`` export option, returning an offset string."""
+    if utc_offset is None:
         return None
-    normalized = _normalize_offset(timezone)
+    normalized = _normalize_offset(utc_offset)
     if normalized is None:
         raise Exception(
-            "timezone must be a UTC offset such as '+00:00', '-05:00', or "
-            "'Z', not {!r}.".format(timezone))
+            "utc_offset must be a UTC offset such as '+00:00', '-05:00', or "
+            "'Z', not {!r}.".format(utc_offset))
     return normalized
 
 
@@ -720,7 +732,7 @@ def _parse_vendor(value):
     if offset:
         digits = offset[1:].replace(":", "")
         hours, minutes = int(digits[:2]), int(digits[2:])
-        # Held to the same rule as the caller's `timezone`. Without this an
+        # Held to the same rule as the caller's `utc_offset`. Without this an
         # offset of 24 hours or more raises out of datetime.timezone, taking down an
         # export whose contract is to return None, and minutes of 60 or more
         # would silently roll over into a different instant.
@@ -755,7 +767,7 @@ def _parse_iso(value):
         return None
 
 
-def _iso_timestamp(value, timezone=None):
+def _iso_timestamp(value, utc_offset=None):
     """
     A vendor timestamp as ISO 8601, or None if it cannot be read.
 
@@ -764,7 +776,7 @@ def _iso_timestamp(value, timezone=None):
     source has one it is kept. Where it does not, the timestamp is emitted
     without one rather than with an invented one: a fabricated offset would
     move the recorded instant by up to a day, and rainbow does not know where
-    the instrument was. A caller who does know can supply ``timezone``.
+    the instrument was. A caller who does know can supply ``utc_offset``.
 
     """
     if not isinstance(value, str) or not value.strip():
@@ -772,8 +784,8 @@ def _iso_timestamp(value, timezone=None):
     parsed = _parse_vendor(value.strip()) or _parse_iso(value)
     if parsed is None:
         return None                            # a shape rainbow cannot read
-    if parsed.tzinfo is None and timezone is not None:
-        return parsed.isoformat() + timezone
+    if parsed.tzinfo is None and utc_offset is not None:
+        return parsed.isoformat() + utc_offset
     return parsed.isoformat()
 
 
@@ -787,17 +799,17 @@ class _Options:
         ions (float/list or None): m/z trace(s) to extract from full-scan MS.
         decimals (int or None): round emitted numeric values to this
             many decimal places; ``None`` keeps full precision.
-        timezone (str or None): UTC offset to stamp on timestamps the source
+        utc_offset (str or None): UTC offset to stamp on timestamps the source
             recorded without one.
     """
 
     def __init__(self, export_dad_cube=True, wavelengths=None, ions=None,
-                 decimal_places=None, timezone=None):
+                 decimal_places=None, utc_offset=None):
         self.export_dad_cube = export_dad_cube
         self.wavelengths = _wavelength_list(wavelengths)
         self.ions = None if ions is None else _finite_number_list(ions, "ions")
         self.decimals = _check_decimal_places(decimal_places)
-        self.timezone = _utc_offset(timezone)
+        self.utc_offset = _utc_offset(utc_offset)
         self._warned = set()
 
     def start_document(self):
@@ -818,7 +830,7 @@ class _Options:
 
         """
         # An offset another file in the same run recorded outranks the
-        # caller's: it is what the instrument said, and `timezone` is only
+        # caller's: it is what the instrument said, and `utc_offset` is only
         # meant to fill in a zone nothing recorded. It is held to the same
         # rule as the caller's, since it is concatenated into the document the
         # same way, and a vendor file is not a more trustworthy source than a
@@ -829,7 +841,7 @@ class _Options:
             warnings.warn(
                 f"ignoring {recorded_offset!r}, which the run recorded as a "
                 "UTC offset but is not one.")
-        stamped = _iso_timestamp(value, recorded or self.timezone)
+        stamped = _iso_timestamp(value, recorded or self.utc_offset)
         if stamped is not None or not isinstance(value, str) or not value.strip():
             return stamped
         if required:
