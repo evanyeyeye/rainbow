@@ -902,6 +902,47 @@ def test_a_timestamp_that_could_be_misread_is_refused(value):
     assert _iso_timestamp(value) is None
 
 
+@pytest.mark.parametrize("value", [
+    # An offset of 24 hours or more raises out of timedelta rather than
+    # failing to parse, which would take down a whole export.
+    "3 Feb 22  11:22 am +2500",
+    "3 Feb 22  11:22 am -2400",
+    "3 Feb 22  11:22 am +9999",
+    # Minutes of 60 or more would roll over into a different instant.
+    "3 Feb 22  11:22 am +0060",
+    "3 Feb 22  11:22 am +0099",
+    # A 12-hour clock runs 1 to 12; hour 0 read as noon is a 12-hour error.
+    "3 Feb 22  00:22 pm",
+    # A truncated year would read as a timestamp eighteen centuries off.
+    "9-Feb-218 10:11:50",
+])
+def test_a_vendor_timestamp_rainbow_cannot_trust_returns_none(value):
+    """ Never raise, and never guess: the contract is a value or None. """
+    from rainbow.asm import _iso_timestamp
+    assert _iso_timestamp(value) is None
+
+
+def test_an_offset_the_run_recorded_is_validated_like_the_callers():
+    """ A vendor file is not a more trustworthy source than a keyword.
+
+    The offset harvested from a sibling file is concatenated onto every
+    timestamp in the document exactly as the caller's is, so hardening only
+    the `timezone` argument would leave a second unguarded way in.
+    """
+    from rainbow.asm import _Options
+    options = _Options()
+    for bad in ("+99:99", "garbage", "+05:60", "+24:00"):
+        with pytest.warns(UserWarning, match="is not one"):
+            stamped = options.timestamp(
+                "27-Feb-18, 10:11:50", recorded_offset=bad)
+        assert stamped == "2018-02-27T10:11:50", bad
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert options.timestamp("27-Feb-18, 10:11:50",
+                                 recorded_offset="-05:00") == \
+            "2018-02-27T10:11:50-05:00"
+
+
 def test_a_required_timestamp_is_written_through_rather_than_dropped():
     """ Dropping a required field breaks structure, not just format.
 

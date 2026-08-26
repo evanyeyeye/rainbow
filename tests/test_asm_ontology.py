@@ -15,6 +15,7 @@ hosts AFO) over plain HTTP.
     RAINBOW_TEST_ASM_SCHEMA=1 pytest tests/test_asm_ontology.py
 
 """
+import functools
 import json
 import os
 import urllib.parse
@@ -50,8 +51,13 @@ def _collect_terms(node, out):
             _collect_terms(value, out)
 
 
-def _afo_accession(term):
-    """Returns the AFO id whose label equals ``term``, or None; skips offline."""
+@functools.lru_cache(maxsize=None)
+def _afo_term(term):
+    """Returns the AFO class whose label equals ``term``, or None.
+
+    Skips, loudly, when OLS cannot be reached, rather than passing on an
+    unanswered question.
+    """
     url = (_OLS_SEARCH + "?q=" + urllib.parse.quote(term)
            + "&ontology=afo&rows=15")
     try:
@@ -61,8 +67,14 @@ def _afo_accession(term):
         pytest.skip("could not reach EBI OLS for AFO: {}".format(error))
     for doc in data.get("response", {}).get("docs", []):
         if doc.get("label", "").lower() == term.lower():
-            return doc.get("obo_id")
+            return doc
     return None
+
+
+def _afo_accession(term):
+    """Returns the AFO id whose label equals ``term``, or None; skips offline."""
+    doc = _afo_term(term)
+    return doc.get("obo_id") if doc else None
 
 
 def _document_with_all_device_types():
@@ -166,20 +178,58 @@ def test_emitted_terms_are_afo_classes():
     assert not invalid, "not valid AFO classes: {}".format(invalid)
 
 
-def _afo_ancestors(accession):
-    """The labels of every ancestor of an AFO class; skips offline."""
-    iri = "http://purl.allotrope.org/ontologies/equipment#" + \
-        accession.replace(":", "_")
+@functools.lru_cache(maxsize=None)
+def _afo_ancestors(term):
+    """The labels of every ancestor of the AFO class labelled ``term``.
+
+    Returns None when ``term`` is not an AFO class at all, so a caller can
+    tell "no ancestors" apart from "no such class". Skips offline.
+    """
+    doc = _afo_term(term)
+    if doc is None:
+        return None
+    # The IRI has to come from the search response. Rebuilding it from the OBO
+    # id does not work: the id is shaped AFO:equipment#AFE_0000711, so any
+    # naive substitution yields a URL OLS answers with 200 and no terms, and
+    # every ancestor query silently returns nothing.
     url = (_OLS_BASE + "/ontologies/afo/terms/"
-           + urllib.parse.quote(urllib.parse.quote(iri, safe=""))
+           + urllib.parse.quote(urllib.parse.quote(doc["iri"], safe=""))
            + "/hierarchicalAncestors?size=200")
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
             data = json.load(response)
     except Exception as error:
         pytest.skip("could not reach EBI OLS for AFO: {}".format(error))
-    return {term.get("label") for term
-            in data.get("_embedded", {}).get("terms", [])}
+    return frozenset(entry.get("label") for entry
+                     in data.get("_embedded", {}).get("terms", []))
+
+
+def test_the_ancestor_lookup_actually_returns_ancestors():
+    """ A canary for the contradiction guard below.
+
+    That guard passes when it finds no offending ancestor, so a lookup that
+    silently returns nothing makes it vacuous, and a vacuous version of it
+    shipped once already. This pins known-true facts about the AFO hierarchy,
+    so the guard cannot go quiet without a test going red.
+    """
+    ultraviolet = _afo_ancestors("ultraviolet detector")
+    assert ultraviolet is not None
+    assert "liquid chromatography detector" in ultraviolet
+    assert "electronic absorbance detector" in ultraviolet
+    assert "gas chromatography detector" not in ultraviolet
+
+    fid = _afo_ancestors("flame ionization detector")
+    assert "gas chromatography detector" in fid
+    assert "liquid chromatography detector" not in fid
+
+    # The two classes rainbow substitutes must really claim no technique.
+    for neutral in ("electronic absorbance detector", "chromatographic detector"):
+        ancestors = _afo_ancestors(neutral)
+        assert ancestors, neutral
+        assert not ancestors & {"liquid chromatography detector",
+                                "gas chromatography detector"}, neutral
+
+    assert _afo_ancestors("not an afo class at all") is None
 
 
 @pytest.mark.parametrize("fixture,technique,aggregate", [
@@ -211,16 +261,19 @@ def test_no_device_type_contradicts_its_documents_technique(
 
     contradicted = "liquid chromatography detector" if "gas" in aggregate \
         else "gas chromatography detector"
-    offenders = {}
+    offenders, checked = {}, 0
     for term in sorted(terms):
-        accession = _afo_accession(term)
-        if accession is None:
-            continue
-        ancestors = _afo_ancestors(accession)
+        ancestors = _afo_ancestors(term)
+        if ancestors is None:
+            continue                       # not an AFO class, e.g. a unit
+        checked += 1
         if contradicted in ancestors or term == contradicted:
             offenders[term] = sorted(ancestors & {
                 "liquid chromatography detector",
-                "gas chromatography detector"})
+                "gas chromatography detector"}) or [term]
     assert not offenders, (
         "{} ({}) asserts {}: {}".format(
             fixture, aggregate, contradicted, offenders))
+    # Guard the guard: a document whose terms all failed to resolve would
+    # otherwise pass while checking nothing.
+    assert checked, "no term resolved to an AFO class, so nothing was checked"

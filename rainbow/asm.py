@@ -163,10 +163,15 @@ _MODULE_DEVICE_TYPES = {
 # into an analog input) is deliberately absent and takes the generic fallback.
 _NEUTRAL_ABSORBANCE = "electronic absorbance detector"   # AFE_0000734
 _DETECTOR_RULES = (
-    # rainbow writes this itself for an absorbance channel in a document whose
-    # technique contradicts the UV and DAD classes, so it has to read it back
-    # as itself rather than re-specializing on the "absorbance" phrase below.
+    # rainbow writes both of these itself, for a detector in a document whose
+    # technique contradicts the detector's own class, so both have to read back
+    # as themselves. Without the first, the "absorbance" phrase below would
+    # re-specialize it to UV; without the second, `chromatographic detector`
+    # matches no rule, falls through to the bare "detector" test, and comes
+    # back as the generic class for the document's technique, which is the
+    # false claim the substitution exists to avoid.
     ("electronic absorbance", (), _NEUTRAL_ABSORBANCE),
+    ("chromatographic", (), "chromatographic detector"),
     ("diode array|photodiode array", ("dad", "pda"), "diode array detector"),
     # VWD, MWD, and TUV are the vendor names for variable-, multiple-, and
     # tunable-wavelength ultraviolet detectors.
@@ -605,7 +610,10 @@ _MONTHS = {name: number for number, name in enumerate(
 # control the locale of the application embedding it. Matching the month name
 # here keeps the parse independent of that.
 _VENDOR_TIMESTAMP = re.compile(r"""
-    ^(?P<day>[0-9]{1,2})[-\s]+(?P<month>[A-Za-z]{3,9})[-\s]+(?P<year>[0-9]{2,4})
+    # Two or four digits of year, never three: a truncated one would otherwise
+    # read as a plausible timestamp some eighteen centuries off.
+    ^(?P<day>[0-9]{1,2})[-\s]+(?P<month>[A-Za-z]{3,9})[-\s]+
+    (?P<year>[0-9]{4}|[0-9]{2})
     [\s,]+(?P<hour>[0-9]{1,2}):(?P<minute>[0-9]{2})(?::(?P<second>[0-9]{2}))?
     (?:\s*(?P<meridiem>[AaPp])\.?[Mm]\.?)?
     (?:\s*(?P<offset>[+-][0-9]{2}:?[0-9]{2}))?$
@@ -617,32 +625,50 @@ _ISO_FRACTION = re.compile(r"\.([0-9]+)")
 _UTC_OFFSET = re.compile(r"[+-][0-9]{2}:?[0-9]{2}\Z")
 
 
-def _utc_offset(timezone):
-    """Validates a ``timezone`` export option, returning a UTC offset string."""
-    if timezone is None:
-        return None
+def _offset_in_range(hours, minutes):
+    """Whether an hours/minutes pair is a UTC offset that really exists.
+
+    The shape of an offset is not enough. It is written into the document
+    verbatim, so an out-of-range one produces a timestamp no RFC 3339 reader
+    will accept, and schema validation is opt-in so nothing else would catch
+    it. The widest offset in use is +14:00.
+    """
+    return minutes <= 59 and (hours < 14 or (hours == 14 and not minutes))
+
+
+def _normalize_offset(timezone):
+    """A UTC offset normalized to ``+HH:MM``, or None if it is not one.
+
+    The single place the rule lives, so an offset reaching a document through
+    the caller's ``timezone`` and one harvested from a vendor file are held to
+    the same standard. Callers that must reject rather than ignore a bad value
+    raise on the None (see :func:`_utc_offset`).
+    """
     if not isinstance(timezone, str):
-        raise Exception(
-            "timezone must be a UTC offset string such as '+00:00' or 'Z', "
-            "not {!r}.".format(timezone))
+        return None
     # An offset arriving from a config file or a shell capture keeps its
     # trailing newline, and the offset is concatenated onto every timestamp in
     # the document, so a stray one would corrupt all of them at once.
     timezone = timezone.strip()
     if timezone in ("Z", "z"):
         return "+00:00"
-    invalid = Exception(
-        "timezone must be a UTC offset such as '+00:00', '-05:00', or 'Z', "
-        "not {!r}.".format(timezone))
     if not _UTC_OFFSET.fullmatch(timezone):
-        raise invalid
+        return None
     normalized = timezone if ":" in timezone else timezone[:3] + ":" + timezone[3:]
-    # The shape alone is not enough: the offset is written into the document
-    # verbatim, so an out-of-range one produces a timestamp no RFC 3339 reader
-    # will accept, and validation is opt-in so nothing would catch it.
-    hours, minutes = int(normalized[1:3]), int(normalized[4:6])
-    if hours > 14 or minutes > 59 or (hours == 14 and minutes):
-        raise invalid
+    if not _offset_in_range(int(normalized[1:3]), int(normalized[4:6])):
+        return None
+    return normalized
+
+
+def _utc_offset(timezone):
+    """Validates a ``timezone`` export option, returning a UTC offset string."""
+    if timezone is None:
+        return None
+    normalized = _normalize_offset(timezone)
+    if normalized is None:
+        raise Exception(
+            "timezone must be a UTC offset such as '+00:00', '-05:00', or "
+            "'Z', not {!r}.".format(timezone))
     return normalized
 
 
@@ -664,16 +690,24 @@ def _parse_vendor(value):
     hour = int(match.group("hour"))
     meridiem = match.group("meridiem")
     if meridiem:
-        if hour > 12:
+        # A 12-hour clock runs 1 to 12. Hour 0 is exactly as impossible as
+        # hour 13, and reading it as noon would be a 12-hour error.
+        if not 1 <= hour <= 12:
             return None
         hour = hour % 12 + (12 if meridiem.lower() == "p" else 0)
     offset = match.group("offset")
     tzinfo = None
     if offset:
-        sign = -1 if offset[0] == "-" else 1
         digits = offset[1:].replace(":", "")
-        tzinfo = _timezone(sign * timedelta(
-            hours=int(digits[:2]), minutes=int(digits[2:])))
+        hours, minutes = int(digits[:2]), int(digits[2:])
+        # Held to the same rule as the caller's `timezone`. Without this an
+        # offset of 24 hours or more raises out of timedelta, taking down an
+        # export whose contract is to return None, and minutes of 60 or more
+        # would silently roll over into a different instant.
+        if not _offset_in_range(hours, minutes):
+            return None
+        sign = -1 if offset[0] == "-" else 1
+        tzinfo = _timezone(sign * timedelta(hours=hours, minutes=minutes))
     try:
         return datetime(year, month, int(match.group("day")), hour,
                         int(match.group("minute")),
@@ -760,8 +794,17 @@ class _Options:
         """
         # An offset another file in the same run recorded outranks the
         # caller's: it is what the instrument said, and `timezone` is only
-        # meant to fill in a zone nothing recorded.
-        stamped = _iso_timestamp(value, recorded_offset or self.timezone)
+        # meant to fill in a zone nothing recorded. It is held to the same
+        # rule as the caller's, since it is concatenated into the document the
+        # same way, and a vendor file is not a more trustworthy source than a
+        # keyword argument. An unusable one is ignored, not fatal: it arrived
+        # with the data rather than from the caller.
+        recorded = _normalize_offset(recorded_offset)
+        if recorded_offset is not None and recorded is None:
+            warnings.warn(
+                f"ignoring {recorded_offset!r}, which the run recorded as a "
+                "UTC offset but is not one.")
+        stamped = _iso_timestamp(value, recorded or self.timezone)
         if stamped is not None or not isinstance(value, str) or not value.strip():
             return stamped
         if required:
