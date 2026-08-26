@@ -193,6 +193,61 @@ def test_decimal_places_rounds_injection_volume():
     assert volumes and all(v == 1.23 for v in volumes)
 
 
+def test_injection_volume_is_converted_to_the_unit_the_schema_wants():
+    # The vendor unit string is passed through verbatim by both upstream
+    # readers, so the value cannot be assumed to be in microlitres. Publishing
+    # 2 mL as 2 mm^3 is off by a thousand and validates cleanly.
+    datadir = rb.read("tests/inputs/red.D")
+    for unit, expected in [("uL", 2.0), ("µL", 2.0), ("mm^3", 2.0),
+                           ("mL", 2000.0), ("nL", 0.002), ("L", 2000000.0)]:
+        datadir.metadata["injection_volume"] = {"value": 2.0, "unit": unit}
+        volumes = [m["injection document"]
+                   ["autosampler injection volume setting (chromatography)"]
+                   for m in _measurements(datadir.to_asm())
+                   if "injection document" in m]
+        assert volumes, unit
+        assert all(v["value"] == expected and v["unit"] == "mm^3"
+                   for v in volumes), unit
+
+
+def test_an_unconvertible_injection_volume_unit_is_omitted_with_a_warning():
+    # Omitting the field beats publishing the number under a unit it is not in,
+    # because the wrong unit still validates.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.metadata["injection_volume"] = {"value": 2.0, "unit": "drops"}
+    with pytest.warns(UserWarning, match="cannot convert"):
+        document = datadir.to_asm()
+    assert not [m for m in _measurements(document) if "injection document" in m]
+
+
+@pytest.mark.parametrize("bad", [-1, -3, True, 1.5, "2"])
+def test_decimal_places_rejects_a_value_that_would_gut_the_document(bad):
+    # round() and np.round() accept a negative precision, so decimal_places=-3
+    # rounded every signal value, retention time and peak to zero and still
+    # emitted a schema-valid file. read() holds display_precision to this rule.
+    datadir = rb.read("tests/inputs/red.D")
+    with pytest.raises(ValueError, match="decimal_places"):
+        datadir.to_asm(decimal_places=bad)
+
+
+@pytest.mark.parametrize("ions", [[float("nan")], [float("inf")], [None]])
+def test_ions_rejects_a_selection_that_cannot_match(ions):
+    # Every comparison against NaN is False, so an unchecked NaN selected index
+    # 0 and passed the tolerance check: the caller got the first trace in the
+    # file, silently, instead of the ion they asked for.
+    datadir = rb.read("tests/inputs/yellow.D")
+    with pytest.raises((ValueError, TypeError), match="ions"):
+        datadir.to_asm(ions=ions)
+
+
+def test_a_string_selection_is_rejected_rather_than_read_per_character():
+    # wavelengths="254" iterates into [2.0, 5.0, 4.0], drops all three, and the
+    # DAD cube silently vanishes.
+    datadir = rb.read("tests/inputs/red.D")
+    with pytest.raises(TypeError, match="one character at a time"):
+        datadir.to_asm(wavelengths="254")
+
+
 def test_select_wavelengths_tolerance_boundary():
     import numpy as np
     from rainbow import asm

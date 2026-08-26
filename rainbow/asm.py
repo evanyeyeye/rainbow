@@ -56,6 +56,7 @@ http://purl.allotrope.org/json-schemas/adm/gas-chromatography/
 
 """
 import json
+import math
 import os
 import re
 import warnings
@@ -784,8 +785,8 @@ class _Options:
                  decimal_places=None, timezone=None):
         self.export_dad_cube = export_dad_cube
         self.wavelengths = _wavelength_list(wavelengths)
-        self.ions = ions
-        self.decimals = decimal_places
+        self.ions = None if ions is None else _finite_number_list(ions, "ions")
+        self.decimals = _check_decimal_places(decimal_places)
         self.timezone = _utc_offset(timezone)
 
     def timestamp(self, value, required=False, recorded_offset=None):
@@ -840,13 +841,63 @@ class _Options:
             else value
 
 
+def _finite_number_list(values, name):
+    """Normalizes a numeric selection argument to a list of finite floats.
+
+    A selection is matched by nearest-value-within-tolerance, and every
+    comparison against a NaN is False: an unchecked NaN selects index 0 and
+    passes the tolerance test, so the caller silently gets the wrong trace
+    rather than an error. A bare string is rejected for the same reason, since
+    iterating "254" yields the characters and drops the whole channel.
+    """
+    if isinstance(values, str):
+        raise TypeError(
+            "{0} must be a number or a list of numbers, not a string: "
+            "{1!r} would be read one character at a time. Use "
+            "{0}=[{1}] instead.".format(name, values))
+    if isinstance(values, (int, float)) and not isinstance(values, bool):
+        values = [values]
+    numbers = []
+    for value in values:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise TypeError(
+                "{} must contain numbers; cannot read {!r} as one.".format(
+                    name, value))
+        if not math.isfinite(number):
+            raise ValueError(
+                "{} must contain finite numbers; {!r} matches nothing and "
+                "would silently select the first available trace.".format(
+                    name, value))
+        numbers.append(number)
+    return numbers
+
+
 def _wavelength_list(wavelengths):
     """Normalizes the ``wavelengths`` argument to a list of floats, or None."""
     if wavelengths is None:
         return None
-    if isinstance(wavelengths, (int, float)):
-        wavelengths = [wavelengths]
-    return [float(wavelength) for wavelength in wavelengths]
+    return _finite_number_list(wavelengths, "wavelengths")
+
+
+def _check_decimal_places(decimal_places):
+    """Rejects a ``decimal_places`` that would quietly destroy the document.
+
+    ``round`` and :func:`numpy.round` accept a negative precision, so
+    ``decimal_places=-3`` rounds every signal value, retention time and peak in
+    the document to zero and still emits a schema-valid file. ``read`` holds
+    ``display_precision`` to the same rule.
+    """
+    if decimal_places is None:
+        return decimal_places
+    if (isinstance(decimal_places, bool)
+            or not isinstance(decimal_places, int)
+            or decimal_places < 0):
+        raise ValueError(
+            f"Invalid decimal_places: {decimal_places!r}. Use None to keep "
+            "full precision, or a non-negative integer.")
+    return decimal_places
 
 
 def _select_wavelengths(ylabels, wavelengths):
@@ -1332,6 +1383,49 @@ def _warn_once_per_run(options, key, message):
     warnings.warn(message)
 
 
+# Injection volume units, normalized to microlitres. Both ADMs want one
+# specific unit and 1 uL == 1 mm^3 exactly, so a single conversion serves both.
+# The vendor sources pass their own unit string through verbatim (the ACAML
+# <Unit> element, the OpenLab InjectionVolumeUnits field), so the value cannot
+# be assumed to already be in microlitres: publishing 2 mL as 2 mm^3 is off by
+# a thousand and validates cleanly.
+_VOLUME_TO_MICROLITRES = {
+    "l": 1e6,
+    "ml": 1e3, "cm^3": 1e3, "cm3": 1e3, "cc": 1e3,
+    "ul": 1.0, "mm^3": 1.0, "mm3": 1.0, "microlitre": 1.0, "microliter": 1.0,
+    "nl": 1e-3,
+    "pl": 1e-6,
+}
+
+
+def _volume_in_microlitres(volume, options, identifier):
+    """The recorded injection volume in microlitres, or None.
+
+    Returns None for a volume whose unit rainbow cannot place, having warned:
+    an unconvertible number is worse than an absent one, because the schema
+    accepts it. A volume with no unit at all is taken as microlitres, which is
+    what every vendor path rainbow reads records.
+    """
+    value = volume.get("value")
+    unit = volume.get("unit")
+    if unit is None or unit == "":
+        return value
+    key = str(unit).strip().lower().replace("µ", "u").replace("μ", "u")
+    key = key.replace(" ", "").replace("³", "^3")
+    factor = _VOLUME_TO_MICROLITRES.get(key)
+    if factor is None:
+        _warn_once_per_run(
+            options, "injection-volume-unit:{}".format(unit),
+            "{} records its injection volume in {!r}, which rainbow cannot "
+            "convert to the unit the schema requires; the volume is omitted "
+            "rather than published under the wrong unit.".format(
+                identifier or "this run", unit))
+        return None
+    if factor == 1.0:
+        return value
+    return value * factor
+
+
 def _add_injection_document(measurement, metadata, identifier, technique,
                             options):
     """Adds an injection document, per the technique's rules.
@@ -1346,7 +1440,10 @@ def _add_injection_document(measurement, metadata, identifier, technique,
     requires that field; the document is still emitted with what is known.
     """
     volume = metadata.get("injection_volume")
-    has_volume = isinstance(volume, dict) and volume.get("value") is not None
+    microlitres = None
+    if isinstance(volume, dict) and volume.get("value") is not None:
+        microlitres = _volume_in_microlitres(volume, options, identifier)
+    has_volume = microlitres is not None
     if technique is _LC:
         if not has_volume:
             return
@@ -1354,7 +1451,7 @@ def _add_injection_document(measurement, metadata, identifier, technique,
             "injection identifier": identifier or "unknown",
             # The LC ADM expresses injection volume in mm^3; 1 uL == 1 mm^3.
             "autosampler injection volume setting (chromatography)": {
-                "value": options.scalar(volume["value"]),
+                "value": options.scalar(microlitres),
                 "unit": "mm^3",
             },
         }
@@ -1374,7 +1471,7 @@ def _add_injection_document(measurement, metadata, identifier, technique,
             # The GC ADM expresses injection volume in microlitres. The schema
             # pins the Greek small mu (U+03BC), not the micro sign (U+00B5).
             document["injection volume setting"] = {
-                "value": options.scalar(volume["value"]),
+                "value": options.scalar(microlitres),
                 "unit": "μL",
             }
     # Required by both ADMs, so an unreadable vendor spelling is written
