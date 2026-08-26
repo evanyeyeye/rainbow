@@ -1291,19 +1291,18 @@ _ABSORBANCE_DESCRIPTOR = {"concept": "absorbance", "unit": "mAU"}
 # reads one .D whose CAD channel is in mAU. Publishing mV under "electric
 # current in pA" renames the quantity rather than converting it, and the
 # renamed document validates, so nothing downstream can catch it.
+#
+# Absorbance is deliberately absent. Chemstation labels a generic analog input
+# mAU whatever is wired into it, so "mAu" on a bare ADC1 channel is its default
+# scaling and not the channel claiming to measure absorbance. Taking it at its
+# word turned a CAD channel into an absorbance cube, which from_asm then
+# reconstructed as a UV trace.
 _SOURCE_UNIT_MEASURES = {
     "pa": ("electric current", "pA"),
     "na": ("electric current", "nA"),
     "mv": ("voltage", "mV"),
     "v": ("voltage", "V"),
 }
-
-# Absorbance spellings, which do not override a non-absorbance detector.
-# Chemstation labels a generic analog input mAU whatever is wired into it, so
-# "mAu" on a bare ADC1 channel is its default scaling and not the channel
-# claiming to measure absorbance. Taking it at its word turned a CAD channel
-# into an absorbance cube, which from_asm then reconstructed as a UV trace.
-_ABSORBANCE_UNITS = {"au", "mau"}
 
 
 def _measure_from_source(datafile, descriptor, options):
@@ -1322,15 +1321,20 @@ def _measure_from_source(datafile, descriptor, options):
         # mAU the ADM pins; see _absorbance_unit_and_scale.
         return descriptor
     key = str(unit).strip().lower().replace("µ", "u").replace("μ", "u")
-    if key in _ABSORBANCE_UNITS:
-        return descriptor
     measure = _SOURCE_UNIT_MEASURES.get(key)
     if measure is None:
+        # Including the absorbance spellings. A Chemstation analog channel
+        # labeled mAU is not published as absorbance, for the reason above, but
+        # the values still go out under a quantity they are not in, and that is
+        # the same fact the ELSD's LSU gets told about. Suppressing it here
+        # made the one channel most likely to be misread the quiet one.
         _warn_once_per_run(
             options, "source-unit:{}:{}".format(datafile.name, unit),
-            "{} records its signal in {!r}, which the schema has no unit for; "
-            "it is published as {} in {}, relabeled and not converted.".format(
-                datafile.name, unit, descriptor["concept"], descriptor["unit"]))
+            "{} records its signal in {!r}, which the schema does not offer "
+            "for {}; it is published as {} in {}, relabeled and not "
+            "converted.".format(
+                datafile.name, unit, descriptor["concept"],
+                descriptor["concept"], descriptor["unit"]))
         return descriptor
     concept, asm_unit = measure
     if concept == descriptor["concept"] and asm_unit == descriptor["unit"]:

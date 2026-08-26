@@ -136,8 +136,8 @@ detector reports picoamps on one instrument and millivolts on another, so the
 measure comes from the unit the file records whenever the model has a term for
 it: ``electric current`` in ``pA`` or ``nA``, ``voltage`` in ``mV`` or ``V``.
 The class default applies only when the source records no unit. CAD's AFO class
-is the generic ``liquid chromatography detector``, as AFO has no charged-aerosol
-class; an ELSD has its own.
+is the generic detector for the document's technique [#generic]_, as AFO has no
+charged-aerosol class; an ELSD has its own.
 
 Where the model has no unit for what the source recorded, the values keep the
 class default and rainbow warns that the measure was relabeled rather than
@@ -149,7 +149,9 @@ One unit is deliberately not followed: Chemstation labels a generic analog input
 ``mAU`` whatever is wired into it, so ``mAu`` on a bare ``ADC1`` channel is its
 default scaling and not a claim to measure absorbance. Following it would turn a
 CAD channel into an absorbance cube, which :func:`rainbow.from_asm` would then
-reconstruct as a UV trace.
+reconstruct as a UV trace. Not following it is not the same as converting it,
+though: such a channel is warned about exactly like the ELSD above, because its
+values still go out under a quantity they are not in.
 
 RID has no refractive-index measure in the published schema, so it alone still
 rides the absorbance cube [#interim]_.

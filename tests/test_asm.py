@@ -574,9 +574,19 @@ def test_a_generic_analog_unit_does_not_retype_the_channel():
     # so "mAu" on a bare ADC1 channel is its default scaling, not a claim to
     # measure absorbance. Taking it at its word turned this CAD channel into an
     # absorbance cube, which from_asm then reconstructed as a UV trace.
-    cad = _by_label(rb.read("tests/inputs/red.D").to_asm())["ADC1A.CH"]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        document = rb.read("tests/inputs/red.D").to_asm()
+    cad = _by_label(document)["ADC1A.CH"]
     assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
         == "electric current"
+    # Not retyping it is not the same as converting it: the values are
+    # Chemstation's mAU numbers published as picoamps. That is the same fact
+    # the ELSD's LSU channel is told about above, and staying quiet here made
+    # the likeliest misreading the silent one.
+    assert [w for w in caught
+            if "ADC1A.CH" in str(w.message)
+            and "relabeled and not converted" in str(w.message)]
 
 
 def test_ions_does_not_affect_sim_channels():
