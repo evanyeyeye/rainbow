@@ -20,7 +20,7 @@ module configuration). So this is a deliberate **best-effort** parser, at the
   ``.REG`` fixture finds **no operator / method / sample / path identifiers** in
   them. ``canonical`` therefore returns nothing.
 
-See ``docs/debug/formats/reg.md``.
+See ``docs/source/debug/formats/reg.md``.
 """
 import re
 

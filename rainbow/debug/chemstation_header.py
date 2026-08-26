@@ -16,7 +16,7 @@ for ``.ch``/``.uv``; the ``0x01320000`` magic for ``.ms``). Each string is
 length-prefixed: a one-byte length ``N`` followed by ``N`` characters at stride
 ``gap`` (1 for the legacy DOS-ChemStation layout, 2 for the newer one). The
 offset tables below mirror ``chemstation.py`` and extend it with the dropped
-fields; see ``docs/debug/formats/chemstation_header.md``.
+fields; see ``docs/source/debug/formats/chemstation_header.md``.
 """
 import os
 import struct

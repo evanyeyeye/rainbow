@@ -12,8 +12,8 @@ to [Semantic Versioning](https://semver.org/).
   registers and INIs, .NET and XML blobs, mzXML and Waters headers, method and
   macro dumps, audit trails) into structured fields on demand. It is never run
   by the normal `rb.read` path, and is imported only on first use, so it adds
-  no overhead unless called. A catalogue of the formats it decodes is in
-  `docs/debug/` in the repository.
+  no overhead unless called. A catalogue of the formats it decodes is part of
+  the documentation.
 - **Allotrope Simple Model (ASM) export and import.** Any `DataDirectory`
   exports to one open, JSON-based ASM document with `datadir.to_asm()` (a dict)
   or `datadir.export_asm(path)` (a file); `rb.from_asm(document)` reconstructs a

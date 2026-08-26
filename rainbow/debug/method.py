@@ -16,7 +16,7 @@ and extracts only the **path / data-file references** from the quoted values; it
 does not dump the script bodies. ``canonical`` promotes a data-file path when one
 is present, and nothing otherwise.
 
-See ``docs/debug/formats/method.md``.
+See ``docs/source/debug/formats/method.md``.
 """
 import re
 

@@ -18,7 +18,7 @@ lives entirely in the string table: a handful of **file-path** values and the
 the length-prefixed string table, then surfaces a bounded summary - the
 assemblies, the path-like values, and a count - rather than the whole graph.
 
-See ``docs/debug/formats/dotnet.md``.
+See ``docs/source/debug/formats/dotnet.md``.
 """
 import os
 import re

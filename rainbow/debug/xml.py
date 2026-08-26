@@ -15,7 +15,7 @@ Two layers:
   promotes the well-known fields to the shared canonical names. Schemas without
   an extractor yet are still fully present in ``parse``/``inspect``.
 
-See ``docs/debug/formats/xml.md`` for the per-schema field documentation.
+See ``docs/source/debug/formats/xml.md`` for the per-schema field documentation.
 """
 import re
 

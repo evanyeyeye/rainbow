@@ -153,3 +153,20 @@ productized answer to that finding.
 - **Faithful + canonical, both.** `inspect` keeps the lossless structure;
   `fields` promotes the well-known keys. The lossless half guarantees nothing is
   dropped; the canonical half makes fields comparable across vendors.
+
+```{toctree}
+:hidden:
+:titlesonly:
+
+formats
+formats/chemstation_header
+formats/chemstation_text
+formats/dotnet
+formats/ini
+formats/method
+formats/mzxml
+formats/reg
+formats/waters_header
+formats/waters_inf
+formats/xml
+```

@@ -4,3 +4,4 @@ matplotlib
 python-lzf
 sphinx-rtd-theme
 pandas
+myst-parser

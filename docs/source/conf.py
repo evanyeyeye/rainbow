@@ -33,7 +33,11 @@ except Exception:                       # not installed, e.g. on Read the Docs
 
 language = 'en'
 master_doc = 'index'
-source_suffix = '.rst'
+# The rainbow.debug format catalogue is written in Markdown, so both are
+# parsed. myst_heading_anchors gives every heading an anchor, which is what
+# the catalogue's own section cross-links point at.
+source_suffix = {'.rst': 'restructuredtext', '.md': 'markdown'}
+myst_heading_anchors = 3
 
 # Number figures (Fig. 1, Fig. 2, ...) so the text can cross-reference them by
 # number with :numref: instead of "the figure below".
@@ -50,6 +54,7 @@ add_module_names = False
 html_show_sourcelink = False
 
 extensions = [
+    'myst_parser',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',

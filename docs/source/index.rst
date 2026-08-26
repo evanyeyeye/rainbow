@@ -21,3 +21,4 @@ The GitHub repository can be found `here <https://github.com/evanyeyeye/rainbow>
    API <api>
    Formats <formats>
    Performance <performance>
+   Sidecar formats <debug/overview>

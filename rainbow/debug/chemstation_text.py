@@ -9,7 +9,7 @@ then promotes the identifier-bearing fields (data file, method, instrument,
 operator, save time, module serials, vial position, acquisition time) to the
 shared canonical vocabulary.
 
-Sub-formats handled (see ``docs/debug/formats/chemstation_text.md``):
+Sub-formats handled (see ``docs/source/debug/formats/chemstation_text.md``):
 
 ================  ========  =================================================
 file              encoding  content

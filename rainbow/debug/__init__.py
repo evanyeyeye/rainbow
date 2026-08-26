@@ -18,7 +18,7 @@ Two entry points:
 Each format has a parser module exposing ``matches(name)``, ``parse(path)``
 (full, lossless structure), and ``canonical(parsed)`` (the well-known keys
 promoted to shared canonical names). The canonical field vocabulary grows as
-formats are added; see ``docs/debug/`` for the per-format catalog and the
+formats are added; see ``docs/source/debug/`` for the per-format catalog and the
 depth/output-shape decisions behind each parser.
 
 Read-only; nothing is ever written back.
