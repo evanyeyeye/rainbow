@@ -1269,6 +1269,59 @@ def _build_measurements(datafile, metadata, options, has_peaks=False,
 _ABSORBANCE_DESCRIPTOR = {"concept": "absorbance", "unit": "mAU"}
 
 
+# The ASM measure a vendor's own unit is, for the units the schema has a term
+# for. A detector class does not fix the quantity it reads out: a charged
+# aerosol detector reports pA on one instrument and mV on another, and rainbow
+# reads one .D whose CAD channel is in mAU. Publishing mV under "electric
+# current in pA" renames the quantity rather than converting it, and the
+# renamed document validates, so nothing downstream can catch it.
+_SOURCE_UNIT_MEASURES = {
+    "pa": ("electric current", "pA"),
+    "na": ("electric current", "nA"),
+    "mv": ("voltage", "mV"),
+    "v": ("voltage", "V"),
+}
+
+# Absorbance spellings, which do not override a non-absorbance detector.
+# Chemstation labels a generic analog input mAU whatever is wired into it, so
+# "mAu" on a bare ADC1 channel is its default scaling and not the channel
+# claiming to measure absorbance. Taking it at its word turned a CAD channel
+# into an absorbance cube, which from_asm then reconstructed as a UV trace.
+_ABSORBANCE_UNITS = {"au", "mau"}
+
+
+def _measure_from_source(datafile, descriptor, options):
+    """The descriptor to export a channel with, preferring the source's unit.
+
+    A detector class does not fix the quantity it reads out, so a unit the
+    schema has a term for and the detector could plausibly produce (a voltage,
+    a current) is carried through rather than renamed. The detector's default
+    stands otherwise, and where that default is a relabel it is said out loud.
+    """
+    unit = datafile.metadata.get("unit")
+    if not unit:
+        return descriptor
+    if descriptor["concept"] == "absorbance":
+        # Absorbance has its own normalization, which scales the values to the
+        # mAU the ADM pins; see _absorbance_unit_and_scale.
+        return descriptor
+    key = str(unit).strip().lower().replace("µ", "u").replace("μ", "u")
+    if key in _ABSORBANCE_UNITS:
+        return descriptor
+    measure = _SOURCE_UNIT_MEASURES.get(key)
+    if measure is None:
+        _warn_once_per_run(
+            options, "source-unit:{}:{}".format(datafile.name, unit),
+            "{} records its signal in {!r}, which the schema has no unit for; "
+            "it is published as {} in {}, relabeled and not converted.".format(
+                datafile.name, unit, descriptor["concept"], descriptor["unit"]))
+        return descriptor
+    concept, asm_unit = measure
+    if concept == descriptor["concept"] and asm_unit == descriptor["unit"]:
+        return descriptor
+    return dict(descriptor, concept=concept, unit=asm_unit)
+
+
 def _detector_measurement(datafile, metadata, descriptor, options,
                           has_peaks=False, technique=None):
     """A measurement for a single-signal detector channel (1-D chromatogram).
@@ -1287,6 +1340,7 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     still being refined.
     """
     control = {"device type": _channel_device_type(descriptor, technique)}
+    descriptor = _measure_from_source(datafile, descriptor, options)
     detection_type = descriptor.get("detection_type")
     if detection_type:
         control["detection type"] = detection_type

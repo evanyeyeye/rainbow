@@ -127,13 +127,29 @@ for the cube structure.
 CAD, ELSD, and RID
 ------------------
 
-**CAD and ELSD are faithful; RID is an interim.** Each is a single ``(N, 1)``
-chromatogram. A charged-aerosol detector measures a current, so CAD exports as
-``electric current`` in ``pA`` (its AFO class is the generic ``liquid
-chromatography detector``, as AFO has no charged-aerosol class); an ELSD exports
-as light ``intensity`` in ``RLU``. Both use the generic detector cubes the
-chromatography ADM provides, so the measure concept is truthful and the values
-are the vendor's own, unscaled.
+**CAD and ELSD follow the source where the model can; RID is an interim.** Each
+is a single ``(N, 1)`` chromatogram, exported with the vendor's own values,
+unscaled.
+
+A detector class does not fix the quantity it reads out. A charged-aerosol
+detector reports picoamps on one instrument and millivolts on another, so the
+measure comes from the unit the file records whenever the model has a term for
+it: ``electric current`` in ``pA`` or ``nA``, ``voltage`` in ``mV`` or ``V``.
+The class default applies only when the source records no unit. CAD's AFO class
+is the generic ``liquid chromatography detector``, as AFO has no charged-aerosol
+class; an ELSD has its own.
+
+Where the model has no unit for what the source recorded, the values keep the
+class default and rainbow warns that the measure was relabeled rather than
+converted. An ELSD reporting ``LSU`` is the case rainbow bundles: there is no
+``LSU`` in the model, so it exports as ``intensity`` in ``RLU``, and the numbers
+are unchanged. Treat such a measure as the vendor's scale under a borrowed name.
+
+One unit is deliberately not followed: Chemstation labels a generic analog input
+``mAU`` whatever is wired into it, so ``mAu`` on a bare ``ADC1`` channel is its
+default scaling and not a claim to measure absorbance. Following it would turn a
+CAD channel into an absorbance cube, which :func:`rainbow.from_asm` would then
+reconstruct as a UV trace.
 
 RID has no refractive-index measure in the published schema, so it alone still
 rides the absorbance cube [#interim]_.

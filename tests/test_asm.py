@@ -503,6 +503,37 @@ def test_a_channel_the_caller_excluded_is_not_warned_about():
     assert not [w for w in caught if "ions=" in str(w.message)]
 
 
+def test_a_channel_recording_volts_exports_as_a_voltage():
+    # A detector class does not fix the quantity it reads out. Waters records
+    # this charged-aerosol channel in mV; publishing it under the class default
+    # of "electric current in pA" renames the quantity rather than converting
+    # it, and the renamed document validates, so nothing downstream catches it.
+    cad = _by_label(rb.read("tests/inputs/blue.raw").to_asm())["_CHRO001.DAT"]
+    measure = cad[_CHROM_KEY]["cube-structure"]["measures"][0]
+    assert measure["concept"] == "voltage"
+    assert measure["unit"] == "mV"
+
+
+def test_a_unit_the_schema_cannot_express_is_relabeled_out_loud():
+    # The ELSD records LSU, for which the schema has no unit at all, so the
+    # values keep the class default. That is a relabel, and the export says so
+    # rather than presenting it as faithful.
+    datadir = rb.read("tests/inputs/violet.raw")
+    with pytest.warns(UserWarning, match="relabeled and not converted"):
+        elsd = _by_label(datadir.to_asm())["_CHRO001.DAT"]
+    assert elsd[_CHROM_KEY]["cube-structure"]["measures"][0]["unit"] == "RLU"
+
+
+def test_a_generic_analog_unit_does_not_retype_the_channel():
+    # Chemstation labels a generic analog input mAU whatever is wired into it,
+    # so "mAu" on a bare ADC1 channel is its default scaling, not a claim to
+    # measure absorbance. Taking it at its word turned this CAD channel into an
+    # absorbance cube, which from_asm then reconstructed as a UV trace.
+    cad = _by_label(rb.read("tests/inputs/red.D").to_asm())["ADC1A.CH"]
+    assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
+        == "electric current"
+
+
 def test_ions_does_not_affect_sim_channels():
     # ions= selects from full scans only; a SIM channel always exports all of
     # its monitored ions regardless of (non-matching) requested ions.
