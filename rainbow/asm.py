@@ -1600,8 +1600,11 @@ def _number(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     if isinstance(value, int):
+        # Dropped, not converted: an ordinary int is returned as it came in, so
+        # a wavelength of 254 stays 254 in the metadata and in a CSV header
+        # rather than becoming 254.0.
         try:
-            return float(value)
+            float(value)
         except OverflowError:
             return None
     return value

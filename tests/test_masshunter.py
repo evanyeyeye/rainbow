@@ -355,13 +355,15 @@ def test_per_scan_profile_is_faithful(directory):
     for i in range(n):
         mz, inten = profile.scan(i)
         # The per-scan m/z is the exact calibration of the shared flight-time
-        # axis (rounded to the reported precision), not a shared rounded grid.
-        truth = np.round(
-            masshunter.calibrate_mz(
-                profile.flight_times, calib[i],
-                flags.get(records[i].get('CalibrationID'))),
-            profile.mz_decimals)
+        # axis, not a shared rounded grid and not rounded at all: mass_labels(i)
+        # is the axis itself, so there is no display of it to round.
+        truth = masshunter.calibrate_mz(
+            profile.flight_times, calib[i],
+            flags.get(records[i].get('CalibrationID')))
+        if profile.mz_decimals is not None:
+            truth = np.round(truth, profile.mz_decimals)
         np.testing.assert_array_equal(mz, truth)
+        assert profile.mz_decimals is None
         # Intensities are the raw decoded values: the per-scan maximum matches
         # the MaxY stored independently in MSScan.bin.
         assert int(inten.max()) == int(
@@ -1362,7 +1364,7 @@ def test_floor_warning_agilent_and_waters():
     with pytest.warns(UserWarning, match="only inserts empty bins"):
         rb.read("tests/inputs/orange.D", bin_width=0.01)     # below 0.1 Da
     with pytest.warns(UserWarning, match="only inserts empty bins"):
-        rb.read("tests/inputs/turquoise.raw", bin_width=0.01)  # below 0.05 Da
+        rb.read("tests/inputs/turquoise.raw", bin_width=0.01)  # below the Waters floor
 
 
 def test_floor_warning_hrms_names_the_profile():
@@ -1391,37 +1393,71 @@ def test_centroid_flag_does_not_silence_other_channels():
         rb.read("tests/inputs/turquoise.raw", centroid=True, bin_width=0.001)
 
 
-def test_a_centroid_floor_follows_the_rounding_the_parse_applied():
-    """ The centroid parse rounds m/z into the data, so that is the grid.
+def test_a_centroid_records_no_floor_because_a_peak_list_has_no_lattice():
+    """ A floor claims the binary stores a lattice; a peak list does not.
 
-    Unlike the profile path, parse_mspeakdata rounds each peak to
-    display_precision before binning, so however finely the instrument
-    resolved, the channel records 10**-display_precision. An uncalibrated
-    centroid defaults to 0 decimals, which is a floor of 1 Da and not the 0.1
-    Da a quadrupole .ms channel records.
+    Each centroid peak carries its own m/z at whatever precision the file kept,
+    so there is no grid a finer bin_width would be pointless against. Asserting
+    the vendor unit-resolution floor made rainbow warn that 0.09 was too fine
+    on a run that quantizes to 0.0899963 - a width rb.mz_resolution reports and
+    rb.read then accepts. That function measures this channel; a constant
+    cannot.
     """
-    # Calibrated (TOF), 4 decimals by default: the real grid is 1e-4, so a
-    # 1e-5 bin only inserts empty bins even though the instrument resolves
-    # further. Reported as 0.0001, not the 1e-6 the calibration alone implies.
-    with pytest.warns(UserWarning, match=r"MSPeak\.bin \(about 0\.0001 Da\)"):
-        rb.read("tests/inputs/gold.D", centroid=True, bin_width=1e-5)
-    # Uncalibrated (GC quadrupole), 0 decimals: nominal m/z, a floor of 1 Da.
-    with pytest.warns(UserWarning, match=r"MSPeak\.bin \(about 1\.0 Da\)"):
-        rb.read("tests/inputs/yellow.D", centroid=True, bin_width=0.5)
+    import warnings
+    for fixture, width in (("tests/inputs/gold.D", 1e-5),
+                           ("tests/inputs/yellow.D", 0.5),
+                           ("tests/inputs/copper.D", 1e-5)):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            rb.read(fixture, centroid=True, bin_width=width)
+        offenders = [str(w.message) for w in caught
+                     if "MSPeak.bin" in str(w.message) and "empty bins" in str(w.message)]
+        assert not offenders, offenders
+
+
+def test_the_width_mz_resolution_reports_for_a_centroid_reads_back_clean():
+    """ The two APIs must agree about a channel: what one reports for it, the
+    other must accept for it.
+
+    Only about that channel. A run holds channels on different grids, so the
+    width that suits the centroid is legitimately finer than a sibling .ms
+    channel's 0.1 Da, and saying so is the warning doing its job.
+    """
+    import warnings
+    for fixture in ("tests/inputs/yellow.D", "tests/inputs/gold.D"):
+        for channel, width in rb.mz_resolution(fixture, centroid=True).items():
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                rb.read(fixture, centroid=True, bin_width=width)
+            named = [str(w.message) for w in caught
+                     if "empty bins" in str(w.message)
+                     and channel in str(w.message)]
+            assert not named, (fixture, channel, width, named)
 
 
 def test_the_floor_warning_quotes_each_grid_not_just_the_coarsest():
     """ One number for every channel would be orders of magnitude wrong.
 
-    yellow.D holds a centroid peak list on a 1 Da grid beside two Chemstation
-    .ms channels on a 0.1 Da one. Naming them all against a single figure
-    would misreport one group by a factor of ten.
+    A run can hold channels on very different grids (an HRMS profile at 1e-6
+    beside a Chemstation .ms at 0.1). Naming them all against a single figure
+    would misreport one group by orders of magnitude. Driven directly, because
+    no single fixture carries two different floors.
     """
+    from rainbow import _warn_bin_width_floor
+
+    class _Channel:
+        detector = 'MS'
+
+        def __init__(self, name, floor):
+            self.name, self._mz_floor = name, floor
+
+    channels = [_Channel("MSProfile.bin", 1e-6), _Channel("data.ms", 0.1),
+                _Channel("dataSim.ms", 0.1)]
     with pytest.warns(UserWarning) as caught:
-        rb.read("tests/inputs/yellow.D", centroid=True, bin_width=0.05)
+        _warn_bin_width_floor(channels, 1e-9, 'agilent')
     message = str(next(w.message for w in caught
                        if "empty bins" in str(w.message)))
-    assert "MSPeak.bin (about 1.0 Da)" in message
+    assert "MSProfile.bin (about 1e-06 Da)" in message
     assert "data.ms, dataSim.ms (about 0.1 Da)" in message
 
 

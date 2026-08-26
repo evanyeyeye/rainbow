@@ -221,8 +221,10 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             m/z (and other ylabel) labels. Cosmetic: it rounds the labels and
             never merges data. Where a coarse value would round neighbouring
             bins onto one label, it is raised to what the grid needs, so the
-            labels always name the columns one to one. It does not apply to a
-            per-scan centroid at all, whose labels are its data. The default
+            labels name the columns one to one for any bin_width a float64 m/z
+            can distinguish. It does not apply to a per-scan channel at all
+            (an HRMS profile or a centroid), whose labels are its data. The
+            default
             ``'auto'`` chooses per file: 4 for the high-resolution Agilent HRMS
             profile and TOF centroids, and 0 (whole numbers) for
             unit-resolution data (UV, GC/quadrupole MS, Waters).
@@ -317,10 +319,21 @@ def _mz_spacings(datadir, only=None):
     Finest m/z spacing of each MS channel in ``datadir``.
 
     A per-scan channel (the HRMS profile, a centroid peak list) is measured
-    from one scan's own m/z axis; a binned channel from its shared axis. Pass
+    from its own scans; a binned channel from its shared axis. Pass
     ``only=True`` for just the per-scan channels or ``only=False`` for just the
     binned ones, so a caller that read one kind on the wrong grid can measure
     each kind on the read that suits it.
+
+    The two per-scan kinds are measured differently, because the same
+    arithmetic does not mean the same thing on both:
+
+    * An HRMS profile samples every scan on one shared flight-time grid, so a
+      single scan's m/z axis *is* the instrument's grid. Pooling scans would
+      measure the calibration drift between them instead.
+    * A centroid keeps only picked peaks, so within a scan the gaps are peak
+      separations, not a grid. Scan 0 of a run whose first scan holds two peaks
+      reported the distance between those two peaks: 71 Da, on a run that
+      quantizes to 0.09. Pooling the scans is what shows the quantization.
 
     """
     import numpy as np
@@ -333,10 +346,15 @@ def _mz_spacings(datadir, only=None):
         if only is not None and per_scan is not only:
             continue
         try:
-            if per_scan:               # per-scan: one scan's own m/z axis
+            if not per_scan:
+                mz = np.asarray(datafile.ylabels, dtype=float)
+            elif getattr(datafile, '_per_scan_axis_is_a_grid', False):
                 mz = np.asarray(datafile.mass_labels(0), dtype=float)
             else:
-                mz = np.asarray(datafile.ylabels, dtype=float)
+                mz = np.concatenate([
+                    np.asarray(datafile.mass_labels(i), dtype=float)
+                    for i in range(len(datafile.xlabels))]) \
+                    if len(datafile.xlabels) else np.empty(0)
         except Exception:
             continue                   # a per-scan channel with no shared axis
         mz = np.unique(mz)
@@ -347,10 +365,17 @@ def _mz_spacings(datadir, only=None):
     return resolutions
 
 
-def _has_binned_ms(datadir):
-    """Whether ``datadir`` holds an MS channel on a shared (binned) m/z axis."""
-    return any(datafile.detector == 'MS'
-               and not hasattr(datafile, 'mass_labels')
+def _needs_the_probe(datadir, measured):
+    """Whether any MS channel in ``datadir`` still has no measurement.
+
+    Every MS channel the first read did not measure has to come from the probe:
+    one already on a shared axis (a Chemstation .ms beside a MassHunter
+    MSPeak.bin, or Agilent ICP-MS), and a centroid, whose per-scan peaks are
+    not a grid to measure. Asking which channels are still missing covers both
+    without naming either, so a channel that stops being measured in the first
+    read cannot silently drop out of the answer.
+    """
+    return any(datafile.detector == 'MS' and datafile.name not in measured
                for datafile in datadir.datafiles)
 
 
@@ -422,7 +447,7 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         # channel into a binned one, so a channel measured correctly above
         # comes back from the probe as binned and would otherwise overwrite its
         # own answer with 1e-3, the probe constant.
-        if _has_binned_ms(datadir):
+        if _needs_the_probe(datadir, resolutions):
             for name, spacing in _mz_spacings(_probe(), only=False).items():
                 resolutions.setdefault(name, spacing)
         return resolutions

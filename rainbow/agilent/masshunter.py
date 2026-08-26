@@ -57,6 +57,11 @@ class ProfileDataFile(DataFile):
             full float precision.
 
     """
+    # Every scan is sampled on the same flight-time grid, so one scan's m/z
+    # axis is the instrument's own grid and the spacing along it is meaningful.
+    # (The calibration drifts between scans, so pooling scans is not: it would
+    # measure the drift instead of the grid.)
+    _per_scan_axis_is_a_grid = True
     def __init__(self, path, xlabels, flight_times, data, calib, use_flags,
                  metadata, mz_decimals=4):
         self.name = os.path.basename(path)
@@ -141,6 +146,12 @@ class CentroidDataFile(DataFile):
         xlabels (numpy.ndarray): Retention time of each scan.
 
     """
+    # A scan holds only the peaks that were picked, at whatever m/z they were
+    # found, so the gaps between them are peak separations and not a grid: a
+    # two-peak scan would "measure" the distance between those two peaks. What
+    # the file quantizes to only shows up over the whole run.
+    _per_scan_axis_is_a_grid = False
+
     def __init__(self, path, xlabels, mz_arrays, intensity_arrays, metadata):
         self.name = os.path.basename(path)
         self.detector = 'MS'
@@ -1057,9 +1068,15 @@ def parse_msdata(path, display_precision='auto', bin_width=None):
             f"MSProfile.bin in {path} contains no complete scans.")
 
     if bin_width is None:
+        # mz_decimals=None, not display_precision: on the per-scan profile
+        # mass_labels(i) is the m/z axis itself, the same way it is on a
+        # centroid, so rounding it is not a display step. At the vendor default
+        # of 0 decimals a 105,152-point scan came back with 2,398 distinct
+        # labels, which cannot name their own columns. Callers who want them
+        # rounded can set mz_decimals on the returned file.
         return _build_per_scan_profiles(
             times, inten_arrs, grid_keys, calib_vals[:num_times],
-            scan_calib_ids, calib_flags, mz_decimals=display_precision)
+            scan_calib_ids, calib_flags, mz_decimals=None)
 
     # Concatenating the per-scan arrays avoids materializing a ~100M-element
     # Python list (and the numpy round-trip through it), which otherwise
@@ -1339,7 +1356,17 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
     if bin_width is None:
         keys = np.round(mz_arr * (10 ** display_precision)).astype(np.int64)
     else:
-        keys = np.round(mz_arr / bin_width).astype(np.int64)
+        # Same guard as bin_datapairs: a width small enough to push a key past
+        # the float64 range, or past what an int64 bin index holds, wraps every
+        # key onto one index and returns a single column carrying the whole
+        # run's signal. rb.read promises to refuse that, so both binning paths
+        # have to.
+        scaled = mz_arr / bin_width
+        if not np.isfinite(scaled).all() or np.abs(scaled).max() >= 2.0 ** 62:
+            raise ValueError(
+                f"bin_width={bin_width!r} is too small for m/z up to "
+                f"{float(np.max(mz_arr)):g}: the bin index overflows.")
+        keys = np.round(scaled).astype(np.int64)
     # Label the bins finely enough to tell them apart. On the None default the
     # grid is 10**-display_precision, which already matches, so this changes
     # nothing there; an explicit bin_width finer than the labels would round
@@ -1476,18 +1503,20 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
             "MSPeak.bin", times, mz_per_scan, inten_per_scan, {})
 
     # A bin_width projects the per-scan peaks onto one shared m/z grid (lossy),
-    # the same way the profile binning does.
-    # Unlike the profile path, the peak m/z are rounded to display_precision on
-    # the way onto that grid, so that rounding is the grid this channel records
-    # no matter how finely the instrument resolved. A calibrated (TOF/Q-TOF)
-    # axis would otherwise sit near HRMS_MZ_FLOOR and an uncalibrated one at
-    # the ordinary Agilent floor, but neither survives the round:
-    # display_precision=0 (the uncalibrated default) leaves nominal m/z, which
-    # is a floor of 1, not 0.1.
-    floor = max(10.0 ** -display_precision,
-                HRMS_MZ_FLOOR if calib_vals is not None else MZ_FLOORS['agilent'])
+    # the same way the profile binning does. display_precision plays no part in
+    # it: rounding the m/z on the way onto the grid would make the labels the
+    # lossy control, which is the profile path's job to avoid too.
+    #
+    # No floor is recorded for this channel. A floor says "the binary stores a
+    # lattice this coarse, so a finer bin only inserts empty bins", and a peak
+    # list has no lattice: each peak carries its own m/z at whatever precision
+    # the file kept. Asserting the vendor's unit-resolution floor here made
+    # rainbow warn that 0.09 was too fine on a run that quantizes to 0.0899963,
+    # which rb.mz_resolution reports and reads back happily. That function
+    # measures this channel; a constant cannot.
+    floor = None
 
-    mz_arr = np.round(np.concatenate(mz_per_scan), display_precision)
+    mz_arr = np.concatenate(mz_per_scan)
     if mz_arr.size == 0:
         return _with_mz_floor(DataFile(
             "MSPeak.bin", 'MS', times, np.array([], dtype=np.float64),

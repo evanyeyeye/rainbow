@@ -527,11 +527,16 @@ def _with_cube(**measurement):
                                     {"peak list": {"peak": [
                                         {"retention time": 10 ** 400}]}}}})),
         id="peak-time-overflows-a-float"),
-    pytest.param(_lc(_with_cube(**{"processed data aggregate document":
-                                   {"processed data document":
-                                    {"peak list": {"peak": [
-                                        {"retention time": 1.5,
-                                         "peak area": {"value": 10 ** 400}}]}}}})),
+    # With an identifier, so the peak group is joined to the channel and
+    # reaches to_asm. Without one it is dropped before the huge area is
+    # touched, and the case never exercises the overflow at all.
+    pytest.param(_lc(_with_cube(**{
+        "measurement identifier": "ch1",
+        "processed data aggregate document":
+            {"processed data document":
+             {"peak list": {"peak": [
+                 {"retention time": 1.5,
+                  "peak area": {"value": 10 ** 400}}]}}}})),
         id="peak-area-overflows-a-float"),
     pytest.param(_lc(_with_cube(**{"injection document": {
         "autosampler injection volume setting (chromatography)":

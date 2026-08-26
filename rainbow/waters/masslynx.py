@@ -33,6 +33,11 @@ _FUNCTNS_RECORD = 32 * 13
 _FUNC_TYPE_MASK = 0x1F
 _FUNC_TYPE_MS_SCAN = 0
 _FUNC_TYPE_SIR = 1
+# Diode array. The authoritative signal that a function's axis is wavelength
+# rather than m/z, and stronger than the absence of a polarity: polarities are
+# read from separate metadata that can be missing or short, and white.raw
+# records six MRM (type 9) functions for which none is read.
+_FUNC_TYPE_DIODE_ARRAY = 12
 
 
 def _find_file(directory, target_name):
@@ -165,9 +170,11 @@ def parse_spectrum(path, display_precision=0, bin_width=1.0,
             polarity = polarities[funcdat_index]
             if funcdat_index < len(calib_nums):
                 calib = calib_nums[funcdat_index]
+        func_type = (func_types[funcdat_index]
+                     if funcdat_index < len(func_types) else None)
         datafile = parse_function(
             os.path.join(path, funcdat_file), display_precision, bin_width,
-            polarity, calib)
+            polarity, calib, func_type)
         # Tag the MS acquisition mode (SIM vs scan) from the function type, so a
         # SIR (Waters' SIM) channel is distinguishable from a full scan.
         if datafile.detector == 'MS' and funcdat_index < len(func_types):
@@ -209,7 +216,7 @@ def _acquisition_mode(func_type):
 
 
 def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
-                   calib=None):
+                   calib=None, func_type=None):
     """
     Parses data for a Waters function. 
 
@@ -255,14 +262,23 @@ def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
     detector = 'MS' if polarity else 'UV'
     metadata = {'polarity': polarity} if polarity else {}
 
-    # bin_width is an m/z control, so it only applies to the MS functions. A UV
-    # function's ylabels are wavelengths, and binning those to an m/z width
-    # would quietly merge DAD channels (at bin_width=5.0 a 190-wavelength trace
-    # came back as 39, five nanometres to a column). Nothing warns about it
-    # either: the too-fine-bin_width check only looks at MS files.
+    # bin_width is an m/z control, so it only applies to the m/z functions. A
+    # wavelength axis binned to an m/z width would quietly merge DAD channels
+    # (at bin_width=5.0 a 190-wavelength trace came back as 39, five nanometres
+    # to a column), and nothing warns about it: the too-fine-bin_width check
+    # only looks at MS files.
+    #
+    # The recorded function type decides it where there is one, because the
+    # polarity that names `detector` above comes from separate metadata that
+    # can be missing: white.raw records six MRM functions with m/z axes and no
+    # polarity for any of them, and exempting those would silently discard the
+    # caller's bin_width. Only a function the file calls a diode array is
+    # treated as wavelength; without a type, fall back to the polarity.
+    is_wavelength = (func_type == _FUNC_TYPE_DIODE_ARRAY if func_type is not None
+                     else detector == 'UV')
     ylabels, data = parse_funcdat(
         path, pair_counts, display_precision,
-        bin_width if detector == 'MS' else _UV_WAVELENGTH_STEP, calib)
+        _UV_WAVELENGTH_STEP if is_wavelength else bin_width, calib)
 
     return DataFile(path, detector, times, ylabels, data, metadata)
 

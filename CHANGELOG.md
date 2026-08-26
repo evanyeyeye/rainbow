@@ -111,6 +111,13 @@ to [Semantic Versioning](https://semver.org/).
   labels are its data. Use `rb.mz_resolution(path)` to see how fine a
   `bin_width` a run can actually support. Code passing `precision=` must now
   pass `display_precision=`, or `bin_width=` to control the binning step.
+  `display_precision` no longer applies to a per-scan channel at all: on an
+  HRMS profile or a centroid, `mass_labels(i)` is the m/z axis itself rather
+  than a display of it, so rounding it discarded measured precision. A
+  calibrated TOF centroid kept only 4 decimals on read, and an HRMS profile at
+  the vendor default of 0 decimals returned 105,152 points under 2,398 distinct
+  labels. `ProfileDataFile.mz_decimals` now defaults to `None` and can still be
+  set on the returned file.
 - **`rb.read(path, centroid=True)` returns a `CentroidDataFile`. Breaking:** a
   MassHunter `MSPeak.bin` holds a separate peak list per scan, so there is no
   one m/z axis to put them on. The returned object exposes `scan(i)` and

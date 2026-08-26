@@ -206,30 +206,76 @@ def test_a_bin_width_that_overflows_the_bin_index_is_refused():
 
 
 def test_a_binned_sibling_does_not_overwrite_a_per_scan_resolution():
-    """ The probe read must not clobber the answer the first read got right.
+    """ The probe read must not clobber an answer the first read got right.
 
-    mz_resolution measures per-scan channels from one scan's own axis, then
-    re-reads on a fine probe grid to measure the channels that sit on a shared
-    axis. The probe passes a bin_width, which is exactly what turns a per-scan
-    channel into a binned one, so the per-scan channel came back from the probe
-    looking binned and overwrote its own measurement with the probe constant.
-    yellow.D is the case that shows it: a per-scan centroid beside two binned
-    .ms channels, so the second read happens at all.
+    mz_resolution measures per-scan channels from their own scans, then
+    re-reads on a fine probe grid for the channels that need it. The probe
+    passes a bin_width, which is what turns a per-scan channel into a binned
+    one, so an HRMS profile came back from the probe looking binned and
+    replaced its own measurement with the probe's grid.
+
+    Checked against ground truth rather than against the code's own rule: the
+    profile's m/z axis is one scan's calibrated flight-time axis, so its
+    spacing is computable here without asking rainbow how it would measure it.
     """
     import warnings
     import rainbow as rb
+    path = "tests/inputs/amber.D"
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        datadir = rb.read("tests/inputs/yellow.D", centroid=True,
-                          display_precision=8)
-        mz = np.unique(np.asarray(
-            datadir.get_file("MSPeak.bin").mass_labels(0), dtype=float))
-        expected = round(float(np.min(np.diff(mz))), 7)
-        got = rb.mz_resolution("tests/inputs/yellow.D", centroid=True)
-    assert got["MSPeak.bin"] == expected
-    assert got["MSPeak.bin"] != 1e-3        # the probe constant
-    # The binned siblings are still measured, and on the probe grid.
-    assert got["data.ms"] == 0.1
+        profile = rb.read(path, hrms=True).get_file("MSProfile.bin")
+        axis = np.unique(np.asarray(profile.mass_labels(0), dtype=float))
+        truth = round(float(np.min(np.diff(axis))), 7)
+        got = rb.mz_resolution(path, hrms=True)["MSProfile.bin"]
+    assert got == truth
+    # A real spacing, not the 1e-3 grid the probe reads on.
+    assert truth > 1e-3
+    assert got != 1e-3
+
+
+def test_a_centroid_resolution_is_measured_over_the_whole_run():
+    """ A centroid's peaks are not a grid, so one scan cannot measure it.
+
+    Each scan holds only the peaks that were picked, so the gaps inside a scan
+    are peak separations: yellow.D's first scan holds two peaks, 130.99 and
+    202.0, and measuring it reported 71 Da as the finest grid of a run that
+    quantizes to 0.09. What the file quantizes to shows up only over the run.
+    An HRMS profile is the opposite case, and is covered above: it samples
+    every scan on one flight-time grid, so pooling scans would measure the
+    calibration drift between them instead.
+    """
+    import warnings
+    import rainbow as rb
+    path = "tests/inputs/yellow.D"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        centroid = rb.read(path, centroid=True).get_file("MSPeak.bin")
+        pooled = np.unique(np.concatenate([
+            np.asarray(centroid.mass_labels(i), dtype=float)
+            for i in range(len(centroid.xlabels))]))
+        truth = round(float(np.min(np.diff(pooled))), 7)
+        got = rb.mz_resolution(path, centroid=True)["MSPeak.bin"]
+    assert got == truth
+    # The fixture really does have the shape that made scan 0 misleading, so
+    # this is not vacuously true.
+    assert centroid.mass_labels(0).size == 2
+    scan0 = np.unique(np.asarray(centroid.mass_labels(0), dtype=float))
+    assert float(np.min(np.diff(scan0))) > 70          # the old answer
+    assert truth < 0.1                                 # the real grid
+
+
+def test_the_probe_still_reaches_a_centroid_with_no_binned_sibling():
+    """ A centroid-only run must still be measured.
+
+    The probe used to run only when a binned channel was present. Deciding it
+    that way meant a run whose only MS channel needs the probe never got one.
+    """
+    import rainbow as rb
+    for fixture in ("tests/inputs/gold.D", "tests/inputs/copper.D"):
+        answer = rb.mz_resolution(fixture, centroid=True)
+        assert "MSPeak.bin" in answer, fixture
+        # A measured high-resolution spacing, not the probe's own 1e-3 grid.
+        assert 0 < answer["MSPeak.bin"] < 1e-3, (fixture, answer)
 
 
 def test_bin_width_does_not_touch_a_waters_uv_function():

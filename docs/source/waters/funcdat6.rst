@@ -60,7 +60,7 @@ We compute an example using the mz value and 5 calibration numbers from above. T
 .. note::
 
    Because Waters m/z is calibrated rather than on a fixed lattice, its
-   spacing is not uniform (roughly 0.05 Da, varying across the range). By default
+   spacing is not uniform (roughly 0.03 to 0.07 Da depending on the run, varying across the range). By default
    ``rb.read`` bins it to nominal mass (1 Da); pass a finer ``bin_width`` to keep
    more resolution, and ``rb.mz_resolution(path)`` reports the observed spacing.
    The separate ``display_precision`` only rounds the displayed m/z labels; it
