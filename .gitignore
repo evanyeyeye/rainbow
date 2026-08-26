@@ -24,12 +24,37 @@ rainbow/agilent/_chdelta.c
 /asm-notes/
 /asm-reference/
 
-# Local datasets and anything derived from them. Keep them here, under a path
-# this file already covers, rather than adding a new entry per dataset: a
-# per-dataset line is a poor guard (it protects only what someone remembered to
-# list) and the entry outlives the data. Anything outside these paths is not
-# ignored, so check `git status` before committing.
+# Local datasets and anything derived from them. Keep them here rather than
+# adding a new entry per dataset: a per-dataset line is a poor guard, since it
+# protects only what someone remembered to list, and the entry outlives the
+# data.
 /data/
 /datasets/
 # exported ASM documents (never commit; these come from real samples)
 /ASMs/
+
+# The repository root is an allowlist: everything in it is ignored unless it is
+# named below. Named entries are the project itself, so a dataset folder left at
+# the root is ignored whatever it is called, and is never one `git add -A` away
+# from being committed. Listing the datasets instead would only ever cover the
+# ones somebody thought to add.
+#
+# The cost is that a genuinely new project file at the root is ignored too, and
+# `git status` will not mention it. Add it here when you add it. This applies to
+# the root only: everything inside the directories below behaves normally.
+/*
+!/.github/
+!/.gitignore
+!/.readthedocs.yaml
+!/CHANGELOG.md
+!/COPYING
+!/COPYING.LESSER
+!/MANIFEST.in
+!/README.md
+!/RELEASING.md
+!/docs/
+!/pyproject.toml
+!/rainbow/
+!/scripts/
+!/setup.py
+!/tests/
