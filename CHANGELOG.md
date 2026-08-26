@@ -75,7 +75,7 @@ to [Semantic Versioning](https://semver.org/).
   channel.
 
 ### Changed
-- **`import rainbow` is about five times faster** (roughly 160 ms to 30 ms on
+- **`import rainbow` is about five times faster** (roughly 165 ms to 35 ms on
   the machine this was measured on). `pandas`, needed only for the Waters
   transition table, was imported at module load and was by a wide margin the
   largest cost of importing the package. It is now imported where it is used,

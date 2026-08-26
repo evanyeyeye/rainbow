@@ -8,14 +8,26 @@ from rainbow._binning import MZ_FLOORS
 from rainbow.asm import from_asm, sequence_from_asm
 
 
+# `debug` is listed although it is not imported above: __getattr__ fetches it on
+# first use. Naming it here keeps `from rainbow import *` and tab completion
+# working, which a lazy attribute alone would quietly drop.
+__all__ = [
+    'DataFile', 'DataDirectory', 'DataSequence',
+    'agilent', 'waters', 'debug',
+    'read', 'read_sequence', 'read_metadata', 'mz_resolution',
+    'from_asm', 'sequence_from_asm',
+    'VENDORS', 'MZ_FLOORS',
+]
+
+
 def __getattr__(name):
     """Imports ``rainbow.debug`` on first use.
 
-    The metadata-inspection subsystem is off the normal read path, and its
-    eleven decoders are a fifth of the cost of ``import rainbow`` for a caller
-    who never touches them. Deferring it keeps that promise real rather than
-    merely documented. ``rb.debug.inspect(...)``, ``from rainbow import
-    debug``, and ``import rainbow.debug`` all still work.
+    The metadata-inspection subsystem is off the normal read path, and its ten
+    decoders are a fifth of the cost of ``import rainbow`` for a caller who
+    never touches them. Deferring it keeps that promise real rather than merely
+    documented. ``rb.debug.inspect(...)``, ``from rainbow import debug``, and
+    ``import rainbow.debug`` all still work.
     """
     if name == "debug":
         import importlib
@@ -23,6 +35,11 @@ def __getattr__(name):
         globals()["debug"] = module
         return module
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    """Lists ``debug`` before it has been imported, so completion offers it."""
+    return sorted(set(globals()) | set(__all__))
 
 
 # Vendor parsers that rainbow can dispatch to.

@@ -705,16 +705,23 @@ def test_exact_equality_is_not_the_round_trip_contract():
     inequality instead would enshrine the drift, so making the conversion
     exactly reversible some day, which would be an improvement, would break
     this test.
+
+    white.raw is all absorbance, so every channel must come back. Pairing by
+    identifier rather than by position matters: zip would truncate against a
+    shorter second export, and a from_asm regression that silently drops
+    channels would sail through.
     """
     import numpy as np
     datadir = rb.read(os.path.join(INPUTS, "white.raw"))
     first = datadir.to_asm()
     again = rb.from_asm(first, name=datadir.name).to_asm()
-    compared = 0
-    for before, after in zip(_asm_measurements(first),
-                             _asm_measurements(again)):
-        assert np.allclose(_asm_cube(before)["dimensions"][0],
-                           _asm_cube(after)["dimensions"][0])
-        assert _asm_cube(before)["measures"] == _asm_cube(after)["measures"]
-        compared += 1
-    assert compared, "no channel was compared"
+
+    before = {m["measurement identifier"]: m for m in _asm_measurements(first)}
+    after = {m["measurement identifier"]: m for m in _asm_measurements(again)}
+    assert len(before) == len(datadir.datafiles)
+    assert set(after) == set(before), "a channel was lost on the round trip"
+    for name, source in before.items():
+        assert np.allclose(_asm_cube(source)["dimensions"][0],
+                           _asm_cube(after[name])["dimensions"][0])
+        assert _asm_cube(source)["measures"] == \
+            _asm_cube(after[name])["measures"]

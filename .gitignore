@@ -33,26 +33,33 @@ rainbow/agilent/_chdelta.c
 # exported ASM documents (never commit; these come from real samples)
 /ASMs/
 
-# Every directory at the repository root is ignored unless it is named below.
-# A dataset is always a directory (a .D, a .raw, a .dx bundle, a folder of
-# them), so this covers one left at the root whatever it is called, and it is
-# never one `git add -A` away from being committed. Listing the datasets by
-# name instead would only ever cover the ones somebody thought to add.
+# Every directory at the repository root is ignored unless it is named below,
+# so a dataset dropped there is covered whatever it is called, rather than only
+# if somebody remembered to list it. Most vendor data is a directory (a .D, a
+# .raw, a folder of them), but not all of it: a .dx is a single file, and
+# rainbow's per-file parsers read a lone .ch, .uv, .ms, or Waters .dat. Those
+# extensions are matched too, case-insensitively, because a vendor writes
+# DAD1A.CH as readily as .ch and git only folds case where core.ignorecase is
+# set, which it is not on Linux CI.
 #
-# Only directories, deliberately. Ignoring root *files* too would mean a new
-# CONTRIBUTING.md or .pre-commit-config.yaml is invisible to `git status` and
-# `git add -A`, and silently deleted by `git clean -fdx`. Losing an uncommitted
-# file that way is worse than the thing being prevented, since committing a
-# dataset is at least loud and revertible. The single-file archive formats are
-# named individually just below.
+# Root *files* are otherwise left visible, deliberately. Ignoring all of them
+# would mean a new CONTRIBUTING.md or .pre-commit-config.yaml never appears in
+# `git status` and is never picked up by `git add -A`, which is a quiet way to
+# lose work. (Being ignored is not what protects a file from `git clean -fdx`:
+# that removes untracked root files either way. If anything, ignoring one
+# protects it from a plain `git clean -fd`.)
 #
 # The cost that remains: a genuinely new project *directory* at the root is
 # ignored, so add it here when you add it. Everything inside the directories
 # below behaves normally.
 /*/
-/*.dx
-/*.zip
-/*.asm.json
+/*.[dD][xX]
+/*.[zZ][iI][pP]
+/*.[jJ][sS][oO][nN]
+/*.[cC][hH]
+/*.[uU][vV]
+/*.[mM][sS]
+/*.[dD][aA][tT]
 !/.github/
 !/docs/
 !/rainbow/

@@ -5,9 +5,8 @@ Validates rainbow's emitted ASM documents against the published Allotrope
 liquid- and gas-chromatography JSON schemas (revision REC/2026/06, the revision
 rainbow's manifests declare). This test is opt-in and network-dependent: it runs
 only when ``RAINBOW_TEST_ASM_SCHEMA=1`` is set, ``jsonschema`` is installed (the
-``validate`` extra), and the schemas can be fetched. It is skipped in CI, which
-does not set the variable, mirroring how the LZF end-to-end tests are skipped
-there.
+``validate`` extra), and the schemas can be fetched. A dedicated CI job sets the
+variable and runs it; the ordinary test matrix does not, so it skips there.
 
 To run it locally::
 

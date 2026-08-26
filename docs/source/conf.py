@@ -25,11 +25,18 @@ try:
 except Exception:                       # not installed, e.g. on Read the Docs
     import os
     import re
+    release = ''
     _pyproject = os.path.join(
         os.path.dirname(__file__), '..', '..', 'pyproject.toml')
-    with open(_pyproject, encoding='utf-8') as _f:
-        release = re.search(r'^version\s*=\s*"([^"]+)"', _f.read(),
-                            re.MULTILINE).group(1)
+    try:                                # absent when building from a wheel
+        with open(_pyproject, encoding='utf-8') as _f:
+            _found = re.search(r'''^version\s*=\s*["']([^"']+)["']''',
+                               _f.read(), re.MULTILINE)
+        # A reworded or dynamic version line should cost the version number,
+        # not the whole build.
+        release = _found.group(1) if _found else ''
+    except OSError:
+        pass
 
 language = 'en'
 master_doc = 'index'
