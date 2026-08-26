@@ -495,6 +495,39 @@ def _with_cube(**measurement):
         "liquid chromatography document": [
             {"measurement aggregate document": []}]}},
         id="measurement-aggregate-as-a-list"),
+    # A time axis numpy converts to the wrong number of axes rather than
+    # rejecting. These reach the DataFile constructor, whose own argument check
+    # would take down every other channel in the document.
+    pytest.param(_lc({"chromatogram data cube": dict(
+        _STRUCTURE, data={"dimensions": [7], "measures": [[1.0, 2.0]]})}),
+        id="time-axis-is-a-bare-number"),
+    pytest.param(_lc({"chromatogram data cube": dict(
+        _STRUCTURE, data={"dimensions": [None], "measures": [[1.0, 2.0]]})}),
+        id="time-axis-is-null"),
+    pytest.param(_lc({"chromatogram data cube": dict(
+        _STRUCTURE, data={"dimensions": [[[0.0, 60.0]]],
+                          "measures": [[1.0, 2.0]]})}),
+        id="time-axis-is-nested-one-level-too-deep"),
+    # JSON integer literals are unbounded, so this raises OverflowError on the
+    # way to a float rather than the TypeError/ValueError numpy usually gives.
+    pytest.param(_lc({"chromatogram data cube": dict(
+        _STRUCTURE, data={"dimensions": [[10 ** 400, 60.0]],
+                          "measures": [[1.0, 2.0]]})}),
+        id="time-axis-value-overflows-a-float"),
+    pytest.param(_lc(_with_cube(**{"processed data aggregate document":
+                                   {"processed data document":
+                                    {"peak list": {"peak": [
+                                        {"retention time":
+                                         {"value": "1.5", "unit": "s"}}]}}}})),
+        id="peak-quantity-is-a-numeric-string"),
+    pytest.param(_lc(_with_cube(**{"injection document": {
+        "autosampler injection volume setting (chromatography)":
+            {"value": "lots"}}})),
+        id="injection-volume-is-not-a-number"),
+    pytest.param(_lc(_with_cube(**{"device control aggregate document": {
+        "device control document": [
+            {"detector wavelength setting": {"value": {"nested": 1}}}]}})),
+        id="wavelength-setting-is-not-a-number"),
 ])
 def test_from_asm_does_not_raise_on_a_foreign_document_shape(document):
     datadir = rb.from_asm(document)
@@ -526,6 +559,79 @@ def test_a_foreign_envelope_shape_does_not_cost_the_channel():
         datadir = rb.from_asm(_lc(_with_cube(**shape)))
         assert len(datadir.datafiles) == 1, shape
         assert datadir.datafiles[0].data.shape == (2, 1), shape
+
+
+def test_a_cube_whose_measure_does_not_match_its_time_axis_is_skipped():
+    """ A short measure array must cost the channel, not misalign it.
+
+    ``reshape(-1, 1)`` accepts any length, so a measure array one value short
+    of its time axis silently pairs every later point with the wrong retention
+    time. DataFile checks only ndim, and nothing downstream rechecks, so the
+    corruption surfaces far away (an IndexError inside to_csvstr) or not at
+    all. Skipping is the honest answer.
+    """
+    document = _lc({"measurement identifier": "short.ch",
+                    "chromatogram data cube": dict(_STRUCTURE, data={
+                        "dimensions": [[0.0, 30.0, 60.0]],
+                        "measures": [[1.0, 2.0]]})})
+    with pytest.warns(UserWarning, match="2 values for 3 retention times"):
+        datadir = rb.from_asm(document)
+    assert datadir.datafiles == []
+
+
+def test_a_peak_quantity_that_is_not_a_number_drops_to_none():
+    """ A measure spelled as text must not reach the seconds-to-minutes divide.
+
+    Numbers-as-strings are a common foreign-writer habit, and rainbow already
+    tolerates them inside a cube because numpy coerces. The export side skips a
+    non-numeric measure rather than failing the whole document, so the import
+    side has to agree instead of raising TypeError from a division.
+    """
+    document = _lc(_with_cube(**{"processed data aggregate document": {
+        "processed data document": [{"peak list": {"peak": [{
+            "retention time": {"value": "1.5", "unit": "s"},
+            "peak area": {"value": "100"},
+            "peak height": {"value": 12.5}}]}}]}}))
+    peaks = rb.from_asm(document).peaks[0]["peaks"]
+    assert peaks[0]["retention_time"] is None
+    assert peaks[0]["area"] is None
+    # A genuine number in the same peak still comes through.
+    assert peaks[0]["height"] == 12.5
+
+
+@pytest.mark.parametrize("document", ["{}", [], None, 3, b"{}"])
+def test_from_asm_rejects_a_document_that_is_not_a_dict(document):
+    """ Forgetting json.load must say so, not fail deep in the envelope. """
+    with pytest.raises(TypeError, match="must be a dict"):
+        rb.from_asm(document)
+    with pytest.raises(TypeError, match="must be a dict"):
+        rb.sequence_from_asm(document)
+
+
+def test_an_unreadable_channel_is_warned_about_rather_than_dropped_silently():
+    """ A document whose channels are all unreadable must not look empty.
+
+    from_asm returning an empty DataDirectory is indistinguishable from a
+    document that legitimately carries no UV cube, so a reader that gets
+    nothing back has no way to tell a broken file from an export-only one.
+    """
+    document = _lc({"measurement identifier": "bad.ch",
+                    "chromatogram data cube": dict(_STRUCTURE, data={
+                        "dimensions": [["not a number"]],
+                        "measures": [[1.0]]})})
+    with pytest.warns(UserWarning, match="bad.ch"):
+        assert rb.from_asm(document).datafiles == []
+
+
+def test_a_peak_list_that_cannot_be_keyed_to_a_channel_warns():
+    """ Peaks read and then discarded on re-export must not go unmentioned. """
+    document = _lc(_with_cube(**{
+        "measurement identifier": 7,
+        "processed data aggregate document": {
+            "processed data document": [{"peak list": {"peak": [
+                {"retention time": {"value": 90.0, "unit": "s"}}]}}]}}))
+    with pytest.warns(UserWarning, match="cannot be joined to a channel"):
+        rb.from_asm(document)
 
 
 def test_from_asm_still_reads_a_lone_measurement_object():

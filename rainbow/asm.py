@@ -1387,6 +1387,24 @@ def _text(value):
     return value if isinstance(value, str) else None
 
 
+def _number(value):
+    """
+    A schema numeric field as a number, or None.
+
+    The counterpart to :func:`_text`. A foreign writer routinely spells a
+    number as the string ``"1.5"``, and rainbow tolerates that inside a cube
+    because numpy coerces it. Everywhere else the value reaches arithmetic or
+    user code directly, so a non-number has to become None here rather than
+    surface as a TypeError halfway through a read.
+
+    """
+    if isinstance(value, dict):
+        value = value.get("value")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
+
+
 def _cube_data(cube):
     """
     A cube's inlined ``(dimensions, measures)``, or None when it has none.
@@ -1418,6 +1436,10 @@ def _aggregate_and_documents(document):
     export round-trips its UV channels too (the FID and MS cubes are
     export-only, like the mass chromatograms; see the round-trip caveat).
     """
+    if not isinstance(document, dict):
+        raise TypeError(
+            f"ASM document must be a dict, not {type(document).__name__}. "
+            "Parse the file first, e.g. json.load(open(path)).")
     for technique in (_LC, _GC):
         aggregate = document.get(technique["aggregate"])
         if isinstance(aggregate, dict):
@@ -1524,12 +1546,12 @@ def _absorb_envelope(measurement, metadata):
     date = _text(measurement.get("measurement time"))
     if date:
         metadata.setdefault("date", date)
-    volume = _first(measurement.get("injection document")).get(
-        "autosampler injection volume setting (chromatography)")
-    if isinstance(volume, dict) and volume.get("value") is not None:
+    volume = _number(_first(measurement.get("injection document")).get(
+        "autosampler injection volume setting (chromatography)"))
+    if volume is not None:
         # ASM stores mm^3; rainbow reports uL (1 mm^3 == 1 uL).
         metadata.setdefault(
-            "injection_volume", {"value": volume["value"], "unit": "µL"})
+            "injection_volume", {"value": volume, "unit": "µL"})
 
 
 def _datafile_from_measurement(measurement):
@@ -1537,15 +1559,22 @@ def _datafile_from_measurement(measurement):
     import numpy as np
     from rainbow.datafile import DataFile
 
-    name = _text(measurement.get("measurement identifier")) or "trace"
+    identifier = measurement.get("measurement identifier")
+    name = _text(identifier)
+    if name is None:
+        if identifier is not None:
+            # Present but unusable: the channel keeps its data under the
+            # fallback name, where it can collide with another such channel,
+            # so say so rather than let one quietly replace the other.
+            warnings.warn(
+                "measurement identifier is not text "
+                f"({type(identifier).__name__}); naming the channel 'trace'.")
+        name = "trace"
     file_metadata = {}
 
     control = _first(_first(measurement.get(
         "device control aggregate document")).get("device control document"))
-    setting = control.get("detector wavelength setting")
-    wavelength = setting.get("value") if isinstance(setting, dict) else None
-    if not isinstance(wavelength, (int, float)) or isinstance(wavelength, bool):
-        wavelength = None
+    wavelength = _number(control.get("detector wavelength setting"))
 
     # A cube's inlined values are declared numeric, but nothing stops another
     # writer putting text (or nulls) there. The channel is skipped the way an
@@ -1570,6 +1599,14 @@ def _datafile_from_measurement(measurement):
             dimensions, measures = cube
             xlabels = np.array(dimensions[0], dtype=float) / _SECONDS_PER_MINUTE
             data = np.array(measures[0], dtype=float).reshape(-1, 1)
+            # reshape(-1, 1) accepts any length, so a measure array that does
+            # not match its time axis would pair every later point with the
+            # wrong retention time. Nothing downstream rechecks this.
+            if xlabels.ndim == 1 and data.shape[0] != xlabels.size:
+                warnings.warn(
+                    f"{name}: chromatogram cube has {data.shape[0]} values for "
+                    f"{xlabels.size} retention times; skipping the channel.")
+                return None
             if wavelength is not None:
                 ylabels = np.array([wavelength])
                 file_metadata["wavelength"] = wavelength
@@ -1582,9 +1619,23 @@ def _datafile_from_measurement(measurement):
             # channel relabeled to absorbance to carry peaks does come back, as
             # a UV trace; that is the documented cost of the relabel.
             return None
-    except (TypeError, ValueError):
-        return None  # values that are not the numbers the cube declares
-    return DataFile(name, 'UV', xlabels, ylabels, data, file_metadata)
+        # A time axis that is not a flat list of numbers still converts under
+        # numpy, just to the wrong number of axes. Checking here skips the one
+        # bad channel; leaving it to DataFile would raise its internal argument
+        # error and take down every other channel in the document with it.
+        if xlabels.ndim != 1 or ylabels.ndim != 1 or data.ndim != 2:
+            warnings.warn(
+                f"{name}: cube axes are not the flat lists of numbers the "
+                "cube declares; skipping the channel.")
+            return None
+        return DataFile(name, 'UV', xlabels, ylabels, data, file_metadata)
+    except (TypeError, ValueError, OverflowError) as error:
+        # OverflowError: JSON integer literals are unbounded, so a 400-digit
+        # one raises here rather than converting to a float.
+        warnings.warn(
+            f"{name}: cube values are not the numbers the cube declares "
+            f"({error}); skipping the channel.")
+        return None
 
 
 def _is_absorbance(cube):
@@ -1606,12 +1657,16 @@ def _peaks_from_measurement(measurement):
         return None
 
     channel = _text(measurement.get("measurement identifier"))
-    wavelength = None
+    if channel is None:
+        # An unkeyed group is dropped by _peak_groups_by_channel on the way
+        # back out, so these peaks are read and then silently discarded.
+        warnings.warn(
+            f"a peak list of {len(asm_peaks)} peaks has no usable measurement "
+            "identifier; it cannot be joined to a channel and will be lost on "
+            "re-export.")
     control = _first(_first(measurement.get(
         "device control aggregate document")).get("device control document"))
-    setting = control.get("detector wavelength setting")
-    if isinstance(setting, dict):
-        wavelength = setting.get("value")
+    wavelength = _number(control.get("detector wavelength setting"))
     return {
         "signal": _channel_key(channel) if channel else None,
         "wavelength": wavelength,
@@ -1624,8 +1679,10 @@ def _peaks_from_measurement(measurement):
 def _peak_from_asm(peak):
     """Reconstructs a peak's measures, times back from seconds to minutes."""
     def value(key):
-        quantity = peak.get(key)
-        return quantity.get("value") if isinstance(quantity, dict) else None
+        # A foreign writer may spell a measure as text, or as something else
+        # entirely. These go straight into user code and into arithmetic just
+        # below, so anything that is not a number has to drop out here.
+        return _number(peak.get(key))
 
     def minutes(key):
         seconds = value(key)
