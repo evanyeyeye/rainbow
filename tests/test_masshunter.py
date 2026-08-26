@@ -670,14 +670,35 @@ def test_precision_explicit_overrides_auto():
     assert np.allclose(prof.ylabels, np.round(prof.ylabels, 1))
 
 
-def test_precision_auto_gc_centroid_is_integer():
-    """ GC-quadrupole centroids (no calibration) auto-resolve to whole numbers
-    on each scan's per-scan m/z axis. """
-    dd = rb.read("tests/inputs/yellow.D", centroid=True)
-    cen = dd.get_file("MSPeak.bin")
-    mz = cen.mass_labels(0)
-    assert mz.size > 0
-    assert np.array_equal(mz, np.round(mz))
+def test_display_precision_does_not_round_the_per_scan_centroid():
+    """ On a centroid the m/z labels are the data, so display_precision leaves
+    them alone.
+
+    mass_labels(i) returns the scan's peak list itself; there is no separate
+    display of it to round. Rounding into that array under a control documented
+    as cosmetic discarded measured precision on read: an uncalibrated GC scan
+    records 130.99, not 131, and a calibrated TOF resolves far below the four
+    decimals 'auto' picks for it. bin_width is the lossy control here.
+    """
+    per_scan = rb.read("tests/inputs/yellow.D", centroid=True) \
+        .get_file("MSPeak.bin").mass_labels(0)
+    assert per_scan.size > 0
+    # Same peaks whatever precision is asked for, including a coarse one.
+    for display_precision in (0, 4, 8):
+        again = rb.read("tests/inputs/yellow.D", centroid=True,
+                        display_precision=display_precision) \
+            .get_file("MSPeak.bin").mass_labels(0)
+        np.testing.assert_array_equal(again, per_scan)
+    # And the file really does record more than whole numbers, so this is not
+    # vacuously true on this fixture.
+    assert not np.array_equal(per_scan, np.round(per_scan))
+
+
+def test_nominal_masses_come_from_bin_width_not_display_precision():
+    """ The lossy control is bin_width; a unit width gives nominal masses. """
+    nominal = rb.read("tests/inputs/yellow.D", centroid=True, bin_width=1.0) \
+        .get_file("MSPeak.bin")
+    assert np.array_equal(nominal.ylabels, np.round(nominal.ylabels))
 
 
 def test_bin_width_presence_toggles_binning():

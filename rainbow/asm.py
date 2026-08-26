@@ -158,9 +158,16 @@ _MODULE_DEVICE_TYPES = {
 # as whole words with an optional module index, so "rid" stays out of "hybrid"
 # and "cad" out of "cascade".
 #
-# Ordered most specific first. Every value is a checked AFO class label; a
-# detector with no AFO class of its own (charged aerosol, and whatever is wired
-# into an analog input) is deliberately absent and takes the generic fallback.
+# Ordered most specific first, after the two read-back rules below, which have
+# to come before the named classes to keep rainbow's own generic output from
+# being re-specialized. That ordering means a foreign document naming a
+# detector "chromatographic detector" keeps that class even if the channel is
+# called DAD1A: the document's own claim about its detector wins over the
+# vendor's name for the module, which is the safer way round.
+#
+# Every value is a checked AFO class label; a detector with no AFO class of its
+# own (charged aerosol, and whatever is wired into an analog input) is
+# deliberately absent and takes the generic fallback.
 _NEUTRAL_ABSORBANCE = "electronic absorbance detector"   # AFE_0000734
 _DETECTOR_RULES = (
     # rainbow writes both of these itself, for a detector in a document whose
@@ -289,8 +296,9 @@ def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
             method (see :func:`_technique`).
         timezone (str, optional): UTC offset such as
             ``"-05:00"`` or ``"Z"``, stamped on timestamps the
-            instrument recorded without one. An offset the source
-            did record is never overridden.
+            instrument recorded without one. A usable offset the
+            source did record is never overridden; an unusable one
+            warns and gives way to this.
 
     Returns:
         dict: The ASM document.
@@ -337,8 +345,9 @@ def sequence_to_asm(datasequence, export_dad_cube=True, wavelengths=None,
             fallback.
         timezone (str, optional): UTC offset such as
             ``"-05:00"`` or ``"Z"``, stamped on timestamps the
-            instrument recorded without one. An offset the source
-            did record is never overridden.
+            instrument recorded without one. A usable offset the
+            source did record is never overridden; an unusable one
+            warns and gives way to this.
 
     Returns:
         dict: The ASM document.
@@ -701,7 +710,7 @@ def _parse_vendor(value):
         digits = offset[1:].replace(":", "")
         hours, minutes = int(digits[:2]), int(digits[2:])
         # Held to the same rule as the caller's `timezone`. Without this an
-        # offset of 24 hours or more raises out of timedelta, taking down an
+        # offset of 24 hours or more raises out of datetime.timezone, taking down an
         # export whose contract is to return None, and minutes of 60 or more
         # would silently roll over into a different instant.
         if not _offset_in_range(hours, minutes):
@@ -1637,7 +1646,10 @@ def _aggregate_and_documents(document):
         aggregate = document.get(technique["aggregate"])
         if isinstance(aggregate, dict):
             return aggregate, _as_documents(aggregate.get(technique["document"]))
-    raise KeyError(
+    # ValueError, not KeyError: the document is the wrong shape, the same
+    # complaint the guard above makes, and a KeyError would render its message
+    # wrapped in quotes and read as a lookup that missed.
+    raise ValueError(
         "document has no liquid- or gas-chromatography aggregate document")
 
 
@@ -1801,7 +1813,11 @@ def _datafile_from_measurement(measurement):
                     f"{xlabels.size} retention times; skipping the channel.")
                 return None
             if wavelength is not None:
-                ylabels = np.array([wavelength])
+                # dtype=float like every other array here. Left to infer, a
+                # wavelength of 2**63 gives a uint64 label array and a larger
+                # one an object array, either of which reads back fine and then
+                # fails inside extract_traces with "Invalid type for labels."
+                ylabels = np.array([wavelength], dtype=float)
                 file_metadata["wavelength"] = wavelength
             else:
                 ylabels = np.array([''])

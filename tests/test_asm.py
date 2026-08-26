@@ -903,7 +903,7 @@ def test_a_timestamp_that_could_be_misread_is_refused(value):
 
 
 @pytest.mark.parametrize("value", [
-    # An offset of 24 hours or more raises out of timedelta rather than
+    # An offset of 24 hours or more raises out of datetime.timezone rather than
     # failing to parse, which would take down a whole export.
     "3 Feb 22  11:22 am +2500",
     "3 Feb 22  11:22 am -2400",

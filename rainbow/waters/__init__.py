@@ -16,7 +16,7 @@ def read(path, display_precision='auto', requested_files=None, bin_width=None):
         requested_files (list, optional): List of filenames to parse.
         bin_width (float, optional): m/z bin width, the lossy binning control.
             The default is nominal mass (1 Da). Waters MS m/z is calibrated to
-            roughly 0.05 Da.
+            roughly 0.03 Da.
 
     Returns:
         DataDirectory representing the Waters .raw directory.

@@ -102,12 +102,15 @@ to [Semantic Versioning](https://semver.org/).
   `precision` argument to `rb.read` (and the vendor parsers) is replaced by two
   independent controls. `display_precision` (default `'auto'`) is cosmetic and
   rounds only the displayed m/z labels; `bin_width` is the lossy step that sums
-  intensities into a shared m/z grid. `bin_width` defaults to nominal mass
-  (1 Da) for unit-resolution data, and for HRMS profile data defaults to the
-  per-scan axis (no shared grid at all), so binned output is unchanged by
-  default. Use `rb.mz_resolution(path)` to see how fine a `bin_width` a run can
-  actually support. Code passing `precision=` must now pass
-  `display_precision=`, or `bin_width=` to control the binning step.
+  intensities into a shared m/z grid, and applies to MS channels only.
+  `bin_width` defaults to nominal mass (1 Da) for unit-resolution data, and for
+  HRMS profile data defaults to the per-scan axis (no shared grid at all), so
+  binned output is unchanged by default. A `display_precision` too coarse to
+  label a `bin_width`'s bins distinctly is raised to fit, so labels always name
+  the columns one to one, and a per-scan centroid is left unrounded because its
+  labels are its data. Use `rb.mz_resolution(path)` to see how fine a
+  `bin_width` a run can actually support. Code passing `precision=` must now
+  pass `display_precision=`, or `bin_width=` to control the binning step.
 - **`rb.read(path, centroid=True)` returns a `CentroidDataFile`. Breaking:** a
   MassHunter `MSPeak.bin` holds a separate peak list per scan, so there is no
   one m/z axis to put them on. The returned object exposes `scan(i)` and

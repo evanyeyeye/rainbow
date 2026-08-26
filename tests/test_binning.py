@@ -230,3 +230,48 @@ def test_a_binned_sibling_does_not_overwrite_a_per_scan_resolution():
     assert got["MSPeak.bin"] != 1e-3        # the probe constant
     # The binned siblings are still measured, and on the probe grid.
     assert got["data.ms"] == 0.1
+
+
+def test_bin_width_does_not_touch_a_waters_uv_function():
+    """ bin_width is an m/z control, so a UV function's wavelengths are exempt.
+
+    parse_function binned before it decided whether the function was MS or UV,
+    so an m/z width re-binned DAD wavelengths: at bin_width=5.0 a 190-wavelength
+    trace came back as 39 columns, five nanometres to a column. Nothing warned,
+    because the too-fine-bin_width check only looks at MS files.
+    """
+    import warnings
+    import rainbow as rb
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        default = rb.read("tests/inputs/violet.raw")
+        coarse = rb.read("tests/inputs/violet.raw", bin_width=5.0)
+    for before, after in zip(default.datafiles, coarse.datafiles):
+        if before.detector != 'UV':
+            continue
+        np.testing.assert_array_equal(after.ylabels, before.ylabels)
+        np.testing.assert_array_equal(after.data, before.data)
+    # The MS functions in the same run do respond to it, so this is not
+    # passing because bin_width was ignored everywhere.
+    ms = [(b, a) for b, a in zip(default.datafiles, coarse.datafiles)
+          if b.detector == 'MS']
+    assert ms and all(a.ylabels.size < b.ylabels.size for b, a in ms)
+
+
+def test_the_vendor_floor_never_contradicts_a_measured_grid():
+    """ mz_resolution must not report a width that read() then calls too fine.
+
+    One floor per vendor is a lower bound, not a measurement: Waters stores
+    each m/z with its own exponent, so the grid varies by run. A floor above a
+    real file's grid made the two APIs disagree, one reporting 0.036 as the
+    achievable width and the other warning that using it was pointless.
+    """
+    import warnings
+    import rainbow as rb
+    for name in ("blue.raw", "turquoise.raw", "violet.raw", "orange.D"):
+        path = "tests/inputs/" + name
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            for width in rb.mz_resolution(path).values():
+                rb.read(path, bin_width=width)
+        assert not [w for w in caught if "finer than" in str(w.message)], name

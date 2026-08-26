@@ -1457,7 +1457,7 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
                 mzs = calibrate_mz(np.asarray(mzs, dtype=np.float64),
                                    calib_vals[i], calib_flags.get(
                                        calibration_ids[i]))
-            mz_per_scan[i] = np.round(mzs, display_precision)
+            mz_per_scan[i] = np.asarray(mzs, dtype=np.float64)
             inten_per_scan[i] = np.asarray(intensities, dtype=np.uint64)
 
     for i in range(num_times):
@@ -1467,22 +1467,27 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
 
     if bin_width is None:
         # The per-scan (faithful) representation, like the HRMS profile default.
+        # display_precision is not applied to it. On a centroid the m/z labels
+        # are the data - mass_labels(i) returns the peak list itself, and there
+        # is no separate display of it to round - so rounding them here would
+        # discard measured precision under a control documented as cosmetic.
+        # The lossy control for this channel is bin_width, below.
         return CentroidDataFile(
             "MSPeak.bin", times, mz_per_scan, inten_per_scan, {})
 
     # A bin_width projects the per-scan peaks onto one shared m/z grid (lossy),
     # the same way the profile binning does.
-    # Unlike the profile path, the peak m/z were rounded to display_precision
-    # above, into the data itself, so that rounding is the grid this channel
-    # records no matter how finely the instrument resolved. A calibrated
-    # (TOF/Q-TOF) axis would otherwise sit near HRMS_MZ_FLOOR and an
-    # uncalibrated one at the ordinary Agilent floor, but neither survives the
-    # round: display_precision=0 (the uncalibrated default) leaves nominal m/z,
-    # which is a floor of 1, not 0.1.
+    # Unlike the profile path, the peak m/z are rounded to display_precision on
+    # the way onto that grid, so that rounding is the grid this channel records
+    # no matter how finely the instrument resolved. A calibrated (TOF/Q-TOF)
+    # axis would otherwise sit near HRMS_MZ_FLOOR and an uncalibrated one at
+    # the ordinary Agilent floor, but neither survives the round:
+    # display_precision=0 (the uncalibrated default) leaves nominal m/z, which
+    # is a floor of 1, not 0.1.
     floor = max(10.0 ** -display_precision,
                 HRMS_MZ_FLOOR if calib_vals is not None else MZ_FLOORS['agilent'])
 
-    mz_arr = np.concatenate(mz_per_scan)
+    mz_arr = np.round(np.concatenate(mz_per_scan), display_precision)
     if mz_arr.size == 0:
         return _with_mz_floor(DataFile(
             "MSPeak.bin", 'MS', times, np.array([], dtype=np.float64),

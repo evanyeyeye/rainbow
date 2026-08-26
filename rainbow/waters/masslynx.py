@@ -15,6 +15,10 @@ from rainbow._binning import bin_datapairs
 # matplotlib is deferred the same way, in datafile.plot.
 
 
+# A UV function records one absorbance per whole nanometre, so its ylabels are
+# laid out on a 1 nm grid whatever m/z bin_width the caller asked for.
+_UV_WAVELENGTH_STEP = 1.0
+
 # Lookup tables for the per-pair exponents in the 6-byte _FUNC.DAT format.
 # Both exponents come from small bit-fields, so indexing a table is much
 # faster than np.power over the whole pair array - with identical values.
@@ -247,12 +251,18 @@ def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
         parse_funcdat = parse_funcdat8
     elif bytes_per_pair == 4:
         parse_funcdat = parse_funcdat4
-    ylabels, data = parse_funcdat(
-        path, pair_counts, display_precision, bin_width, calib)
-
     # Spectra without an assigned polarity always contain UV data.
     detector = 'MS' if polarity else 'UV'
     metadata = {'polarity': polarity} if polarity else {}
+
+    # bin_width is an m/z control, so it only applies to the MS functions. A UV
+    # function's ylabels are wavelengths, and binning those to an m/z width
+    # would quietly merge DAD channels (at bin_width=5.0 a 190-wavelength trace
+    # came back as 39, five nanometres to a column). Nothing warns about it
+    # either: the too-fine-bin_width check only looks at MS files.
+    ylabels, data = parse_funcdat(
+        path, pair_counts, display_precision,
+        bin_width if detector == 'MS' else _UV_WAVELENGTH_STEP, calib)
 
     return DataFile(path, detector, times, ylabels, data, metadata)
 

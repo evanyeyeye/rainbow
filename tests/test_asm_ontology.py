@@ -266,7 +266,13 @@ def test_no_device_type_contradicts_its_documents_technique(
         ancestors = _afo_ancestors(term)
         if ancestors is None:
             continue                       # not an AFO class, e.g. a unit
-        checked += 1
+        # Count terms whose ancestry actually came back, not terms that merely
+        # resolved. The bug this test was written after was an ancestor lookup
+        # that answered 200 with an empty term list, which resolves and returns
+        # an empty set: counting resolutions would leave the guard below
+        # satisfied while every comparison ran against nothing.
+        if ancestors:
+            checked += 1
         if contradicted in ancestors or term == contradicted:
             offenders[term] = sorted(ancestors & {
                 "liquid chromatography detector",

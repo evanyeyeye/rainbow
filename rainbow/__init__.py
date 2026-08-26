@@ -28,6 +28,12 @@ def __getattr__(name):
     never touches them. Deferring it keeps that promise real rather than merely
     documented. ``rb.debug.inspect(...)``, ``from rainbow import debug``, and
     ``import rainbow.debug`` all still work.
+
+    ``from rainbow import *`` is the one form that pays the cost anyway: a star
+    import binds every name in ``__all__``, which reaches this function. That
+    is the price of listing ``debug`` there, and listing it is worth more than
+    the 7 ms, since dropping a documented name from the star import and from
+    tab completion is the more surprising failure.
     """
     if name == "debug":
         import importlib
@@ -195,7 +201,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     intensities into a shared grid), not by ``display_precision`` (which only
     rounds the displayed labels). A finer ``bin_width`` may drastically increase
     memory usage for larger files. The m/z grid the binary records is about
-    0.1 Da for Agilent quadrupole MS and 0.05 Da for Waters; the high-resolution
+    0.1 Da for Agilent quadrupole MS and 0.03 Da for Waters; the high-resolution
     Agilent HRMS profile is far finer (see :func:`mz_resolution` to inspect a
     file).
 
@@ -213,10 +219,13 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
         path (str): Path of the directory.
         display_precision (int or 'auto', optional): Decimals for the displayed
             m/z (and other ylabel) labels. Cosmetic: it rounds the labels and
-            never merges data. The default ``'auto'`` chooses per file: 4 for the
-            high-resolution Agilent HRMS profile and TOF centroids, and 0
-            (whole numbers) for unit-resolution data (UV, GC/quadrupole MS,
-            Waters).
+            never merges data. Where a coarse value would round neighbouring
+            bins onto one label, it is raised to what the grid needs, so the
+            labels always name the columns one to one. It does not apply to a
+            per-scan centroid at all, whose labels are its data. The default
+            ``'auto'`` chooses per file: 4 for the high-resolution Agilent HRMS
+            profile and TOF centroids, and 0 (whole numbers) for
+            unit-resolution data (UV, GC/quadrupole MS, Waters).
         hrms (bool, optional): Flag for Agilent HRMS (MSProfile.bin) parsing.
         requested_files (list, optional): List of filenames to parse.
         telemetry (bool, optional): Flag for Agilent .dx telemetry traces.
@@ -225,10 +234,12 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
         format (str, optional): Force the vendor parser ('agilent' or
             'waters'), bypassing extension/content detection.
         bin_width (float, optional): Width in daltons of each m/z bin: the lossy
-            binning control that sums intensities into a shared grid. For regular
+            binning control that sums intensities into a shared grid. It applies
+            to MS channels only, never to a UV or wavelength axis. For regular
             MS the default is nominal mass (1 Da); pass a finer width down to the
             vendor's m/z grid for more resolution (a width below it only warns
-            and inserts empty bins). For the Agilent HRMS profile, omit it (the
+            and inserts empty bins, and one small enough to overflow the bin
+            index is refused). For the Agilent HRMS profile, omit it (the
             default) to keep the per-scan representation, or pass a width to
             project the scans onto one shared m/z grid (see
             :ref:`hrms-data-model`).
@@ -366,7 +377,8 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
     Returns:
         dict: Each MS channel name mapped to its finest m/z spacing in
             daltons. Empty if the run has no MS that was parsed. Agilent
-            quadrupole MS resolves to about 0.1 Da, Waters to about 0.05 Da.
+            quadrupole MS resolves to about 0.1 Da, Waters to between about
+            0.03 and 0.07 Da depending on the run.
 
     """
     import warnings

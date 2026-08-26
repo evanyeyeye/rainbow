@@ -19,7 +19,14 @@ import numpy as np
 # see the per-vendor MS docs). A bin_width below this only inserts empty bins.
 # These describe unit-resolution data, the default assumption for a channel
 # whose parser does not record a floor of its own.
-MZ_FLOORS = {'agilent': 0.1, 'waters': 0.05}
+#
+# One number per vendor is a floor, not a measurement. Waters stores each m/z
+# with its own exponent, so the grid depends on the run: the fixtures here
+# record 0.036, 0.065 and 0.069. The constant sits below all of them, because
+# warning that a width is too fine when the file resolves finer would be a
+# false claim, while staying quiet about a width that is merely finer than one
+# particular run costs nothing. rainbow.mz_resolution answers per file.
+MZ_FLOORS = {'agilent': 0.1, 'waters': 0.03}
 
 # Calibrated MassHunter (TOF/Q-TOF) data, profile or centroid, resolves far
 # below any vendor floor, so its parsers record this one instead.
