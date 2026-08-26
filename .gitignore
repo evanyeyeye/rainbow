@@ -33,28 +33,28 @@ rainbow/agilent/_chdelta.c
 # exported ASM documents (never commit; these come from real samples)
 /ASMs/
 
-# The repository root is an allowlist: everything in it is ignored unless it is
-# named below. Named entries are the project itself, so a dataset folder left at
-# the root is ignored whatever it is called, and is never one `git add -A` away
-# from being committed. Listing the datasets instead would only ever cover the
-# ones somebody thought to add.
+# Every directory at the repository root is ignored unless it is named below.
+# A dataset is always a directory (a .D, a .raw, a .dx bundle, a folder of
+# them), so this covers one left at the root whatever it is called, and it is
+# never one `git add -A` away from being committed. Listing the datasets by
+# name instead would only ever cover the ones somebody thought to add.
 #
-# The cost is that a genuinely new project file at the root is ignored too, and
-# `git status` will not mention it. Add it here when you add it. This applies to
-# the root only: everything inside the directories below behaves normally.
-/*
+# Only directories, deliberately. Ignoring root *files* too would mean a new
+# CONTRIBUTING.md or .pre-commit-config.yaml is invisible to `git status` and
+# `git add -A`, and silently deleted by `git clean -fdx`. Losing an uncommitted
+# file that way is worse than the thing being prevented, since committing a
+# dataset is at least loud and revertible. The single-file archive formats are
+# named individually just below.
+#
+# The cost that remains: a genuinely new project *directory* at the root is
+# ignored, so add it here when you add it. Everything inside the directories
+# below behaves normally.
+/*/
+/*.dx
+/*.zip
+/*.asm.json
 !/.github/
-!/.gitignore
-!/.readthedocs.yaml
-!/CHANGELOG.md
-!/COPYING
-!/COPYING.LESSER
-!/MANIFEST.in
-!/README.md
-!/RELEASING.md
 !/docs/
-!/pyproject.toml
 !/rainbow/
 !/scripts/
-!/setup.py
 !/tests/

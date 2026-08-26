@@ -15,9 +15,10 @@ authors = [
 classifiers = [
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
 ]
-# The interpreters wheels are built for (see [tool.cibuildwheel] below), so pip
-# on an older one resolves an older rainbow instead of installing this and
-# failing at import.
+# The oldest interpreter rainbow supports, so pip on anything older resolves an
+# older rainbow instead of installing this and failing at import. No upper
+# bound: a newer interpreter than [tool.cibuildwheel] builds wheels for still
+# installs, just from the sdist.
 requires-python = ">=3.8"
 # What every install needs to read a file, and nothing more. lxml is here for
 # speed, not correctness: the parsers fall back to the standard library and
@@ -42,8 +43,9 @@ test = ["pytest", "matplotlib", "pandas"]
 # install rainbow-api[hrms] to parse those files (read(..., hrms=True)).
 hrms = ["python-lzf"]
 # For the opt-in ASM schema-conformance test (see tests/test_asm_schema.py).
-# jsonschema >= 4.18 pulls in the `referencing` registry used to resolve the
-# Allotrope schema's cross-references. rfc3339-validator is what makes
+# The floor is only to get a reasonably modern resolver; each Allotrope schema
+# rainbow validates against is self-contained, so no registry of side files is
+# needed and older jsonschema works too. rfc3339-validator is what makes
 # jsonschema's `date-time` format check real: without it, jsonschema accepts any
 # string in a timestamp field, so the conformance test silently checks nothing.
 validate = ["jsonschema>=4.18", "rfc3339-validator"]

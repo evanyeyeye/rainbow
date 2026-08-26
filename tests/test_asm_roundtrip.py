@@ -695,18 +695,26 @@ def test_a_second_export_reproduces_the_first(fixture):
 
 
 def test_exact_equality_is_not_the_round_trip_contract():
-    """ white.raw re-exports with retention times differing in the last digit.
+    """ The contract is that the values survive, not that the bytes match.
 
-    The documentation used to assert `again == first`, which this fixture
-    falsifies: the values are unchanged, but the seconds-to-minutes conversion
-    is not exactly reversible for these times.
+    The documentation used to assert `again == first`. white.raw falsifies it:
+    the seconds-to-minutes conversion is not exactly reversible for these
+    retention times, so the second export differs in the last digit.
+
+    What is asserted here is only the real contract, closeness. Pinning the
+    inequality instead would enshrine the drift, so making the conversion
+    exactly reversible some day, which would be an improvement, would break
+    this test.
     """
     import numpy as np
     datadir = rb.read(os.path.join(INPUTS, "white.raw"))
     first = datadir.to_asm()
     again = rb.from_asm(first, name=datadir.name).to_asm()
-    assert again != first
+    compared = 0
     for before, after in zip(_asm_measurements(first),
                              _asm_measurements(again)):
         assert np.allclose(_asm_cube(before)["dimensions"][0],
                            _asm_cube(after)["dimensions"][0])
+        assert _asm_cube(before)["measures"] == _asm_cube(after)["measures"]
+        compared += 1
+    assert compared, "no channel was compared"

@@ -11,8 +11,9 @@ to [Semantic Versioning](https://semver.org/).
   decode the many vendor sidecar files a run directory ships (ChemStation
   registers and INIs, .NET and XML blobs, mzXML and Waters headers, method and
   macro dumps, audit trails) into structured fields on demand. It is never run
-  by the normal `rb.read` path, so it adds no overhead unless called. New
-  documentation under `docs/debug/`.
+  by the normal `rb.read` path, and is imported only on first use, so it adds
+  no overhead unless called. A catalogue of the formats it decodes is in
+  `docs/debug/` in the repository.
 - **Allotrope Simple Model (ASM) export and import.** Any `DataDirectory`
   exports to one open, JSON-based ASM document with `datadir.to_asm()` (a dict)
   or `datadir.export_asm(path)` (a file); `rb.from_asm(document)` reconstructs a
@@ -72,11 +73,15 @@ to [Semantic Versioning](https://semver.org/).
   channel.
 
 ### Changed
-- **`import rainbow` is about four times faster** (roughly 160 ms to 40 ms on
+- **`import rainbow` is about five times faster** (roughly 160 ms to 30 ms on
   the machine this was measured on). `pandas`, needed only for the Waters
   transition table, was imported at module load and was by a wide margin the
   largest cost of importing the package. It is now imported where it is used,
-  as `matplotlib` already was.
+  as `matplotlib` already was, and `rainbow.debug`, the next largest cost, is
+  imported on first use.
+- **Declared `requires-python = ">=3.8"`.** rainbow already needed 3.8, but
+  said so nowhere pip could see, so an older interpreter would install this and
+  fail at import instead of resolving an older rainbow. No upper bound.
 - **`matplotlib` and `pandas` are no longer installed by default. Breaking:**
   neither is needed to read a file. `DataFile.plot` is the only thing that
   draws, and one Waters helper is the only thing that returns a DataFrame, so

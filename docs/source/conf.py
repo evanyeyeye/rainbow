@@ -14,12 +14,22 @@ sys.path.insert(0, os.path.abspath('../..'))
 project = 'rainbow'
 copyright = '2022, Evan Shi and Eugene Kwan'
 author = 'Evan Shi and Eugene Kwan'
-# Read from the installed package so this cannot drift from pyproject.toml.
+# Read the version rather than restating it, so this cannot drift from
+# pyproject.toml. Read the Docs installs only docs/requirements.txt, not the
+# package itself, so the metadata lookup fails there and pyproject has to be
+# read directly; falling through to an empty string would put the version of
+# the published documentation at "".
 try:
     from importlib.metadata import version as _version
     release = _version("rainbow-api")
-except Exception:                       # building from a source tree
-    release = ''
+except Exception:                       # not installed, e.g. on Read the Docs
+    import os
+    import re
+    _pyproject = os.path.join(
+        os.path.dirname(__file__), '..', '..', 'pyproject.toml')
+    with open(_pyproject, encoding='utf-8') as _f:
+        release = re.search(r'^version\s*=\s*"([^"]+)"', _f.read(),
+                            re.MULTILINE).group(1)
 
 language = 'en'
 master_doc = 'index'

@@ -31,6 +31,39 @@ jobs:
       - name: Run unit tests
         run: python -m pytest -v
 
+  conformance:
+    # The ASM conformance and ontology suites are opt-in: they fetch the
+    # published Allotrope schemas and the AFO ontology over the network, so
+    # they cannot run in the matrix above. Without this job they skip on every
+    # PR, and a validator that silently checks nothing (which is exactly what
+    # happened for a whole release cycle, for want of rfc3339-validator) would
+    # go unnoticed again. Kept separate, and allowed to fail, so an outage at
+    # purl.allotrope.org or EBI does not block an unrelated PR.
+    name: ASM conformance (network)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install with the validation and HRMS extras
+        run: python -m pip install -e .[test,validate,hrms]
+      - name: Check the date-time format checker is really registered
+        # A missing rfc3339-validator makes the suite skip rather than fail, so
+        # assert it is present here instead of trusting a green skip.
+        run: |
+          python -c "
+          from jsonschema import FormatChecker
+          assert 'date-time' in FormatChecker().checkers, \
+              'date-time format checker not registered'
+          print('date-time format checker registered')
+          "
+      - name: Run the conformance and ontology suites
+        env:
+          RAINBOW_TEST_ASM_SCHEMA: '1'
+        run: python -m pytest -v tests/test_asm_schema.py tests/test_asm_ontology.py
+
   build-check:
     name: Build wheel + sdist (no publish)
     runs-on: ubuntu-latest

@@ -57,8 +57,8 @@ Vendor sidecar metadata
 
 A vendor run directory ships far more metadata than the read path surfaces:
 registers, INIs, audit trails, method dumps. :code:`rainbow.debug` decodes those
-sidecars on demand, and is read-only. It is off the normal path, so nothing
-below is imported or parsed unless you call it.
+sidecars on demand, and is read-only. It is off the normal path: the subsystem
+is imported on first use, so a program that never calls it does not pay for it.
 
 .. autosummary::
    :nosignatures:
@@ -66,3 +66,9 @@ below is imported or parsed unless you call it.
 
    debug.inspect
    debug.fields
+
+A catalogue of every sidecar format rainbow decodes, with the layout of each,
+lives in ``docs/debug/`` in the `repository
+<https://github.com/evanyeyeye/rainbow/tree/main/docs/debug>`_. It is reference
+material for the formats themselves rather than for the API, so it is not part
+of this manual.

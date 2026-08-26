@@ -3,9 +3,26 @@ import re
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
-from rainbow import agilent, waters, debug
+from rainbow import agilent, waters
 from rainbow._binning import MZ_FLOORS
 from rainbow.asm import from_asm, sequence_from_asm
+
+
+def __getattr__(name):
+    """Imports ``rainbow.debug`` on first use.
+
+    The metadata-inspection subsystem is off the normal read path, and its
+    eleven decoders are a fifth of the cost of ``import rainbow`` for a caller
+    who never touches them. Deferring it keeps that promise real rather than
+    merely documented. ``rb.debug.inspect(...)``, ``from rainbow import
+    debug``, and ``import rainbow.debug`` all still work.
+    """
+    if name == "debug":
+        import importlib
+        module = importlib.import_module("rainbow.debug")
+        globals()["debug"] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # Vendor parsers that rainbow can dispatch to.
