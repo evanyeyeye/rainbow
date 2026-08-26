@@ -61,3 +61,32 @@ def test_teal_telemetry_off():
     # is off.
     datadir = rb.read(path, requested_files=["PMP1B.IT"])
     assert sorted(df.name for df in datadir.analog) == sorted(["PMP1B.IT"])
+
+
+@pytest.mark.parametrize(
+    "signal,expected",
+    [
+        # A wavelength clause, and only a wavelength clause, makes a channel UV.
+        ("DAD1A,Sig=210,4  Ref=off", ("UV", "210")),
+        ("DAD1B, Sig=280.0,4.0  Ref=off", ("UV", "280.0")),
+        # An "=" belonging to something else does not. These read as FID
+        # because that is what the 179/181 container defaults to, and a wrong
+        # answer here retypes the run's whole document: a gain setting taken
+        # for a wavelength publishes picoamps as milli-absorbance in a liquid
+        # chromatography document.
+        ("FID1A, Front Signal (Gain=1)", ("FID", "")),
+        ("Front Signal", ("FID", "")),
+        ("=", ("FID", "")),
+        # The ADC channels keep their own naming, unaffected by either.
+        ("ADC1 CHANNEL A", ("ELSD", "")),
+        ("ADC1", ("CAD", "")),
+    ],
+)
+def test_detector_is_read_from_the_wavelength_clause(signal, expected):
+    from rainbow.agilent.chemstation import _detector_from_signal
+
+    metadata = {"signal": signal}
+    assert _detector_from_signal(metadata, default="FID") == expected
+    # A channel typed UV always carries the wavelength the ASM export needs for
+    # its detector wavelength setting; nothing else invents one.
+    assert ("wavelength" in metadata) == (expected[0] == "UV")

@@ -181,10 +181,17 @@ def _detector_from_signal(metadata, default=None):
     ylabel for a signal that names no detector rainbow knows.
     """
     signal = metadata.get('signal') or ''
-    if '=' in signal:
+    # The Sig= clause, not a bare "=". On the 179/181 container this call
+    # decides FID against UV, and so decides whether the whole run is exported
+    # as gas or liquid chromatography: any "=" at all would read a gain setting
+    # ("FID1A, Front Signal (Gain=1)") as a wavelength and publish picoamps as
+    # milli-absorbance. Matching the clause that actually carries the optics
+    # also means a UV channel always has a wavelength to report.
+    sig = _SIG_RE.search(signal)
+    if sig:
         # Surface the wavelength settings (shared with the .dx parser).
         metadata.update(parse_optics(signal))
-        return 'UV', signal.split('=')[1].split(',')[0]
+        return 'UV', sig.group(1)
     if 'ADC' in signal:
         return ('ELSD' if 'CHANNEL' in signal else 'CAD'), ''
     return default, ''

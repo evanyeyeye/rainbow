@@ -38,13 +38,16 @@ _ACQ_MODE_RE = re.compile(
 
 # The "Sample Inlet : GC" / "Sample Inlet : LC" line names the separation
 # technique (gas vs liquid chromatography), the instrument's own record of it.
-# The banner a Chemstation method report opens with, through the end of the
-# line that names the instrument. Bounded to a few lines so a mention of the
-# instrument type elsewhere in the report (a file path, an operator's note)
-# does not read as the instrument declaring itself.
+# The banner a Chemstation method report opens with. The instrument names
+# itself on this line and nowhere else ("INSTRUMENT CONTROL PARAMETERS:
+# 5977B GCMS"), so the window is that one line: the rule, the blank, and the
+# method path that follow it are not the instrument's own claim. In the real
+# layout the path is line 4, so any window wider than a line reads
+# \METHODS\porting-from-GCMS\ as the instrument declaring itself GC, which
+# downgrades every UV detector class and makes the schema-required injection
+# volume mandatory.
 _INSTRUMENT_BANNER_RE = re.compile(
-    r"INSTRUMENT\s+CONTROL\s+PARAMETERS\s*:.*?(?:\n.*?){0,3}\n",
-    re.IGNORECASE | re.DOTALL)
+    r"INSTRUMENT\s+CONTROL\s+PARAMETERS\s*:[^\r\n]*", re.IGNORECASE)
 
 _SAMPLE_INLET_RE = re.compile(
     r"^\s*Sample Inlet\s*:\s*(?P<inlet>\S+)", re.MULTILINE | re.IGNORECASE)
@@ -263,12 +266,9 @@ def acquisition_technique(path):
         inlet = match.group("inlet").upper()
         if inlet in ("GC", "LC"):
             return inlet
-    # Scoped to the instrument banner, not the whole report. Searched over the
-    # entire file, any path that happens to contain the letters (a method
-    # filed under \METHODS\porting-from-GCMS\) declared the run GC, which
-    # downgrades every UV detector class and makes the schema-required
-    # injection volume mandatory. The banner is where the instrument names
-    # itself, and it is the only place this claim is worth reading.
+    # Scoped to the instrument banner line, not the whole report: that is where
+    # the instrument names itself, and it is the only place this claim is worth
+    # reading.
     banner = _INSTRUMENT_BANNER_RE.search(text)
     if banner and re.search(r"\bGC\b|GCMS", banner.group(0), re.IGNORECASE):
         # Inside the banner, the bare word is enough and is what a real report

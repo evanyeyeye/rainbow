@@ -272,6 +272,35 @@ def test_acquisition_technique_falls_back_to_gcms_descriptor(tmp_path):
     assert method.acquisition_technique(str(d)) == "GC"
 
 
+def test_acquisition_technique_ignores_gc_in_the_method_path(tmp_path):
+    # The fallback reads only the banner line the instrument names itself on.
+    # In the real report layout the method path is the fourth line, so a window
+    # even a line or two wider takes an LC run filed under a GC-named folder for
+    # gas chromatography, which downgrades every UV detector class downstream.
+    d = tmp_path / "x.D"
+    d.mkdir()
+    text = ("                  INSTRUMENT CONTROL PARAMETERS:    1290 Infinity II\n"
+            "                  --------------------------------------------\n"
+            "\n"
+            "   C:\\Chem32\\1\\METHODS\\porting-from-GCMS\\assay.M\n"
+            "      Tue Dec 17 10:13:52 2019\n")
+    (d / "acqmeth.txt").write_bytes(text.encode("utf-16"))
+    assert method.acquisition_technique(str(d)) is None
+
+
+def test_acquisition_technique_reads_the_banner_in_the_real_layout(tmp_path):
+    # The positive case in the same layout: the rule, blank line and path that
+    # follow the banner do not stop the instrument's own claim being read.
+    d = tmp_path / "x.D"
+    d.mkdir()
+    text = ("                  INSTRUMENT CONTROL PARAMETERS:    5977B GCMS\n"
+            "                  --------------------------------------------\n"
+            "\n"
+            "   D:\\MassHunter\\Methods\\assay.M\n")
+    (d / "acqmeth.txt").write_bytes(text.encode("utf-16"))
+    assert method.acquisition_technique(str(d)) == "GC"
+
+
 def test_tag_acquisition_modes_single_ion_is_sim_without_a_report(tmp_path):
     # With no method report, a single-ion channel is still SIM, but a
     # multi-column grid is left untagged (the exporter then treats it as scan).
