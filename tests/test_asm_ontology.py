@@ -25,7 +25,8 @@ import pytest
 import rainbow as rb
 
 
-_OLS_SEARCH = "https://www.ebi.ac.uk/ols4/api/search"
+_OLS_BASE = "https://www.ebi.ac.uk/ols4/api"
+_OLS_SEARCH = _OLS_BASE + "/search"
 
 # Fields in the ASM document whose values are AFO ontology classes (as opposed
 # to free text or QUDT units, which the schema validates separately).
@@ -75,27 +76,43 @@ def _document_with_all_device_types():
     Every detector class rainbow can name is included, since these labels are
     the only place a made-up term could hide: the JSON schema types device type
     as a free string, so nothing but the ontology checks them.
+
+    Two documents, because a named class is kept only where the document's
+    technique agrees with it: the LC modules would be neutralized to a class
+    claiming no technique inside a gas chromatography document, and the GC ones
+    inside a liquid chromatography document, so neither set can exercise its
+    own label from a single document.
     """
-    datadir = rb.read("tests/inputs/red.D")
-    datadir.metadata["instrument"] = {
-        "name": "test-instrument",
-        "modules": [
-            {"name": "DAD", "type": "Detector", "part_no": "G7117B",
-             "serial_no": "s1", "firmware": "f1"},
-            {"name": "Quat. Pump", "type": "Pump", "part_no": "G7104A",
-             "serial_no": "s2", "firmware": "f2"},
-            {"name": "Multisampler", "type": "Auto sampler",
-             "part_no": "G7167B", "serial_no": "s3", "firmware": "f3"},
-            {"name": "Column Comp.", "type": "Column compartment",
-             "part_no": "G7116B", "serial_no": "s4", "firmware": "f4"},
-            {"name": "VWD", "type": "Detector"},
-            {"name": "RID1A", "type": "Detector"},
-            {"name": "FLD1A", "type": "Detector"},
-            {"name": "TCD Back", "type": "Detector"},
-            {"name": "ECD1", "type": "Detector"},
-        ],
-    }
-    return datadir.to_asm()
+    shared = [
+        {"name": "Quat. Pump", "type": "Pump", "part_no": "G7104A",
+         "serial_no": "s2", "firmware": "f2"},
+        {"name": "Multisampler", "type": "Auto sampler",
+         "part_no": "G7167B", "serial_no": "s3", "firmware": "f3"},
+        {"name": "Column Comp.", "type": "Column compartment",
+         "part_no": "G7116B", "serial_no": "s4", "firmware": "f4"},
+    ]
+    documents = []
+    for fixture, technique, modules in (
+            ("red.D", "LC", [
+                {"name": "DAD", "type": "Detector", "part_no": "G7117B",
+                 "serial_no": "s1", "firmware": "f1"},
+                {"name": "VWD", "type": "Detector"},
+                {"name": "RID1A", "type": "Detector"},
+                {"name": "FLD1A", "type": "Detector"},
+            ]),
+            ("pink.D", "GC", [
+                {"name": "TCD Back", "type": "Detector"},
+                {"name": "ECD1", "type": "Detector"},
+                {"name": "FID1", "type": "Detector"},
+                # The same DAD in a GC document, which is where the neutral
+                # absorbance class comes from.
+                {"name": "DAD", "type": "Detector", "part_no": "G7117B"},
+            ])):
+        datadir = rb.read("tests/inputs/" + fixture)
+        datadir.metadata["instrument"] = {
+            "name": "test-instrument", "modules": shared + modules}
+        documents.append(datadir.to_asm(technique=technique))
+    return documents
 
 
 def _gc_document_with_a_generic_detector():
@@ -124,7 +141,8 @@ def test_emitted_terms_are_afo_classes():
                  "tests/inputs/green.D", "tests/inputs/pink.D",
                  "tests/inputs/orange.D", "tests/inputs/bronze.D"):
         _collect_terms(rb.read(path).to_asm(), terms)
-    _collect_terms(_document_with_all_device_types(), terms)
+    for document in _document_with_all_device_types():
+        _collect_terms(document, terms)
     _collect_terms(_gc_document_with_a_generic_detector(), terms)
 
     # Guard that the key device types and measures are actually present. red.D's
@@ -139,9 +157,70 @@ def test_emitted_terms_are_afo_classes():
                      "electron capture detector",
                      "mass spectrometer", "count", "flame ionization detector",
                      "electric current", "intensity",
+                     "electronic absorbance detector",
                      "evaporative light scattering detector"):
         assert required in terms, "{} not exercised".format(required)
 
     resolved = {term: _afo_accession(term) for term in sorted(terms)}
     invalid = [term for term, accession in resolved.items() if accession is None]
     assert not invalid, "not valid AFO classes: {}".format(invalid)
+
+
+def _afo_ancestors(accession):
+    """The labels of every ancestor of an AFO class; skips offline."""
+    iri = "http://purl.allotrope.org/ontologies/equipment#" + \
+        accession.replace(":", "_")
+    url = (_OLS_BASE + "/ontologies/afo/terms/"
+           + urllib.parse.quote(urllib.parse.quote(iri, safe=""))
+           + "/hierarchicalAncestors?size=200")
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            data = json.load(response)
+    except Exception as error:
+        pytest.skip("could not reach EBI OLS for AFO: {}".format(error))
+    return {term.get("label") for term
+            in data.get("_embedded", {}).get("terms", [])}
+
+
+@pytest.mark.parametrize("fixture,technique,aggregate", [
+    ("pink.D", None, "gas chromatography aggregate document"),
+    ("red.D", "GC", "gas chromatography aggregate document"),
+    ("teal.dx", "GC", "gas chromatography aggregate document"),
+    ("red.D", None, "liquid chromatography aggregate document"),
+    ("pink.D", "LC", "liquid chromatography aggregate document"),
+])
+def test_no_device_type_contradicts_its_documents_technique(
+        fixture, technique, aggregate):
+    """ A document must not assert a detector belongs to the other technique.
+
+    AFO makes `liquid chromatography detector` and `gas chromatography
+    detector` disjoint, and asserts one of them as a parent of most named
+    detector classes: `ultraviolet detector` is defined as a component of an LC
+    system, `flame ionization detector` of a GC system. So a UV channel riding
+    along in a gas chromatography document cannot keep its own class without
+    the document contradicting itself.
+
+    Nothing else catches this. The schema types `device type` as a free string,
+    and the label check above only asks whether a term exists, never where it
+    sits. This walks the real hierarchy.
+    """
+    document = rb.read("tests/inputs/" + fixture).to_asm(technique=technique)
+    assert aggregate in document, fixture
+    terms = set()
+    _collect_terms(document, terms)
+
+    contradicted = "liquid chromatography detector" if "gas" in aggregate \
+        else "gas chromatography detector"
+    offenders = {}
+    for term in sorted(terms):
+        accession = _afo_accession(term)
+        if accession is None:
+            continue
+        ancestors = _afo_ancestors(accession)
+        if contradicted in ancestors or term == contradicted:
+            offenders[term] = sorted(ancestors & {
+                "liquid chromatography detector",
+                "gas chromatography detector"})
+    assert not offenders, (
+        "{} ({}) asserts {}: {}".format(
+            fixture, aggregate, contradicted, offenders))

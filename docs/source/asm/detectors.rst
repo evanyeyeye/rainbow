@@ -89,11 +89,26 @@ The device types are AFO classes, confirmed against the ontology. See
    chromatography detector`` (AFE_0002200) in a liquid chromatography document,
    ``gas chromatography detector`` (AFE_0002188) in a gas chromatography one.
    The two are disjoint siblings in AFO, so a fixed choice would contradict one
-   of the two documents. A detector AFO *can* name keeps its own class in either
-   document: a UV detector bolted to a gas chromatograph is still a UV detector,
-   just as an FID inside a liquid chromatography document is still an FID. The
-   same rule types the instrument module inventory, where TCD, ECD, and FLD
-   modules also get their own exact classes.
+   of the two documents.
+
+   The exact classes are not neutral either. AFO asserts ``liquid chromatography
+   detector`` as a direct parent of the UV, DAD, RID, and FLD classes, and
+   ``gas chromatography detector`` as a parent of FID, TCD, and ECD, each
+   defined as a component of that kind of system. So a UV detector bolted to a
+   gas chromatograph cannot keep the ``ultraviolet detector`` class without its
+   document asserting the detector is part of an LC system. Where the document
+   and the class disagree, rainbow uses the nearest class that claims neither
+   technique: ``electronic absorbance detector`` (AFE_0000734) for UV and DAD,
+   which is their real shared parent, and ``chromatographic detector``
+   (AFE_0000246) otherwise. ``evaporative light scattering detector`` and
+   ``mass spectrometer`` claim no technique to begin with, so they are never
+   substituted. The same rule types the instrument module inventory.
+
+   This is worth knowing if you compare two exports of the same run: a DAD
+   channel is a ``diode array detector`` in a liquid chromatography document
+   and an ``electronic absorbance detector`` in a gas chromatography one. The
+   data is identical; only the claim about what kind of system it belongs to
+   changes, because that is the part that depends on the document.
 
 .. [#interim] **Interim.** The schema has no refractive-index measure, so a RID
    alone rides the absorbance cube: its measure reads ``absorbance``/``mAU``

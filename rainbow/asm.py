@@ -139,10 +139,14 @@ _MODULE_DEVICE_TYPES = {
 # `liquid chromatography detector` (AFE_0002200) and `gas chromatography
 # detector` (AFE_0002188) are disjoint siblings. So the two matter separately:
 #
-#   * An exact class is used whenever the module names one. Each already sits on
-#     the correct side of that split (FID/TCD/ECD are gas chromatography
-#     detectors, UV/DAD/RID/FLD liquid chromatography detectors, and ELSD hangs
-#     directly off `detector`), so naming the device right also places it right.
+#   * An exact class is used whenever the module names one AND the document
+#     agrees with the side of the split that class sits on. FID/TCD/ECD are gas
+#     chromatography detectors and UV/DAD/RID/FLD liquid chromatography ones, so
+#     a DAD on a gas chromatograph cannot be called a diode array detector
+#     without the document asserting it is part of an LC system. Where they
+#     disagree the nearest class making no technique claim is used instead (see
+#     _DETECTOR_TECHNIQUES). ELSD and mass spectrometer claim neither technique,
+#     so they are unaffected.
 #   * A detector that cannot be named falls back to the generic class for the
 #     document's own technique, never to a fixed one: calling a detector in a
 #     gas chromatography document a liquid chromatography detector asserts a
@@ -157,16 +161,23 @@ _MODULE_DEVICE_TYPES = {
 # Ordered most specific first. Every value is a checked AFO class label; a
 # detector with no AFO class of its own (charged aerosol, and whatever is wired
 # into an analog input) is deliberately absent and takes the generic fallback.
+_NEUTRAL_ABSORBANCE = "electronic absorbance detector"   # AFE_0000734
 _DETECTOR_RULES = (
+    # rainbow writes this itself for an absorbance channel in a document whose
+    # technique contradicts the UV and DAD classes, so it has to read it back
+    # as itself rather than re-specializing on the "absorbance" phrase below.
+    ("electronic absorbance", (), _NEUTRAL_ABSORBANCE),
     ("diode array|photodiode array", ("dad", "pda"), "diode array detector"),
     # VWD, MWD, and TUV are the vendor names for variable-, multiple-, and
     # tunable-wavelength ultraviolet detectors.
-    ("variable wavelength|multiple wavelength|multi wavelength"
+    ("ultraviolet|variable wavelength|multiple wavelength|multi wavelength"
      "|tunable wavelength|absorbance",
      ("uv", "vwd", "mwd", "tuv"), "ultraviolet detector"),
     ("flame ionization", ("fid",), "flame ionization detector"),
     ("thermal conductivity", ("tcd",), "thermal conductivity detector"),
-    ("electron capture", ("ecd",), "electron capture detector"),
+    # Agilent's micro-ECD is written with a micro sign, which normalizes away
+    # to leave "ecd", but also plainly as "uECD", where it does not.
+    ("electron capture", ("ecd", "uecd"), "electron capture detector"),
     # FLR is the Waters spelling, FLD the Agilent one.
     ("fluorescence", ("fld", "flr"), "fluorescence detector"),
     ("refractive index", ("rid", "ri"), "refractive index detector"),
@@ -188,12 +199,18 @@ _GENERIC_DETECTOR_RULE = (
 
 
 def _acronyms(words):
-    """A pattern matching any of ``words`` as a whole word plus module index."""
-    return "|".join(r"\b{}(\d+[a-z]?)?\b".format(word) for word in words)
+    """A pattern matching any of ``words`` as a whole word plus module index.
+
+    A vendor's index may carry a trailing letter or several (DAD1A, VWD-3400RS,
+    DAD3000RS), so the whole index is consumed rather than one letter of it.
+    """
+    return "|".join(r"\b{}(\d+[a-z]*)?\b".format(word) for word in words)
 
 
 def _detector_pattern(phrases, words):
-    return re.compile("{}|{}".format(phrases, _acronyms(words)))
+    # An empty acronym list must not contribute an empty alternative, which
+    # would match anywhere at all.
+    return re.compile("|".join(filter(None, (phrases, _acronyms(words)))))
 
 
 _DETECTOR_PATTERNS = tuple(
@@ -213,11 +230,11 @@ _GENERIC_DETECTOR_PATTERN = _detector_pattern(*_GENERIC_DETECTOR_RULE)
 #   RID   interim: a refractive-index detector has no measure concept in the
 #         published schema, so it alone still rides the absorbance cube. Its
 #         device type stays truthful.
-# A named class is used as-is whichever document the channel rides in: a UV
-# detector bolted to a gas chromatograph is still a UV detector, the same way an
-# FID is still an FID inside a liquid chromatography document. Only the generic
-# fallback has to follow the technique, since AFO makes the liquid and gas
-# chromatography detector classes disjoint siblings.
+# A named class is kept only where the document's technique agrees with it. AFO
+# puts UV and DAD under `liquid chromatography detector` and FID under `gas
+# chromatography detector`, and those are disjoint, so a UV channel riding along
+# in a gas chromatography document is typed by the nearest class that claims
+# neither technique rather than one the document contradicts.
 # Values are the vendor's own, unscaled, except UV absorbance (normalized
 # AU->mAU). MS is handled separately (mass chromatograms). See the ASM detectors
 # documentation.
@@ -894,7 +911,7 @@ def _module_device_type(module, technique=None):
     text = f"{name} {module_type}"
     # A detector that can be named must be recognized before anything below
     # falls back to a generic class.
-    specific = _specific_detector_type(text)
+    specific = _specific_detector_type(text, technique)
     if specific:
         return specific
     # A declared non-detector type is unambiguous, so it wins over the name.
@@ -929,14 +946,50 @@ def _generic_detector(technique):
             else "liquid chromatography detector")
 
 
-def _specific_detector_type(text):
+# The named classes are not technique-neutral: AFO asserts
+# `liquid chromatography detector` as a direct parent of the UV, DAD, RID and
+# FLD classes, and `gas chromatography detector` of FID, TCD and ECD, each
+# defined as a component of that kind of system. So naming a detector places it
+# on one side of the split whether or not the document agrees, and a DAD bolted
+# to a gas chromatograph would have its document assert it is part of an LC
+# system. Where the document contradicts the class, the nearest ancestor that
+# makes no technique claim is used instead. AFO has a real one for the
+# absorbance detectors; the rest fall back to `chromatographic detector`.
+_DETECTOR_TECHNIQUES = {
+    "ultraviolet detector": (_LC, _NEUTRAL_ABSORBANCE),
+    "diode array detector": (_LC, _NEUTRAL_ABSORBANCE),
+    "refractive index detector": (_LC, "chromatographic detector"),
+    "fluorescence detector": (_LC, "chromatographic detector"),
+    "flame ionization detector": (_GC, "chromatographic detector"),
+    "thermal conductivity detector": (_GC, "chromatographic detector"),
+    "electron capture detector": (_GC, "chromatographic detector"),
+}
+
+
+def _for_technique(device_type, technique):
+    """``device_type``, or a neutral ancestor if the document contradicts it.
+
+    An unknown technique contradicts nothing, so the named class is kept. That
+    differs from :func:`_generic_detector`, which has to name some class and
+    defaults to the far more common liquid chromatography; here the honest
+    answer to "which document is this in?" being unknown is to leave the
+    detector's own class alone.
+    """
+    claim = _DETECTOR_TECHNIQUES.get(device_type)
+    if claim is None or technique is None:
+        return device_type            # ELSD and mass spectrometer claim neither
+    claimed, neutral = claim
+    return device_type if claimed is technique else neutral
+
+
+def _specific_detector_type(text, technique=None):
     """The AFO class for the detector named in ``text``, or None.
 
     ``text`` must already be normalized (see :func:`_normalize_module_text`).
     """
     for pattern, device_type in _DETECTOR_PATTERNS:
         if pattern.search(text):
-            return device_type
+            return _for_technique(device_type, technique)
     return None
 
 
@@ -975,7 +1028,7 @@ def _channel_device_type(descriptor, technique):
     """
     if descriptor.get("generic"):
         return _generic_detector(technique)
-    return descriptor["device_type"]
+    return _for_technique(descriptor["device_type"], technique)
 
 
 def _build_measurements(datafile, metadata, options, has_peaks=False,

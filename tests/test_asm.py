@@ -735,6 +735,74 @@ def test_the_generic_detector_follows_the_documents_technique():
     assert _module_device_type(module, _GC) == "gas chromatography detector"
 
 
+def test_a_named_class_yields_to_the_documents_technique():
+    """ AFO's named detector classes are not technique-neutral.
+
+    `ultraviolet detector` and `diode array detector` have `liquid
+    chromatography detector` as an asserted parent, defined as a component of
+    an LC system; FID, TCD and ECD sit under the gas chromatography sibling,
+    and the two are disjoint. So keeping the exact class in a document of the
+    other technique makes the document contradict itself. The nearest class
+    claiming no technique is used instead.
+    """
+    from rainbow.asm import _module_device_type, _LC, _GC
+    absorbance = "electronic absorbance detector"
+    for name, lc_type, gc_type in (
+            ("DAD1A", "diode array detector", absorbance),
+            ("VWD", "ultraviolet detector", absorbance),
+            ("RID1A", "refractive index detector", "chromatographic detector"),
+            ("FLD1A", "fluorescence detector", "chromatographic detector"),
+            ("FID1", "chromatographic detector", "flame ionization detector"),
+            ("TCD Back", "chromatographic detector",
+             "thermal conductivity detector"),
+            ("ECD1", "chromatographic detector", "electron capture detector"),
+            # Neither class claims a technique, so neither is ever neutralized.
+            ("ELSD", "evaporative light scattering detector",
+             "evaporative light scattering detector"),
+            ("MSD", "mass spectrometer", "mass spectrometer")):
+        module = {"name": name, "type": "Detector"}
+        assert _module_device_type(module, _LC) == lc_type, name
+        assert _module_device_type(module, _GC) == gc_type, name
+        # An unknown technique contradicts nothing, so the class is kept.
+        assert _module_device_type(module, None) == \
+            (gc_type if lc_type == "chromatographic detector" else lc_type), name
+
+
+def test_rainbow_can_read_back_every_detector_label_it_writes():
+    """ A label rainbow emits and cannot re-read degrades on every round trip.
+
+    `ultraviolet detector` is AFO's own label and rainbow's own output, but
+    \\buv\\b does not match inside "ultraviolet", so it used to come back as
+    the generic class. The neutral absorbance class has the same hazard: the
+    word "absorbance" would otherwise re-specialize it to UV.
+    """
+    from rainbow.asm import (_DETECTOR_RULES, _module_device_type,
+                             _DETECTOR_TECHNIQUES, _LC, _GC)
+    for _, _, device_type in _DETECTOR_RULES:
+        claimed = _DETECTOR_TECHNIQUES.get(device_type)
+        technique = claimed[0] if claimed else _LC
+        assert _module_device_type({"name": device_type}, technique) == \
+            device_type, device_type
+
+
+def test_a_gas_chromatography_document_claims_no_liquid_chromatography_parts():
+    """ pink.D is FID-routed to GC and its DAD channels ride along. """
+    document = rb.read("tests/inputs/pink.D").to_asm()
+    aggregate = document["gas chromatography aggregate document"]
+    types = {device.get("device type") for device
+             in aggregate["device system document"]["device document"]}
+    for gc_document in aggregate["gas chromatography document"]:
+        for measurement in gc_document["measurement aggregate document"][
+                "measurement document"]:
+            for control in measurement["device control aggregate document"][
+                    "device control document"]:
+                types.add(control.get("device type"))
+    assert "ultraviolet detector" not in types
+    assert "diode array detector" not in types
+    assert "electronic absorbance detector" in types
+    assert "flame ionization detector" in types
+
+
 def test_module_names_survive_any_separator():
     # An underscore is a word character, so \b saw no boundary in "FID_2".
     from rainbow.asm import _module_device_type
