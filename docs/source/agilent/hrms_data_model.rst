@@ -148,12 +148,14 @@ To read a MassHunter profile dataset:
 .. code-block:: python
 
    import rainbow as rb
-   datadir = rb.read("example.D", hrms=True, display_precision=4)
+   datadir = rb.read("example.D", hrms=True)
    profile = datadir.get_file("MSProfile.bin")
 
-This requests the **per-scan** representation (with ``display_precision=4`` the
-*m/z* labels are rounded to four decimals; the default ``display_precision='auto'``
-also picks four for Q-TOF data). To access those data:
+This requests the **per-scan** representation. ``display_precision`` does not
+apply here and is not passed: it rounds the labels of a shared grid, and a
+per-scan channel has no shared grid, so ``scan(i)`` and ``mass_labels(i)``
+return the calibrated *m/z* the instrument recorded, at full precision. To
+access those data:
 
 .. code-block:: python
 
@@ -251,8 +253,10 @@ at once, and the zeros vanish (:numref:`fig-realign`).
    ``bin_width`` is unrelated to ``display_precision``. ``bin_width`` controls how
    aggressively scans are pooled onto the common grid (the one lossy step);
    ``display_precision`` only controls how the *m/z* labels are rounded. If
-   ``display_precision`` is too coarse to give every bin a distinct label,
-   *rainbow* warns but still bins at the requested ``bin_width``.
+   ``display_precision`` is too coarse to give every bin a distinct label, the
+   labels are rounded finely enough to keep them distinct and the binning is
+   unaffected. Rounding is cosmetic, and two columns sharing a label would stop
+   it being cosmetic: the label would no longer name one column.
 
 Centroids
 ---------
