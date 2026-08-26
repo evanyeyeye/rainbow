@@ -1366,14 +1366,70 @@ def test_centroid_flag_does_not_silence_other_channels():
         rb.read("tests/inputs/turquoise.raw", centroid=True, bin_width=0.001)
 
 
-def test_uncalibrated_centroid_keeps_the_quadrupole_floor():
-    """ A GC-quadrupole centroid stores nominal m/z, so 0.1 Da still applies.
+def test_a_centroid_floor_follows_the_rounding_the_parse_applied():
+    """ The centroid parse rounds m/z into the data, so that is the grid.
 
-    Only a calibrated (TOF) centroid resolves below the vendor floor; yellow's
-    MSPeak.bin has no calibration and is unit-resolution like any .ms channel.
+    Unlike the profile path, parse_mspeakdata rounds each peak to
+    display_precision before binning, so however finely the instrument
+    resolved, the channel records 10**-display_precision. An uncalibrated
+    centroid defaults to 0 decimals, which is a floor of 1 Da and not the 0.1
+    Da a quadrupole .ms channel records.
     """
-    with pytest.warns(UserWarning, match="MSPeak.bin"):
-        rb.read("tests/inputs/yellow.D", centroid=True, bin_width=0.001)
+    # Calibrated (TOF), 4 decimals by default: the real grid is 1e-4, so a
+    # 1e-5 bin only inserts empty bins even though the instrument resolves
+    # further. Reported as 0.0001, not the 1e-6 the calibration alone implies.
+    with pytest.warns(UserWarning, match=r"MSPeak\.bin \(about 0\.0001 Da\)"):
+        rb.read("tests/inputs/gold.D", centroid=True, bin_width=1e-5)
+    # Uncalibrated (GC quadrupole), 0 decimals: nominal m/z, a floor of 1 Da.
+    with pytest.warns(UserWarning, match=r"MSPeak\.bin \(about 1\.0 Da\)"):
+        rb.read("tests/inputs/yellow.D", centroid=True, bin_width=0.5)
+
+
+def test_the_floor_warning_quotes_each_grid_not_just_the_coarsest():
+    """ One number for every channel would be orders of magnitude wrong.
+
+    yellow.D holds a centroid peak list on a 1 Da grid beside two Chemstation
+    .ms channels on a 0.1 Da one. Naming them all against a single figure
+    would misreport one group by a factor of ten.
+    """
+    with pytest.warns(UserWarning) as caught:
+        rb.read("tests/inputs/yellow.D", centroid=True, bin_width=0.05)
+    message = str(next(w.message for w in caught
+                       if "empty bins" in str(w.message)))
+    assert "MSPeak.bin (about 1.0 Da)" in message
+    assert "data.ms, dataSim.ms (about 0.1 Da)" in message
+
+
+def test_icpms_has_no_floor_because_it_is_never_binned():
+    """ An ICP-MS run is fixed isotope channels, and ignores bin_width.
+
+    Falling back to the Agilent vendor floor would warn that a fine bin_width
+    inserts empty bins into a channel that is not binned at all.
+    """
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        datadir = rb.read("tests/inputs/silver.D", hrms=True, bin_width=0.001)
+    assert not any("empty bins" in str(w.message) for w in caught)
+    # The claim above: bin_width genuinely does nothing to this parser.
+    unbinned = rb.read("tests/inputs/silver.D", hrms=True)
+    assert (datadir.get_file("MSProfile.bin").ylabels
+            == unbinned.get_file("MSProfile.bin").ylabels).all()
+
+
+def test_mz_resolution_measures_icpms_which_hrms_gates_but_does_not_bin():
+    """ A channel behind a flag, yet on a shared axis, needs both reads.
+
+    ICP-MS is parsed only under hrms=True, but it comes back on a shared m/z
+    axis rather than per scan. Measuring only the per-scan channels of the
+    flagged read skips it, and a probe read that does not forward the flag
+    never parses it, so it fell through both and the run looked like it had
+    no MS at all.
+    """
+    assert rb.mz_resolution("tests/inputs/silver.D", hrms=True) == \
+        {"MSProfile.bin": 1.0}
+    assert rb.mz_resolution("tests/inputs/silver.D", hrms=True,
+                            centroid=True) == {"MSProfile.bin": 1.0}
 
 
 def test_read_sequence_rejects_bad_bin_width():

@@ -871,7 +871,8 @@ def _with_mz_floor(datafile, floor):
     ``bin_width`` was finer than the data can support. It is set here, where the
     acquisition is known, because the vendor default it replaces is right for
     unit-resolution data and wrong for calibrated TOF data. Left unset, a
-    channel falls back to its vendor's floor.
+    channel falls back to its vendor's floor; set to None, it has no floor at
+    all, which is the right answer for an acquisition that is never binned.
     """
     datafile._mz_floor = floor
     return datafile
@@ -1211,8 +1212,13 @@ def parse_icpmsdata(path, display_precision='auto'):
     mz_ylabels = np.round(mz_ylabels, display_precision)
     order = np.argsort(mz_ylabels, kind='stable')
 
-    return DataFile(
-        "MSProfile.bin", 'MS', times, mz_ylabels[order], data[:, order], {})
+    # No floor: an ICP-MS acquisition is a fixed set of isotope channels, not a
+    # binned axis, and this parser ignores bin_width entirely. Falling back to
+    # the vendor default would warn that a fine bin_width inserts empty bins
+    # when nothing here is binned at all.
+    return _with_mz_floor(DataFile(
+        "MSProfile.bin", 'MS', times, mz_ylabels[order], data[:, order], {}),
+        None)
 
 
 def _read_icpms_mzs(path, num_masses):
@@ -1465,10 +1471,15 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
 
     # A bin_width projects the per-scan peaks onto one shared m/z grid (lossy),
     # the same way the profile binning does.
-    # A calibrated (TOF/Q-TOF) centroid axis resolves far below the quadrupole
-    # floor; an uncalibrated one is GC-quadrupole data that stores nominal m/z
-    # directly, so the ordinary Agilent floor is the right one for it.
-    floor = HRMS_MZ_FLOOR if calib_vals is not None else MZ_FLOORS['agilent']
+    # Unlike the profile path, the peak m/z were rounded to display_precision
+    # above, into the data itself, so that rounding is the grid this channel
+    # records no matter how finely the instrument resolved. A calibrated
+    # (TOF/Q-TOF) axis would otherwise sit near HRMS_MZ_FLOOR and an
+    # uncalibrated one at the ordinary Agilent floor, but neither survives the
+    # round: display_precision=0 (the uncalibrated default) leaves nominal m/z,
+    # which is a floor of 1, not 0.1.
+    floor = max(10.0 ** -display_precision,
+                HRMS_MZ_FLOOR if calib_vals is not None else MZ_FLOORS['agilent'])
 
     mz_arr = np.concatenate(mz_per_scan)
     if mz_arr.size == 0:

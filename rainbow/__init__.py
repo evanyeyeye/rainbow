@@ -61,10 +61,19 @@ def _warn_bin_width_floor(datafiles, bin_width, vendor):
     if not too_fine:
         return
     import warnings
+    # Channels in one run can record very different grids (an HRMS profile at
+    # 1e-6 beside a Chemstation .ms at 0.1). One number for all of them would
+    # be wrong by orders of magnitude for every channel but the coarsest, so
+    # they are grouped by the grid they actually record.
+    by_floor = {}
+    for name, floor in too_fine.items():
+        by_floor.setdefault(floor, []).append(name)
+    described = "; ".join(
+        f"{', '.join(sorted(by_floor[floor]))} (about {floor} Da)"
+        for floor in sorted(by_floor, reverse=True))
     warnings.warn(
         f"bin_width={bin_width} is finer than the m/z grid recorded by "
-        f"{', '.join(sorted(too_fine))} (about {max(too_fine.values())} Da); "
-        f"it only inserts empty bins.")
+        f"{described}; it only inserts empty bins.")
 
 
 def _sniff_vendor(path):
@@ -258,14 +267,15 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     return datadir
 
 
-def _mz_spacings(datadir, only_per_scan=False):
+def _mz_spacings(datadir, only=None):
     """
     Finest m/z spacing of each MS channel in ``datadir``.
 
     A per-scan channel (the HRMS profile, a centroid peak list) is measured
-    from one scan's own m/z axis; a binned channel from its shared axis. With
-    ``only_per_scan``, the binned channels are skipped, so a caller that read
-    them on the wrong grid can measure them separately.
+    from one scan's own m/z axis; a binned channel from its shared axis. Pass
+    ``only=True`` for just the per-scan channels or ``only=False`` for just the
+    binned ones, so a caller that read one kind on the wrong grid can measure
+    each kind on the read that suits it.
 
     """
     import numpy as np
@@ -275,7 +285,7 @@ def _mz_spacings(datadir, only_per_scan=False):
         if datafile.detector != 'MS':
             continue
         per_scan = hasattr(datafile, 'mass_labels')
-        if only_per_scan and not per_scan:
+        if only is not None and per_scan is not only:
             continue
         try:
             if per_scan:               # per-scan: one scan's own m/z axis
@@ -331,9 +341,12 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         # A grid far finer than any vendor lattice exposes the underlying
         # spacing (bin_datapairs keeps only populated bins). The labels must be
         # displayed finely too, or display_precision would round them back
-        # together and hide the spacing.
-        return read(path, bin_width=1e-3, display_precision=4,
-                    requested_files=requested_files)
+        # together and hide the spacing. The flags are forwarded because they
+        # decide which channels are parsed at all, not just how: Agilent ICP-MS
+        # is gated behind `hrms` and yet comes back on a shared axis, so a
+        # probe without the flag would not see it in either read.
+        return read(path, bin_width=1e-3, display_precision=4, hrms=hrms,
+                    centroid=centroid, requested_files=requested_files)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -347,16 +360,19 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         # sub-mDa spacing (or collapse it to 0).
         datadir = read(path, hrms=hrms, centroid=centroid,
                        display_precision=8, requested_files=requested_files)
-        resolutions = _mz_spacings(datadir, only_per_scan=True)
+        resolutions = _mz_spacings(datadir, only=True)
 
-        # A per-scan channel can share a directory with an ordinary binned one
-        # (a Chemstation .ms beside a MassHunter MSPeak.bin). The read above
-        # binned those at the default nominal width, so measuring them there
-        # would report that default instead of the grid the binary records.
-        # They get the probe grid, in a second read, which the common case of
-        # a run with no binned MS channel does not pay for.
+        # A channel on a shared axis can sit in the same directory (a
+        # Chemstation .ms beside a MassHunter MSPeak.bin), and Agilent ICP-MS
+        # is one even though `hrms` gates it. The read above binned those at
+        # the default nominal width, so measuring them there would report that
+        # default instead of the grid the binary records. They get the probe
+        # grid, in a second read, which the common case of a run with no such
+        # channel does not pay for. Only they are taken from it: the probe
+        # displays labels at 4 decimals, which would flatten a true sub-mDa
+        # per-scan spacing the first read measured correctly.
         if _has_binned_ms(datadir):
-            resolutions.update(_mz_spacings(_probe()))
+            resolutions.update(_mz_spacings(_probe(), only=False))
         return resolutions
 
 
