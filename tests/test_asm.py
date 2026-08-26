@@ -696,9 +696,43 @@ def test_an_unnameable_detector_is_generic_not_ultraviolet():
     # ultraviolet. This is the shape red.D's charged-aerosol channel arrives
     # in: an analog input the vendor does not model as a detector kind.
     from rainbow.asm import _module_device_type
-    for name in ("Analog/digital converter", "TCD Back", "ECD1", "Detector"):
+    for name in ("Analog/digital converter", "CAD", "Detector"):
         assert _module_device_type({"name": name, "type": "Detector"}) \
             == "liquid chromatography detector", name
+
+
+def test_a_nameable_detector_gets_its_exact_afo_class():
+    # TCD, ECD, and FLD are AFO classes of their own (AFE_0000316, AFE_0000534,
+    # AFE_0000567); typing them generically threw away what the name said.
+    from rainbow.asm import _module_device_type
+    exact = {
+        "TCD Back": "thermal conductivity detector",
+        "ECD1": "electron capture detector",
+        "FLD1A": "fluorescence detector",
+        "Variable Wavelength Detector": "ultraviolet detector",
+        "PDA": "diode array detector",
+    }
+    for name, device_type in exact.items():
+        assert _module_device_type({"name": name, "type": "Detector"}) \
+            == device_type, name
+
+
+def test_the_generic_detector_follows_the_documents_technique():
+    # `liquid chromatography detector` and `gas chromatography detector` are
+    # disjoint AFO siblings, so a fixed fallback contradicted every GC document
+    # that carried a detector AFO cannot name.
+    from rainbow.asm import _GC, _LC, _module_device_type
+    module = {"name": "Analog/digital converter", "type": "Detector"}
+    assert _module_device_type(module, _LC) == "liquid chromatography detector"
+    assert _module_device_type(module, _GC) == "gas chromatography detector"
+
+
+def test_module_names_survive_any_separator():
+    # An underscore is a word character, so \b saw no boundary in "FID_2".
+    from rainbow.asm import _module_device_type
+    for name in ("FID_2", "FID-2", "FID 2", "FID2", "fid"):
+        assert _module_device_type({"name": name}) \
+            == "flame ionization detector", name
 
 
 def test_the_real_cad_instrument_inventory_agrees_with_its_cube():

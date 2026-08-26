@@ -91,13 +91,26 @@ _GC = {
 }
 
 # The controlled-vocabulary terms below are verified to be real classes in the
-# Allotrope Foundation Ontology (AFO); see tests/test_asm_ontology.py:
+# Allotrope Foundation Ontology (AFO); see tests/test_asm_ontology.py. The JSON
+# schema types these fields as free strings, so the ontology is the only thing
+# that catches an invented label.
 #   concepts:     retention time AFR_0001089, wavelength AFR_0001159,
 #                 absorbance AFR_0001157
-#   device types: liquid chromatograph AFE_0000808,
-#                 ultraviolet detector AFE_0000711, pump AFE_0000499,
-#                 autosampler AFE_0000073, column compartment AFE_0002198,
-#                 diode array detector AFE_0000090
+#   device types: liquid chromatograph AFE_0000808, gas chromatograph
+#                 AFE_0000024, pump AFE_0000499, autosampler AFE_0000073,
+#                 column compartment AFE_0002198
+#   detectors:    detector AFE_0000317 > chromatographic detector AFE_0000246 >
+#                 {liquid chromatography detector AFE_0002200 >
+#                    ultraviolet detector AFE_0000711,
+#                    diode array detector AFE_0000090,
+#                    refractive index detector AFE_0000363,
+#                    fluorescence detector AFE_0000567;
+#                  gas chromatography detector AFE_0002188 >
+#                    flame ionization detector AFE_0000209,
+#                    thermal conductivity detector AFE_0000316,
+#                    electron capture detector AFE_0000534}
+#                 evaporative light scattering detector AFE_0002277 hangs
+#                 directly off detector, under neither technique.
 
 _SECONDS_PER_MINUTE = 60.0
 
@@ -121,42 +134,72 @@ _MODULE_DEVICE_TYPES = {
     "column compartment": "column compartment",
 }
 
-# Detector modules that are not ultraviolet, keyed by what a vendor writes in a
-# module's name or type. The AFO classes are the ones _DETECTOR_CUBES uses, so
-# an inventory entry agrees with the cube it describes rather than calling every
-# detector ultraviolet. The acronyms are matched as whole words, since "rid" and
-# "cad" both appear inside ordinary ones.
-_SPECIFIC_DETECTOR_PHRASES = (
-    ("flame ionization", "flame ionization detector"),
-    ("refractive index", "refractive index detector"),
-    ("evaporative light scattering", "evaporative light scattering detector"),
-    ("charged aerosol", "liquid chromatography detector"),
-    # An analog input channel is how a vendor exposes a detector it does not
-    # model: red.D's charged-aerosol detector arrives as one. Generic, because
-    # what is wired into it is not knowable from the name.
-    ("analog/digital converter", "liquid chromatography detector"),
-    ("analog to digital converter", "liquid chromatography detector"),
-    ("mass spectrometer", "mass spectrometer"),
-    ("mass selective", "mass spectrometer"),
+# Detector typing follows the AFO equipment hierarchy. Under `detector`
+# (AFE_0000317) sits `chromatographic detector` (AFE_0000246), and under that
+# `liquid chromatography detector` (AFE_0002200) and `gas chromatography
+# detector` (AFE_0002188) are disjoint siblings. So the two matter separately:
+#
+#   * An exact class is used whenever the module names one. Each already sits on
+#     the correct side of that split (FID/TCD/ECD are gas chromatography
+#     detectors, UV/DAD/RID/FLD liquid chromatography detectors, and ELSD hangs
+#     directly off `detector`), so naming the device right also places it right.
+#   * A detector that cannot be named falls back to the generic class for the
+#     document's own technique, never to a fixed one: calling a detector in a
+#     gas chromatography document a liquid chromatography detector asserts a
+#     class the document contradicts.
+#
+# Vendors write a module's name with any separator at hand (DAD1A, FID_2,
+# RID-1A, "Analog/Digital Converter"), and an underscore is a word character, so
+# the text is normalized to spaced words before matching. Acronyms are matched
+# as whole words with an optional module index, so "rid" stays out of "hybrid"
+# and "cad" out of "cascade".
+#
+# Ordered most specific first. Every value is a checked AFO class label; a
+# detector with no AFO class of its own (charged aerosol, and whatever is wired
+# into an analog input) is deliberately absent and takes the generic fallback.
+_DETECTOR_RULES = (
+    ("diode array|photodiode array", ("dad", "pda"), "diode array detector"),
+    # VWD, MWD, and TUV are the vendor names for variable-, multiple-, and
+    # tunable-wavelength ultraviolet detectors.
+    ("variable wavelength|multiple wavelength|multi wavelength"
+     "|tunable wavelength|absorbance",
+     ("uv", "vwd", "mwd", "tuv"), "ultraviolet detector"),
+    ("flame ionization", ("fid",), "flame ionization detector"),
+    ("thermal conductivity", ("tcd",), "thermal conductivity detector"),
+    ("electron capture", ("ecd",), "electron capture detector"),
+    # FLR is the Waters spelling, FLD the Agilent one.
+    ("fluorescence", ("fld", "flr"), "fluorescence detector"),
+    ("refractive index", ("rid", "ri"), "refractive index detector"),
+    # A word boundary does not span "els" into "elsd", so both are listed.
+    ("evaporative light scattering", ("elsd", "els"),
+     "evaporative light scattering detector"),
+    ("mass spectrometer|mass selective", ("msd", "qqq", "qtof"),
+     "mass spectrometer"),
 )
-# Matched as whole words with an optional module index, so "rid" stays out of
-# "hybrid" and "cad" out of "cascade". Both the bare and the -D spellings are
-# listed, since a word boundary does not span "els" into "elsd".
-_SPECIFIC_DETECTOR_WORDS = {
-    "fid": "flame ionization detector",
-    "rid": "refractive index detector",
-    "ri": "refractive index detector",
-    "elsd": "evaporative light scattering detector",
-    "els": "evaporative light scattering detector",
-    "cad": "liquid chromatography detector",
-    "adc": "liquid chromatography detector",
-    "msd": "mass spectrometer",
-    "qqq": "mass spectrometer",
-    "qtof": "mass spectrometer",
-}
-# Names that genuinely say ultraviolet. Anything else that is merely "a
-# detector" gets the generic class rather than an invented absorbance claim.
-_UV_NAME = re.compile(r"\b(uv|vwd|mwd)(\d+[a-z]?)?\b")
+
+# Detectors AFO has no class for. They are recognized so that they are typed by
+# the document's technique rather than by whatever else their name happens to
+# contain: an analog input channel is how a vendor exposes a detector it does
+# not model (red.D's charged-aerosol detector arrives as one), and what is wired
+# into it is not knowable from the name.
+_GENERIC_DETECTOR_RULE = (
+    "charged aerosol|analog digital converter|analog to digital converter",
+    ("cad", "adc"))
+
+
+def _acronyms(words):
+    """A pattern matching any of ``words`` as a whole word plus module index."""
+    return "|".join(r"\b{}(\d+[a-z]?)?\b".format(word) for word in words)
+
+
+def _detector_pattern(phrases, words):
+    return re.compile("{}|{}".format(phrases, _acronyms(words)))
+
+
+_DETECTOR_PATTERNS = tuple(
+    (_detector_pattern(phrases, words), device_type)
+    for phrases, words, device_type in _DETECTOR_RULES)
+_GENERIC_DETECTOR_PATTERN = _detector_pattern(*_GENERIC_DETECTOR_RULE)
 
 # Each single-signal detector becomes a 1-D chromatogram cube. The table gives
 # the AFO device type and the cube's measure concept and unit:
@@ -164,12 +207,17 @@ _UV_NAME = re.compile(r"\b(uv|vwd|mwd)(\d+[a-z]?)?\b")
 #   FID   faithful electric current; its presence also routes the run to a gas
 #         chromatography document (see :func:`_technique`).
 #   CAD   faithful electric current: a charged-aerosol detector measures a
-#         current. AFO has no charged-aerosol class, so the device type is the
-#         generic liquid chromatography detector.
+#         current. AFO has no charged-aerosol class, so it takes the generic
+#         detector class for the document's technique ("generic": True below).
 #   ELSD  faithful light intensity.
 #   RID   interim: a refractive-index detector has no measure concept in the
 #         published schema, so it alone still rides the absorbance cube. Its
 #         device type stays truthful.
+# A named class is used as-is whichever document the channel rides in: a UV
+# detector bolted to a gas chromatograph is still a UV detector, the same way an
+# FID is still an FID inside a liquid chromatography document. Only the generic
+# fallback has to follow the technique, since AFO makes the liquid and gas
+# chromatography detector classes disjoint siblings.
 # Values are the vendor's own, unscaled, except UV absorbance (normalized
 # AU->mAU). MS is handled separately (mass chromatograms). See the ASM detectors
 # documentation.
@@ -178,8 +226,7 @@ _DETECTOR_CUBES = {
            "concept": "absorbance", "unit": "mAU"},
     "RID": {"device_type": "refractive index detector",
             "concept": "absorbance", "unit": "mAU"},
-    "CAD": {"device_type": "liquid chromatography detector",
-            "concept": "electric current", "unit": "pA"},
+    "CAD": {"generic": True, "concept": "electric current", "unit": "pA"},
     "ELSD": {"device_type": "evaporative light scattering detector",
              "concept": "intensity", "unit": "RLU"},
     "FID": {"device_type": "flame ionization detector",
@@ -228,7 +275,7 @@ def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
     technique = _technique(datadir.datafiles, metadata, technique)
     return _aggregate_document(
         technique,
-        _device_system(metadata),
+        _device_system(metadata, technique),
         [_injection_document(datadir, metadata, options, technique)])
 
 
@@ -271,7 +318,7 @@ def sequence_to_asm(datasequence, export_dad_cube=True, wavelengths=None,
         _sequence_datafiles(datasequence), metadata, technique)
     return _aggregate_document(
         technique,
-        _device_system(metadata),
+        _device_system(metadata, technique),
         [_injection_document(injection, injection.metadata, options, technique)
          for injection in datasequence.injections])
 
@@ -375,7 +422,7 @@ def export_asm(datadir, fileobj, export_dad_cube=True, wavelengths=None,
     options = _Options(export_dad_cube, wavelengths, ions, decimal_places)
     metadata = datadir.metadata
     technique = _technique(datadir.datafiles, metadata, technique)
-    _stream_aggregate(fileobj, technique, _device_system(metadata),
+    _stream_aggregate(fileobj, technique, _device_system(metadata, technique),
                        [(datadir, metadata)], options, indent)
 
 
@@ -395,7 +442,7 @@ def sequence_export_asm(datasequence, fileobj, export_dad_cube=True,
         _sequence_datafiles(datasequence), metadata, technique)
     specs = [(injection, injection.metadata)
              for injection in datasequence.injections]
-    _stream_aggregate(fileobj, technique, _device_system(metadata),
+    _stream_aggregate(fileobj, technique, _device_system(metadata, technique),
                        specs, options, indent)
 
 
@@ -415,7 +462,7 @@ def sequence_export_asm_per_injection(datasequence, directory,
     metadata = _sequence_metadata(datasequence)
     technique = _technique(
         _sequence_datafiles(datasequence), metadata, technique)
-    device_system = _device_system(metadata)
+    device_system = _device_system(metadata, technique)
     os.makedirs(directory, exist_ok=True)
     paths = []
     taken = set()
@@ -586,7 +633,7 @@ def _injection_document(datadir, metadata, options, technique):
     return document
 
 
-def _device_system(metadata):
+def _device_system(metadata, technique=None):
     """The instrument-level device system document."""
     manufacturer = metadata.get("vendor")
     instrument = metadata.get("instrument")
@@ -594,7 +641,7 @@ def _device_system(metadata):
         return {
             "asset management identifier": instrument.get("name") or "unknown",
             "device document": [
-                _module_device(i + 1, module, manufacturer)
+                _module_device(i + 1, module, manufacturer, technique)
                 for i, module in enumerate(instrument["modules"])
             ],
         }
@@ -603,7 +650,7 @@ def _device_system(metadata):
         return {
             "asset management identifier": "unknown",
             "device document": [
-                _module_device(i + 1, module, manufacturer)
+                _module_device(i + 1, module, manufacturer, technique)
                 for i, module in enumerate(modules)
             ],
         }
@@ -611,13 +658,16 @@ def _device_system(metadata):
     return {
         "asset management identifier": asset if isinstance(asset, str)
         else "unknown",
+        # With no module inventory, the only thing known about the instrument is
+        # what the document itself declares it to be.
         "device document": [
-            {"device type": "liquid chromatograph"},
+            {"device type": "gas chromatograph" if technique is _GC
+             else "liquid chromatograph"},
         ],
     }
 
 
-def _module_device(index, module, manufacturer=None):
+def _module_device(index, module, manufacturer=None, technique=None):
     """One device document entry for an instrument module."""
     entry = {"@index": index}
     name = module.get("name")
@@ -626,7 +676,7 @@ def _module_device(index, module, manufacturer=None):
     # device type is schema-required; fall back to the generic AFO device class
     # ("device", AFE_0000354) when the specific type cannot be determined, so an
     # unrecognized module still yields a valid device document entry.
-    entry["device type"] = _module_device_type(module) or "device"
+    entry["device type"] = _module_device_type(module, technique) or "device"
     model = module.get("part_no") or module.get("model")
     if model:
         entry["model number"] = model
@@ -641,13 +691,21 @@ def _module_device(index, module, manufacturer=None):
     return entry
 
 
-def _module_device_type(module):
+def _normalize_module_text(text):
+    """Lowercases ``text`` and reduces every separator to a single space.
+
+    Vendors join a module's name to its index with whatever is at hand (DAD1A,
+    FID_2, RID-1A, "Analog/Digital Converter"). An underscore is a word
+    character, so a word-boundary match would not see one in "FID_2".
+    """
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _module_device_type(module, technique=None):
     """The AFO device type for a module, or None if it cannot be mapped."""
-    name = (module.get("name") or "").lower()
-    module_type = (module.get("type") or "").lower()
+    name = _normalize_module_text(module.get("name") or "")
+    module_type = _normalize_module_text(module.get("type") or "")
     text = f"{name} {module_type}"
-    if "dad" in name or "diode array" in text:
-        return "diode array detector"
     # A detector that can be named must be recognized before anything below
     # falls back to a generic class.
     specific = _specific_detector_type(text)
@@ -665,27 +723,33 @@ def _module_device_type(module):
         return "autosampler"
     if "column" in name:
         return "column compartment"
-    if _UV_NAME.search(text) or "absorbance" in text:
-        return "ultraviolet detector"
-    # Plainly a detector, but not one that can be named. The generic AFO
-    # detector class says that much without asserting an absorbance measurement
+    # Plainly a detector, but not one AFO has a class for. The generic class for
+    # the document's technique says that much without asserting a measurement
     # the module may not make: an inventory entry that contradicts the cube it
     # describes is worse than one that is merely unspecific.
-    if "detector" in text:
-        return "liquid chromatography detector"
+    if _GENERIC_DETECTOR_PATTERN.search(text) or "detector" in text:
+        return _generic_detector(technique)
     return None
 
 
+def _generic_detector(technique):
+    """The AFO detector class for a technique, for a detector AFO cannot name.
+
+    ``liquid chromatography detector`` and ``gas chromatography detector`` are
+    disjoint siblings in AFO, so the generic fallback has to follow the document
+    the device system belongs to.
+    """
+    return ("gas chromatography detector" if technique is _GC
+            else "liquid chromatography detector")
+
+
 def _specific_detector_type(text):
-    """The AFO class for a non-ultraviolet detector named in ``text``, or None."""
-    for phrase, device_type in _SPECIFIC_DETECTOR_PHRASES:
-        if phrase in text:
-            return device_type
-    for acronym, device_type in _SPECIFIC_DETECTOR_WORDS.items():
-        # Vendors number their modules (FID1, RID1A), so allow a trailing
-        # index. The word boundaries keep "rid" out of "hybrid" and "ride",
-        # and "cad" out of "cascade".
-        if re.search(rf"\b{acronym}(\d+[a-z]?)?\b", text):
+    """The AFO class for the detector named in ``text``, or None.
+
+    ``text`` must already be normalized (see :func:`_normalize_module_text`).
+    """
+    for pattern, device_type in _DETECTOR_PATTERNS:
+        if pattern.search(text):
             return device_type
     return None
 
@@ -699,7 +763,7 @@ def _measurements(datadir, options, technique):
         group = peak_groups.get(_channel_key(datafile.name))
         has_peaks = bool(group and group.get("peaks"))
         for measurement in _build_measurements(
-                datafile, metadata, options, has_peaks):
+                datafile, metadata, options, has_peaks, technique):
             _add_injection_document(
                 measurement, metadata, datadir.name, technique, options)
             if group and _admits_peaks(measurement):
@@ -717,7 +781,19 @@ def _admits_peaks(measurement):
     return bool(measures) and measures[0].get("concept") == "absorbance"
 
 
-def _build_measurements(datafile, metadata, options, has_peaks=False):
+def _channel_device_type(descriptor, technique):
+    """The AFO device type for a channel's detector.
+
+    A detector AFO has a class for keeps it in any document; one it does not
+    (charged aerosol) takes the generic class for the document's technique.
+    """
+    if descriptor.get("generic"):
+        return _generic_detector(technique)
+    return descriptor["device_type"]
+
+
+def _build_measurements(datafile, metadata, options, has_peaks=False,
+                        technique=None):
     """The measurements for one datafile: zero, one, or several."""
     descriptor = _DETECTOR_CUBES.get(datafile.detector)
     if descriptor is not None:
@@ -728,11 +804,13 @@ def _build_measurements(datafile, metadata, options, has_peaks=False):
             if not options.export_dad_cube:
                 return []
             measurement = _spectrum_measurement(
-                datafile, metadata, descriptor["device_type"], options)
+                datafile, metadata,
+                _channel_device_type(descriptor, technique), options)
             return [measurement] if measurement is not None else []
         if datafile.data.shape[1] == 1:
             return [_detector_measurement(
-                datafile, metadata, descriptor, options, has_peaks)]
+                datafile, metadata, descriptor, options, has_peaks,
+                technique)]
         return []
     if datafile.detector == 'MS':
         return _mass_chromatogram_measurements(datafile, metadata, options)
@@ -745,7 +823,7 @@ _ABSORBANCE_DESCRIPTOR = {"concept": "absorbance", "unit": "mAU"}
 
 
 def _detector_measurement(datafile, metadata, descriptor, options,
-                          has_peaks=False):
+                          has_peaks=False, technique=None):
     """A measurement for a single-signal detector channel (1-D chromatogram).
 
     The cube's measure concept and unit come from the detector descriptor
@@ -761,7 +839,7 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     would lose more than the imprecise unit does, and the published model is
     still being refined.
     """
-    control = {"device type": descriptor["device_type"]}
+    control = {"device type": _channel_device_type(descriptor, technique)}
     detection_type = descriptor.get("detection_type")
     if detection_type:
         control["detection type"] = detection_type

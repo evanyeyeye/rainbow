@@ -71,6 +71,10 @@ def _document_with_all_device_types():
     (diode array detector, pump, autosampler, column compartment) would never
     appear in the collected terms. This injects an instrument with one module
     of each kind, the way a sequence read does, so those terms are checked too.
+
+    Every detector class rainbow can name is included, since these labels are
+    the only place a made-up term could hide: the JSON schema types device type
+    as a free string, so nothing but the ontology checks them.
     """
     datadir = rb.read("tests/inputs/red.D")
     datadir.metadata["instrument"] = {
@@ -84,9 +88,28 @@ def _document_with_all_device_types():
              "part_no": "G7167B", "serial_no": "s3", "firmware": "f3"},
             {"name": "Column Comp.", "type": "Column compartment",
              "part_no": "G7116B", "serial_no": "s4", "firmware": "f4"},
+            {"name": "VWD", "type": "Detector"},
+            {"name": "RID1A", "type": "Detector"},
+            {"name": "FLD1A", "type": "Detector"},
+            {"name": "TCD Back", "type": "Detector"},
+            {"name": "ECD1", "type": "Detector"},
         ],
     }
     return datadir.to_asm()
+
+
+def _gc_document_with_a_generic_detector():
+    """A gas chromatography document whose detector AFO cannot name.
+
+    The generic fallback follows the document's technique, so this is the only
+    document that emits `gas chromatography detector`. Without it that label
+    would go unchecked.
+    """
+    datadir = rb.read("tests/inputs/pink.D")
+    datadir.metadata["acq_method"] = "TEST.M"
+    datadir.metadata["modules"] = [{"name": "Analog/digital converter",
+                                    "type": "Detector"}]
+    return datadir.to_asm(technique="GC")
 
 
 def test_emitted_terms_are_afo_classes():
@@ -102,12 +125,18 @@ def test_emitted_terms_are_afo_classes():
                  "tests/inputs/orange.D", "tests/inputs/bronze.D"):
         _collect_terms(rb.read(path).to_asm(), terms)
     _collect_terms(_document_with_all_device_types(), terms)
+    _collect_terms(_gc_document_with_a_generic_detector(), terms)
 
     # Guard that the key device types and measures are actually present. red.D's
     # CAD and pink.D's FID exercise "electric current"; orange.D's ELSD exercises
     # "intensity"; the faithful detector measures now in use.
     for required in ("diode array detector", "pump", "autosampler",
                      "column compartment", "liquid chromatography detector",
+                     "gas chromatography detector", "gas chromatograph",
+                     "liquid chromatograph", "ultraviolet detector",
+                     "refractive index detector", "fluorescence detector",
+                     "thermal conductivity detector",
+                     "electron capture detector",
                      "mass spectrometer", "count", "flame ionization detector",
                      "electric current", "intensity",
                      "evaporative light scattering detector"):

@@ -39,7 +39,7 @@ Status at a glance
      - liquid chromatography
      - supported
    * - CAD
-     - liquid chromatography detector
+     - generic detector [#generic]_
      - 1D chromatogram
      - electric current / pA
      - liquid chromatography
@@ -83,6 +83,17 @@ Status at a glance
 
 The device types are AFO classes, confirmed against the ontology. See
 :ref:`asm-the-standard` for how that check works.
+
+.. [#generic] **Generic.** AFO has no charged-aerosol class, so a CAD channel
+   takes the generic detector class for the document it rides in: ``liquid
+   chromatography detector`` (AFE_0002200) in a liquid chromatography document,
+   ``gas chromatography detector`` (AFE_0002188) in a gas chromatography one.
+   The two are disjoint siblings in AFO, so a fixed choice would contradict one
+   of the two documents. A detector AFO *can* name keeps its own class in either
+   document: a UV detector bolted to a gas chromatograph is still a UV detector,
+   just as an FID inside a liquid chromatography document is still an FID. The
+   same rule types the instrument module inventory, where TCD, ECD, and FLD
+   modules also get their own exact classes.
 
 .. [#interim] **Interim.** The schema has no refractive-index measure, so a RID
    alone rides the absorbance cube: its measure reads ``absorbance``/``mAU``

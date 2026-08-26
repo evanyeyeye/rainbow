@@ -118,10 +118,19 @@ to [Semantic Versioning](https://semver.org/).
   ultraviolet class, so an FID, RID, ELSD, mass-spectrometer, or
   charged-aerosol module contradicted the very cube it described. Each now maps
   to the AFO class its cube already uses, matched as whole words with an
-  optional module index (`FID1`, `RID1A`) so `hybrid` and `cascade` are not
-  mistaken for detectors. A detector the name does not identify (an analog
-  input, a `TCD`, an `ECD`) now takes the generic detector class rather than an
-  invented absorbance claim.
+  optional module index (`FID1`, `RID1A`, `FID_2`) so `hybrid` and `cascade`
+  are not mistaken for detectors. Thermal-conductivity, electron-capture, and
+  fluorescence modules get their own AFO classes, and the spelled-out
+  ultraviolet names (`Variable Wavelength Detector`, `TUV`, `PDA`) are
+  recognized alongside the acronyms.
+- **A detector in a gas chromatography document is no longer typed as a liquid
+  chromatography one.** AFO makes `liquid chromatography detector` and `gas
+  chromatography detector` disjoint siblings, so the generic class used for a
+  detector AFO cannot name (a charged-aerosol detector, an analog input) has to
+  follow the document it rides in; it was fixed at the liquid one. This applies
+  to both the instrument inventory and the per-channel device control document.
+  A run with no module inventory at all likewise now declares itself a
+  `gas chromatograph` rather than a `liquid chromatograph` when exported as GC.
 - **`rb.from_asm` no longer raises on documents rainbow did not write.** It
   tolerated one shape and crashed on the rest: a missing measurement aggregate,
   a lone object where a list is declared, an empty device-control list, and a
