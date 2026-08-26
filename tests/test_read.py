@@ -147,3 +147,31 @@ def test_display_precision_and_bin_width_are_validated():
         rb.read(AGILENT_FIXTURE, bin_width=0)
     with pytest.raises(Exception, match="bin_width"):
         rb.read(AGILENT_FIXTURE, bin_width=-1.0)
+
+
+def test_a_sequence_directory_passed_to_read_names_read_sequence():
+    # "Rainbow cannot read X." on its own is a dead end when the answer is one
+    # function away.
+    with pytest.raises(Exception, match="read_sequence"):
+        rb.read("tests/inputs")
+
+
+def test_a_single_run_passed_to_read_sequence_names_read():
+    with pytest.raises(Exception, match=r"rb\.read\(\)"):
+        rb.read_sequence(AGILENT_FIXTURE)
+
+
+def test_an_unsuffixed_directory_is_told_about_format(tmp_path):
+    # A .D directory renamed without its suffix, holding nothing rainbow sniffs.
+    plain = tmp_path / "Caffeine 3"
+    plain.mkdir()
+    (plain / "notes.txt").write_text("nothing to parse here")
+    with pytest.raises(Exception, match="format="):
+        rb.read(str(plain))
+
+
+def test_a_missing_path_says_so():
+    # Caught by the vendor parser before the vendor-resolution error, and its
+    # message already says what is wrong.
+    with pytest.raises(Exception, match="is not a directory"):
+        rb.read("tests/inputs/does-not-exist.D")

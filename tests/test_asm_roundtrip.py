@@ -785,3 +785,27 @@ def test_replicate_injections_survive_as_separate_injections(tmp_path):
     assert len(set(inj.name for inj in back)) == 3
     for injection in back:
         assert back.get_injection(injection.name) is not None
+
+
+def test_from_asm_on_a_sequence_document_says_it_is_merging():
+    # Every injection's channels land in one directory, where channels sharing
+    # a name across injections collapse and get_file returns the last. The
+    # docstring points at sequence_from_asm; the warning catches the caller who
+    # did not read it.
+    from rainbow.datasequence import DataSequence
+
+    one, two = rb.read("tests/inputs/red.D"), rb.read("tests/inputs/red.D")
+    document = DataSequence("Seq", [one, two], {}).to_asm()
+    with pytest.warns(UserWarning, match="sequence_from_asm"):
+        merged = rb.from_asm(document)
+    # The warning is earned: two injections of the same run, one set of names.
+    assert len(merged.by_name) < len(merged.datafiles)
+
+
+def test_a_single_injection_document_does_not_warn():
+    import warnings as w
+    document = rb.read("tests/inputs/red.D").to_asm()
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        rb.from_asm(document)
+    assert not [x for x in caught if "sequence_from_asm" in str(x.message)]

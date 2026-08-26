@@ -210,6 +210,25 @@ def _reject_removed_arguments(function, removed):
     reject_removed_arguments(function, removed)
 
 
+def _unreadable(path, what="read"):
+    """The exception for a path no parser claimed, naming a way forward.
+
+    A bare "cannot read" leaves the caller with nowhere to go, and the two
+    commonest causes have concrete answers: a sequence directory passed to
+    read (or the reverse), and a directory whose vendor suffix was stripped.
+    """
+    hint = ""
+    if _detect_sequence_vendor(path) is not None:
+        hint = (" It holds injection subdirectories, so it is a sequence "
+                "rather than one run: rb.read_sequence() reads that.")
+    elif isinstance(path, str) and os.path.isdir(path):
+        hint = (" If its name lost the vendor suffix (.D, .dx, .raw), pass "
+                "format='agilent' or format='waters' to name the parser.")
+    # A path that does not exist never reaches here: the vendor parsers raise
+    # "<path> is not a directory" first, which already says what is wrong.
+    return Exception("Rainbow cannot {} {}.{}".format(what, path, hint))
+
+
 def read(path, display_precision='auto', hrms=False, requested_files=None,
          telemetry=False, centroid=False, format=None, bin_width=None,
          _labels_only=False, **removed):
@@ -331,7 +350,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             path, display_precision, requested_files, bin_width, _labels_only)
 
     if datadir is None:
-        raise Exception(f"Rainbow cannot read {path}.")
+        raise _unreadable(path, "read")
     # Warned here, not before the read, because the floor is a property of the
     # channels the parsers actually returned.
     _warn_bin_width_floor(datadir.datafiles, bin_width, vendor)
@@ -688,7 +707,15 @@ def read_sequence(path, display_precision='auto', hrms=False,
             peaks, bin_width)
 
     if datasequence is None:
-        raise Exception(f"Rainbow cannot read {path} as a sequence.")
+        hint = ""
+        if _detect_vendor(path) is not None:
+            hint = (" It looks like a single run rather than a directory of "
+                    "them: rb.read() reads that.")
+        elif isinstance(path, str) and os.path.isdir(path):
+            hint = (" A sequence directory holds injection subdirectories "
+                    "named .D or .raw; this one holds none.")
+        raise Exception(
+            f"Rainbow cannot read {path} as a sequence.{hint}")
     # One warning for the sequence, not one per injection: the injections of a
     # sequence share an acquisition method, so they share their channels.
     _warn_bin_width_floor(
@@ -719,5 +746,5 @@ def read_metadata(path, format=None):
         metadata = waters.read_metadata(path)
 
     if metadata is None:
-        raise Exception(f"Rainbow cannot read {path}.")
+        raise _unreadable(path, "read")
     return metadata

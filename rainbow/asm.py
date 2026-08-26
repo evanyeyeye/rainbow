@@ -583,7 +583,11 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
     pretty = bool(indent)
     key_line = head.rsplit("\n", 1)[-1]
     base = len(key_line) - len(key_line.lstrip(" ")) if pretty else 0
-    pad = " " * (base + indent) if pretty else ""
+    # json.dumps takes a string indent as well as a number, and to_asm_str
+    # accepts one, so the streamed writers have to as well rather than failing
+    # on int + str. One level of a string indent is the string itself.
+    one_level = indent if isinstance(indent, str) else " " * (indent or 0)
+    pad = " " * base + one_level if pretty else ""
     fileobj.write(head)
     fileobj.write("[")
     for index, (datadir, metadata) in enumerate(specs):
@@ -1813,6 +1817,18 @@ def from_asm(document, name="asm"):
         aggregate.get("device system document"))
     if instrument:
         metadata["instrument"] = instrument
+
+    if len(documents) > 1:
+        # Every injection's channels land in one directory, where channels
+        # sharing a name across injections collapse in by_name and get_file
+        # returns whichever came last. The docstring points at
+        # sequence_from_asm; saying so here costs nothing and catches the
+        # caller who did not read it.
+        warnings.warn(
+            "This document holds {} injections; from_asm merges them into one "
+            "directory, where channels that share a name across injections "
+            "overwrite each other. Use rainbow.sequence_from_asm to keep them "
+            "apart.".format(len(documents)))
 
     datafiles = []
     peak_groups = []

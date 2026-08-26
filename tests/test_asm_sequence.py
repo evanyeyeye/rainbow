@@ -332,3 +332,14 @@ def test_an_unknown_injection_name_says_what_is_there(sequence):
     with pytest.raises(KeyError) as excinfo:
         sequence.get_injection("nope.D")
     assert sequence.injections[0].name in str(excinfo.value)
+
+
+@pytest.mark.parametrize("indent", [2, 0, None, 4, "  ", "\t"])
+def test_the_streamed_writer_takes_every_indent_json_takes(sequence, tmp_path,
+                                                           indent):
+    # json.dumps accepts a string indent as well as a number, and to_asm_str
+    # passes one straight through, so the streamed writers must too. A string
+    # used to raise "unsupported operand type(s) for +: 'int' and 'str'".
+    out = tmp_path / "seq.asm.json"
+    sequence.export_asm(str(out), indent=indent)
+    assert json.loads(out.read_text()) == sequence.to_asm()

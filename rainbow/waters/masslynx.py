@@ -229,7 +229,8 @@ def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
 
     Args:
         path (str): Path to the _FUNC .DAT file.
-        precision (int, optional): Number of decimals to round ylabels.
+        display_precision (int, optional): Decimals to round the displayed
+            ylabels to. Cosmetic; bin_width is the lossy control.
         polarity (str, optional): Polarity of the spectrum.
         calib (list, optional): Float calibration values of the spectrum.
     
@@ -336,7 +337,8 @@ def parse_funcdat2(path, pair_counts, display_precision=0, bin_width=1.0,
         path (str): Path to the _FUNC .DAT file. 
         pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        precision (int, optional): Number of decimals to round ylabels. 
+        display_precision (int, optional): Decimals to round the displayed
+            ylabels to. Cosmetic; bin_width is the lossy control.
         calib (list, optional): Float calibration values of the spectrum.
     
     Returns: 
@@ -384,7 +386,8 @@ def parse_funcdat4(path, pair_counts, display_precision=0, bin_width=1.0,
         path (str): Path to the Waters _FUNC .DAT file.
         pair_counts (np.ndarray):
             1D array with the number of data pairs at each retention time.
-        precision (int, optional): Number of decimals to round ylabels.
+        display_precision (int, optional): Decimals to round the displayed
+            ylabels to. Cosmetic; bin_width is the lossy control.
         calib (list, optional): Float calibration values of the spectrum.
 
     Returns:
@@ -467,7 +470,8 @@ def parse_funcdat6(path, pair_counts, display_precision=0, bin_width=1.0,
         path (str): Path to the Waters _FUNC .DAT file. 
         pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        precision (int, optional): Number of decimals to round ylabels. 
+        display_precision (int, optional): Decimals to round the displayed
+            ylabels to. Cosmetic; bin_width is the lossy control.
         calib (list, optional): Float calibration values of the spectrum.
     
     Returns: 
@@ -518,7 +522,8 @@ def parse_funcdat8(path, pair_counts, display_precision=0, bin_width=1.0,
         path (str): Path to the _FUNC .DAT file. 
         pair_counts (np.ndarray): 
             1D array with the number of data pairs at each retention time.
-        precision (int, optional): Number of decimals to round ylabels. 
+        display_precision (int, optional): Decimals to round the displayed
+            ylabels to. Cosmetic; bin_width is the lossy control.
         calib (list, optional): Float calibration values of the spectrum.
     
     Returns: 
