@@ -1317,11 +1317,22 @@ def _scatter_sum(idx, intensities, size):
         Length-``size`` uint64 array of summed intensities.
 
     """
-    # sum(dtype=object) totals in exact Python ints, so the guard itself cannot
-    # be fooled by a uint64 wraparound before the comparison.
-    if int(intensities.sum(dtype=object)) < _FLOAT64_EXACT_INT:
+    if intensities.size == 0:
+        return np.zeros(size, dtype=np.uint64)
+
+    def _bincount():
         return np.bincount(
             idx, weights=intensities, minlength=size).astype(np.uint64)
+
+    # count * max bounds the total from above, and both are C reductions, so
+    # the common case is decided without ever forming a Python int per point.
+    # The exact total (sum(dtype=object), which cannot be fooled by a uint64
+    # wraparound before the comparison) is only worth its cost when this
+    # conservative bound fails, which real data does not reach.
+    if int(intensities.max()) * intensities.size < _FLOAT64_EXACT_INT:
+        return _bincount()
+    if int(intensities.sum(dtype=object)) < _FLOAT64_EXACT_INT:
+        return _bincount()
     grid = np.zeros(size, dtype=np.uint64)
     np.add.at(grid, idx, intensities)
     return grid

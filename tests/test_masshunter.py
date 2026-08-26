@@ -1585,6 +1585,29 @@ def test_scatter_sum_guard_boundary_is_exact_both_sides():
     assert int(masshunter._scatter_sum(np.array([0]), below, 1)[0]) == 2 ** 53 - 1
 
 
+def test_scatter_sum_is_exact_when_the_cheap_bound_fails():
+    # count * max bounds the total from above and decides the common case
+    # without forming a Python int per point. It is conservative, so an input
+    # whose bound exceeds 2**53 while its true total does not must still take
+    # the fast path and stay exact, rather than being pushed onto add.at.
+    big = np.uint64(2 ** 52)
+    intensities = np.array([big] + [np.uint64(1)] * 15, dtype=np.uint64)
+    idx = np.zeros(intensities.size, dtype=np.int64)
+    assert int(intensities.max()) * intensities.size >= \
+        masshunter._FLOAT64_EXACT_INT          # the cheap bound says no
+    assert int(intensities.sum(dtype=object)) < \
+        masshunter._FLOAT64_EXACT_INT          # the exact total says yes
+    got = masshunter._scatter_sum(idx, intensities, 1)
+    assert int(got[0]) == 2 ** 52 + 15
+    np.testing.assert_array_equal(got, _reference_scatter(idx, intensities, 1))
+
+
+def test_scatter_sum_on_empty_input():
+    got = masshunter._scatter_sum(
+        np.array([], dtype=np.int64), np.array([], dtype=np.uint64), 4)
+    assert got.dtype == np.uint64 and got.size == 4 and not got.any()
+
+
 def test_bin_to_grid_dense_matches_reference():
     # Three scans of unit-resolution points; small m/z span -> dense path.
     mz = np.array([100.0, 101.0, 100.0, 102.0, 101.0, 101.0])

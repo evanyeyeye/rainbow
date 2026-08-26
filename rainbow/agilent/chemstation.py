@@ -146,10 +146,13 @@ def parse_ch(path):
     """
     Parses an Agilent .ch file. 
 
-    These files contain data from a FID, CAD, ELSD, or UV channel. \
-    Files that contain FID data have a different format than other .ch files.
+    These files contain data from a FID, CAD, ELSD, or UV channel. The version
+    at the head of the file says how the data is encoded, not what measured it:
+    Chemstation writes a diode-array channel and a flame ionization channel
+    into the same 179/181 container, and the channel's own signal string is
+    what tells them apart.
 
-    This method calls the appropriate subroutine by file format. 
+    This method calls the appropriate subroutine by file format.
 
     Args: 
         path (str): Path to the .ch file.
@@ -200,17 +203,23 @@ def _detector_from_signal(metadata, default=None):
 
 def parse_ch_fid(path, head):
     """
-    Parses an Agilent .ch file with FID channel data. 
-    
-    This method should not be called directly. Use :obj:`parse_ch` instead. 
+    Parses an Agilent .ch file in the 179/181 container.
+
+    Flame ionization data is the usual occupant, and the default for a channel
+    whose signal string names no detector rainbow knows, but a diode-array
+    channel is written into the same container: the detector comes from the
+    signal string, not from the version. Note that the 181 layout has no signal
+    offset, so a 181 file is always read as FID.
+
+    This method should not be called directly. Use :obj:`parse_ch` instead.
 
     Learn more about this file format :ref:`here <ch_fid>`.
 
     Args:
-        path (str): Path to the .ch file with FID data. 
+        path (str): Path to the .ch file.
 
     Returns:
-        DataFile with FID data, if the file can be parsed. Otherwise, None.
+        DataFile for the channel, if the file can be parsed. Otherwise, None.
 
     """
     if head == '181':

@@ -52,7 +52,13 @@ fidelity:
    * - **Exact**
      - data cubes, peaks
      - The signal values and axes, and every integrated peak (retention, area,
-       height, symmetry), come back identical.
+       height, symmetry), come back identical, in the units the document
+       states. One conversion is one-way: absorbance is pinned to ``mAU`` by
+       the model, so a Waters channel read in ``AU`` is scaled by 1000 on
+       export and returns as the ``mAU`` it now is. The numbers therefore
+       differ from the originals by that factor, and nothing in the document
+       records that they were once ``AU``. A second round trip changes
+       nothing further.
    * - **Conditional**
      - instrument, operator
      - Recovered when the document carried that identity, which for a sequence
@@ -66,11 +72,15 @@ fidelity:
        absorbance cube, so it returns (as a UV ``DataFile``, per above).
    * - **Lossy**
      - run name, unexported method fields
-     - The ``.D`` directory name is not recovered: import names a run ``asm``
-       unless you pass ``name=``, even though the name may appear in the
-       document as an injection identifier. Nor are the method values rainbow
-       reads but does not export, such as column temperature, flow rate, and
-       dilution.
+     - :func:`rainbow.from_asm` names a run ``asm`` unless you pass ``name=``.
+       :func:`rainbow.sequence_from_asm` does recover each injection's ``.D``
+       name, from the ``injection identifier`` in its injection document, so
+       ``seq.get_injection("001-A1_01.D")`` works after a round trip. A liquid
+       chromatography run that recorded no injection volume is the exception:
+       the model requires the volume beside the identifier, so such a run has
+       no injection document at all and falls back to its sample identifier.
+       Also not recovered are the method values rainbow reads but does not
+       export, such as column temperature, flow rate, and dilution.
 
 The lossy fields are lost at export: they are not part of what :code:`to_asm`
 writes, so no reader could recover them. The export-only cubes are the other

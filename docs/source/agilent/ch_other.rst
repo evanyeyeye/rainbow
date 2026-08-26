@@ -5,7 +5,8 @@ Agilent .ch File Structure (other)
 
 This file format contains UV, CAD, or ELSD channel data.
 
-Note that this is not the same as :ref:`.ch files <ch_fid>` that contain FID data.
+Note that this is not the same as the :ref:`179/181 container <ch_fid>`, which
+usually holds FID data but also holds single-wavelength diode-array channels.
 
 Files in this format are named something like DAD1A.ch or ADC1A.ch. 
 
