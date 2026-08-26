@@ -564,6 +564,12 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
     a streamed JSON array whose elements are each built, written, and released
     before the next. Peak memory is one injection document, not the whole run.
     """
+    # Each call writes one standalone document. Warnings said once per document
+    # are scoped here rather than to the _Options object, which
+    # sequence_export_asm_per_injection reuses across every file it writes: a
+    # single warning then stood for N separate documents and named an injection
+    # that was not in most of them.
+    options.start_document()
     envelope = _aggregate_document(technique, device_system,
                                    _DOCUMENTS_PLACEHOLDER)
     rendered = json.dumps(envelope, indent=indent, ensure_ascii=False)
@@ -788,6 +794,11 @@ class _Options:
         self.ions = None if ions is None else _finite_number_list(ions, "ions")
         self.decimals = _check_decimal_places(decimal_places)
         self.timezone = _utc_offset(timezone)
+        self._warned = set()
+
+    def start_document(self):
+        """Begins a new output document, for warnings said once per document."""
+        self._warned = set()
 
     def timestamp(self, value, required=False, recorded_offset=None):
         """
@@ -1101,22 +1112,73 @@ def _measurements(datadir, options, technique):
     metadata = datadir.metadata
     peak_groups = _peak_groups_by_channel(getattr(datadir, "peaks", None))
     measurements = []
+    omitted = []
     for datafile in datadir.datafiles:
         group = peak_groups.get(_channel_key(datafile.name))
         has_peaks = bool(group and group.get("peaks"))
-        for measurement in _build_measurements(
-                datafile, metadata, options, has_peaks, technique):
+        built = _build_measurements(
+            datafile, metadata, options, has_peaks, technique)
+        if not built:
+            omitted.append(datafile)
+        for measurement in built:
             _add_injection_document(
                 measurement, metadata, datadir.name, technique, options)
             if group and _admits_peaks(measurement):
                 _add_processed_data(measurement, group, options)
             measurements.append(measurement)
     if not measurements:
-        _warn_nothing_to_export(datadir)
+        _warn_nothing_to_export(datadir, options)
+    elif omitted:
+        _warn_channels_omitted(datadir, omitted, options)
     return measurements
 
 
-def _warn_nothing_to_export(datadir):
+def _omission_remedy(datafile, options):
+    """Why a channel exported nothing, and what would export it.
+
+    Returns None for a channel the caller deliberately excluded, which is a
+    choice rather than something to report back to them.
+    """
+    if datafile.detector == 'MS':
+        try:
+            datafile.ylabels
+        except Exception:
+            # A per-scan profile or centroid: every scan has its own m/z axis,
+            # so there is no grid to pull an ion out of. ions= cannot reach it;
+            # only re-reading onto a shared axis can.
+            return ("has a separate m/z axis for every scan, so it has no "
+                    "grid to extract ions from: re-read with bin_width= to "
+                    "put the scans on a shared axis")
+        return ("is a full-scan MS channel, which becomes a mass chromatogram "
+                "only for the ions you ask for: pass ions=[...] to export it")
+    if datafile.detector == 'UV' and not options.export_dad_cube:
+        data = getattr(datafile, "data", None)
+        if data is not None and data.shape[1] > 1:
+            return None  # export_dad_cube=False is the caller's own choice
+    return "is not a channel shape this exporter can carry"
+
+
+def _warn_channels_omitted(datadir, omitted, options):
+    """Warns that some channels are missing from a document that has others.
+
+    The all-or-nothing warning below never fired for these: a GC-MS or LC-MS
+    run exports its UV channels and drops its MS channel, which is the common
+    case and the quiet one.
+    """
+    reasons = {}
+    for datafile in omitted:
+        remedy = _omission_remedy(datafile, options)
+        if remedy is not None:
+            reasons.setdefault(remedy, []).append(datafile.name)
+    for remedy, names in reasons.items():
+        _warn_once_per_run(
+            options, "omitted:{}:{}".format(datadir.name, remedy),
+            "{} is not in the ASM document for {}; it {} (see "
+            "rainbow.DataDirectory.to_asm).".format(
+                ", ".join(sorted(names)), datadir.name, remedy))
+
+
+def _warn_nothing_to_export(datadir, options=None):
     """Warns that a directory produced no measurements, and says why.
 
     The schema requires a non-empty measurement document, so this document
@@ -1133,12 +1195,28 @@ def _warn_nothing_to_export(datadir):
             "centroid=True.")
         return
     skipped = ", ".join(sorted(f.name for f in datadir.datafiles))
+    remedies = []
+    if options is not None:
+        for datafile in datadir.datafiles:
+            remedy = _omission_remedy(datafile, options)
+            if remedy is not None and remedy not in remedies:
+                remedies.append(remedy)
+    if options is not None and not remedies:
+        # Every channel was excluded by the caller's own export options, so
+        # there is nothing to advise: saying "pass ions=[...]" about a
+        # spectrum they switched off with export_dad_cube=False is noise.
+        warnings.warn(
+            f"{datadir.name} exported no measurements, so its ASM document "
+            f"will not validate: the export options exclude every channel it "
+            f"has ({skipped}).")
+        return
+    detail = ("; ".join(remedies) if remedies
+              else "a full-scan MS channel becomes a mass chromatogram only "
+                   "for the ions you ask for, so pass ions=[...] to export it")
     warnings.warn(
         f"{datadir.name} exported no measurements, so its ASM document will "
-        f"not validate. Nothing in {skipped} is exported by default: a "
-        "full-scan MS channel becomes a mass chromatogram only for the ions "
-        "you ask for, so pass ions=[...] to export them (see "
-        "rainbow.DataDirectory.to_asm).")
+        f"not validate. Nothing in {skipped} is exported by default: "
+        f"{detail} (see rainbow.DataDirectory.to_asm).")
 
 
 def _admits_peaks(measurement):
@@ -1373,7 +1451,12 @@ def _spectrum_measurement(datafile, metadata, device_type, options):
 
 
 def _warn_once_per_run(options, key, message):
-    """Warns once per export, however many measurements share the cause."""
+    """Warns once per document, however many measurements share the cause.
+
+    Scoped to the document rather than the export call: a per-injection export
+    writes many standalone documents from one _Options, and each one deserves
+    to carry its own warnings, since each is validated on its own.
+    """
     seen = getattr(options, "_warned", None)
     if seen is None:
         seen = options._warned = set()

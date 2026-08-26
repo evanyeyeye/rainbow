@@ -474,6 +474,35 @@ def test_requested_ion_not_in_scan_warns_and_is_skipped():
     assert all(_MASS_CHROM_KEY not in m for m in _measurements(document))
 
 
+def test_a_channel_omitted_from_a_document_that_has_others_is_named():
+    # Partial omission is the common case for GC-MS and LC-MS and was the quiet
+    # one: yellow.D exports its FID and SIM channels and drops data.ms, and the
+    # all-or-nothing warning never fired because the document was not empty.
+    datadir = rb.read("tests/inputs/yellow.D")
+    with pytest.warns(UserWarning, match=r"data\.ms is not in the ASM document"):
+        document = datadir.to_asm()
+    assert _measurements(document), "other channels still export"
+
+
+def test_the_omission_warning_names_the_remedy_that_applies():
+    # A per-scan channel cannot be reached with ions= at all: it has no grid to
+    # extract from. Advising ions= sent those users round a loop that could
+    # never terminate; bin_width= is what actually exports them.
+    datadir = rb.read("tests/inputs/gold.D", centroid=True)
+    with pytest.warns(UserWarning, match="bin_width="):
+        datadir.to_asm(ions=[103.0739])
+
+
+def test_a_channel_the_caller_excluded_is_not_warned_about():
+    # export_dad_cube=False is an instruction, not an accident, so it must not
+    # come back as a warning advising ions= about a spectrum.
+    datadir = rb.read("tests/inputs/brown.D", requested_files=["dad1.uv"])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        datadir.to_asm(export_dad_cube=False)
+    assert not [w for w in caught if "ions=" in str(w.message)]
+
+
 def test_ions_does_not_affect_sim_channels():
     # ions= selects from full scans only; a SIM channel always exports all of
     # its monitored ions regardless of (non-matching) requested ions.

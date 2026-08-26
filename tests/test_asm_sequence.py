@@ -173,6 +173,34 @@ def test_export_asm_per_injection_uniquifies_duplicate_names(tmp_path):
         "brown.asm.json", "brown_2.asm.json"]
 
 
+def test_each_per_injection_document_carries_its_own_warnings(tmp_path):
+    # A warning said "once per run" was keyed to the _Options object, which
+    # sequence_export_asm_per_injection reuses for every file it writes. One
+    # warning then stood for N standalone documents and named an injection that
+    # was not in most of them, while the rest were written silently invalid.
+    import warnings
+    from rainbow.datasequence import DataSequence
+
+    injections = []
+    for name in ("001-A1-std.D", "002-A2-std.D", "003-A3-std.D"):
+        injection = rb.read("tests/inputs/yellow.D")
+        injection.name = name
+        injections.append(injection)
+    seq = DataSequence(str(tmp_path / "Seq"), injections, {})
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        paths = seq.export_asm(str(tmp_path / "per_injection"),
+                               per_injection=True)
+    volume = [str(w.message) for w in caught
+              if "records no injection volume" in str(w.message)]
+    # One per document written, each naming the injection it is about.
+    assert len(paths) == 3
+    assert len(volume) == 3
+    assert {p.split()[0] for p in volume} == {
+        "001-A1-std.D", "002-A2-std.D", "003-A3-std.D"}
+
+
 def test_sequence_export_asm_streams_equal_to_in_memory(sequence, tmp_path):
     out = tmp_path / "seq.asm.json"
     sequence.export_asm(str(out))
