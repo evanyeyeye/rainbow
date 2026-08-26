@@ -71,7 +71,8 @@ def label_precision(display_precision, bin_width):
 
 
 def bin_datapairs(keys, values, pair_counts, bin_width,
-                  display_precision=None, data_dtype=np.int64):
+                  display_precision=None, data_dtype=np.int64,
+                  labels_only=False):
     """
     Bins (key, value) data pairs into a (retention time x ylabel) matrix.
 
@@ -98,6 +99,12 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
         display_precision (int, optional): Decimals to round the bin-centre
             labels to for display. ``None`` (the default) leaves them unrounded.
         data_dtype (np.dtype, optional): dtype of the output matrix.
+        labels_only (bool, optional): Return the bin labels and an empty
+            ``(num_times, 0)`` matrix, skipping the accumulation. The matrix is
+            ``num_times x num_ylabels``, which at a bin width far below the
+            vendor grid dwarfs the input: a caller that only wants to know what
+            grid the run records (:func:`rainbow.mz_resolution`) would otherwise
+            build tens of gigabytes to read one number off the labels.
 
     Returns:
         1D numpy array of bin-centre ylabels. 2D ``data_dtype`` numpy array with
@@ -157,6 +164,9 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
     centres = occupied * float(bin_width)
     ylabels = centres if display_precision is None \
         else np.round(centres, label_precision(display_precision, bin_width))
+
+    if labels_only:
+        return ylabels, np.zeros((num_times, 0), dtype=data_dtype)
 
     rows = np.repeat(np.arange(num_times), pair_counts)
     flat_indices = rows * num_ylabels + columns

@@ -84,7 +84,7 @@ SPECTRUM PARSING METHODS
 
 
 def parse_spectrum(path, display_precision=0, bin_width=1.0,
-                   requested_files=None):
+                   requested_files=None, labels_only=False):
     """
     Finds and parses Waters UV and MS spectra from a .raw directory.
 
@@ -174,7 +174,7 @@ def parse_spectrum(path, display_precision=0, bin_width=1.0,
                      if funcdat_index < len(func_types) else None)
         datafile = parse_function(
             os.path.join(path, funcdat_file), display_precision, bin_width,
-            polarity, calib, func_type)
+            polarity, calib, func_type, labels_only)
         # Tag the MS acquisition mode (SIM vs scan) from the function type, so a
         # SIR (Waters' SIM) channel is distinguishable from a full scan.
         if datafile.detector == 'MS' and funcdat_index < len(func_types):
@@ -216,7 +216,7 @@ def _acquisition_mode(func_type):
 
 
 def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
-                   calib=None, func_type=None):
+                   calib=None, func_type=None, labels_only=False):
     """
     Parses data for a Waters function. 
 
@@ -278,7 +278,8 @@ def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
                      else detector == 'UV')
     ylabels, data = parse_funcdat(
         path, pair_counts, display_precision,
-        _UV_WAVELENGTH_STEP if is_wavelength else bin_width, calib)
+        _UV_WAVELENGTH_STEP if is_wavelength else bin_width, calib,
+        labels_only)
 
     return DataFile(path, detector, times, ylabels, data, metadata)
 
@@ -323,7 +324,7 @@ def parse_funcidx(path):
 
 
 def parse_funcdat2(path, pair_counts, display_precision=0, bin_width=1.0,
-                   calib=None):
+                   calib=None, labels_only=False):
     """
     Parses a Waters _FUNC .DAT file with the 2-bytes format. 
 
@@ -371,7 +372,7 @@ def parse_funcdat2(path, pair_counts, display_precision=0, bin_width=1.0,
 
 
 def parse_funcdat4(path, pair_counts, display_precision=0, bin_width=1.0,
-                   calib=None):
+                   calib=None, labels_only=False):
     """
     Parses a Waters _FUNC .DAT file with the 4-bytes format.
 
@@ -454,7 +455,7 @@ def parse_funcinf(path):
 
 
 def parse_funcdat6(path, pair_counts, display_precision=0, bin_width=1.0,
-                   calib=None):
+                   calib=None, labels_only=False):
     """
     Parses a Waters _FUNC .DAT file with the 6-bytes format. 
 
@@ -500,11 +501,12 @@ def parse_funcdat6(path, pair_counts, display_precision=0, bin_width=1.0,
 
     # Bin the raw keys (binning is the lossy step; labels are cosmetic).
     return bin_datapairs(keys, values, pair_counts, bin_width,
-                         display_precision=display_precision)
+                         display_precision=display_precision,
+                         labels_only=labels_only)
 
 
 def parse_funcdat8(path, pair_counts, display_precision=0, bin_width=1.0,
-                   calib=None):
+                   calib=None, labels_only=False):
     """
     Parses a Waters _FUNC .DAT file with the 8-bytes format. 
 
@@ -579,7 +581,8 @@ def parse_funcdat8(path, pair_counts, display_precision=0, bin_width=1.0,
 
     # Bin the raw keys (binning is the lossy step; labels are cosmetic).
     return bin_datapairs(keys, values, pair_counts, bin_width,
-                         display_precision=display_precision)
+                         display_precision=display_precision,
+                         labels_only=labels_only)
 
 
 def calibrate(mzs, calib_nums):

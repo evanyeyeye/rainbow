@@ -358,3 +358,48 @@ def test_a_selected_ion_channel_reports_no_grid():
     assert answer["data.ms"] == 0.1
     # A run whose MS is all selected-ion reports nothing rather than nonsense.
     assert rb.mz_resolution("tests/inputs/green.D") == {}
+
+
+def test_labels_only_returns_the_same_labels_without_the_grid():
+    # The grid is num_times x num_ylabels, which at a bin width far below the
+    # vendor lattice dwarfs the data it came from. A caller measuring the grid
+    # a run records reads nothing but the labels, so it must be able to skip
+    # building it, and must get exactly the labels it would have got.
+    import numpy as np
+    from rainbow._binning import bin_datapairs
+
+    keys = np.array([100.0, 100.02, 250.5, 250.5, 400.25])
+    values = np.array([1, 2, 3, 4, 5], dtype=np.int64)
+    pair_counts = np.array([3, 2], dtype=np.int64)
+
+    full_labels, full_data = bin_datapairs(
+        keys, values, pair_counts, 0.01, display_precision=4)
+    lean_labels, lean_data = bin_datapairs(
+        keys, values, pair_counts, 0.01, display_precision=4, labels_only=True)
+
+    assert np.array_equal(full_labels, lean_labels)
+    # Still a 2D array of the right height, so a DataFile can hold it.
+    assert lean_data.shape == (pair_counts.size, 0)
+    assert full_data.shape == (pair_counts.size, full_labels.size)
+
+
+def test_labels_only_on_the_sparse_path():
+    # The sparse fallback (past _MAX_DENSE_BINS) must skip the grid too.
+    import numpy as np
+    from rainbow._binning import bin_datapairs, _MAX_DENSE_BINS
+
+    keys = np.array([1.0, 2.0 + _MAX_DENSE_BINS])
+    values = np.array([1, 1], dtype=np.int64)
+    pair_counts = np.array([2], dtype=np.int64)
+    labels, data = bin_datapairs(keys, values, pair_counts, 1.0,
+                                 labels_only=True)
+    assert labels.size == 2 and data.shape == (1, 0)
+
+
+def test_labels_only_on_empty_input():
+    import numpy as np
+    from rainbow._binning import bin_datapairs
+
+    labels, data = bin_datapairs(
+        np.array([]), np.array([]), np.array([0, 0]), 1.0, labels_only=True)
+    assert labels.size == 0 and data.shape == (2, 0)

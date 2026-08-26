@@ -1530,7 +1530,10 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
     # the file kept. Asserting the vendor's unit-resolution floor here made
     # rainbow warn that 0.09 was too fine on a run that quantizes to 0.0899963,
     # which rb.mz_resolution reports and reads back happily. That function
-    # measures this channel; a constant cannot.
+    # measures this channel where a lattice exists; a constant cannot. Where
+    # one does not (a calibrated TOF centroid, whose peaks carry continuous
+    # m/z), it reports nothing for the channel rather than inventing a number,
+    # which is the same reason no floor is recorded here.
     floor = None
 
     mz_arr = np.concatenate(mz_per_scan)

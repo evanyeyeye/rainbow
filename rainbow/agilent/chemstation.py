@@ -73,7 +73,7 @@ MAIN PARSING METHODS
 
 
 def parse_allfiles(path, display_precision='auto', bin_width=None,
-                   requested_files=None):
+                   requested_files=None, labels_only=False):
     """
     Finds and parses Agilent Chemstation data files \
         with a .ch, .uv, or .ms extension from a .D directory.
@@ -104,13 +104,14 @@ def parse_allfiles(path, display_precision='auto', bin_width=None,
         if requested_files and name.lower() not in requested_files:
             continue
         datafile = parse_file(
-            os.path.join(path, name), display_precision, bin_width)
+            os.path.join(path, name), display_precision, bin_width,
+            labels_only)
         if datafile:
             datafiles.append(datafile)
     return datafiles
 
 
-def parse_file(path, display_precision=0, bin_width=1.0):
+def parse_file(path, display_precision=0, bin_width=1.0, labels_only=False):
     """
     Parses an Agilent Chemstation data file.
 
@@ -131,7 +132,7 @@ def parse_file(path, display_precision=0, bin_width=1.0):
     elif ext == '.uv':
         return parse_uv(path)
     elif ext == '.ms':
-        return parse_ms(path, display_precision, bin_width)
+        return parse_ms(path, display_precision, bin_width, labels_only)
     return None
 
 
@@ -724,7 +725,7 @@ def parse_uv_partial(path):
 """
 
 
-def parse_ms(path, display_precision=0, bin_width=1.0):
+def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     """
     Parses an Agilent .ms file.
 
@@ -808,7 +809,8 @@ def parse_ms(path, display_precision=0, bin_width=1.0):
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
     ylabels, data = bin_datapairs(
         mzs, int_values, pair_counts, bin_width,
-        display_precision=display_precision, data_dtype=np.uint32)
+        display_precision=display_precision, data_dtype=np.uint32,
+        labels_only=labels_only)
     del mzs, int_values, pair_counts
 
     # Read file metadata.

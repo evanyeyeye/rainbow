@@ -212,7 +212,7 @@ def _reject_removed_arguments(function, removed):
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,
          telemetry=False, centroid=False, format=None, bin_width=None,
-         **removed):
+         _labels_only=False, **removed):
     """
     Reads a chromatogram data directory. Main method of the package.
 
@@ -325,10 +325,10 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     if vendor == 'agilent':
         datadir = agilent.read(
             path, display_precision, hrms, requested_files, telemetry, centroid,
-            bin_width)
+            bin_width, _labels_only)
     elif vendor == 'waters':
         datadir = waters.read(
-            path, display_precision, requested_files, bin_width)
+            path, display_precision, requested_files, bin_width, _labels_only)
 
     if datadir is None:
         raise Exception(f"Rainbow cannot read {path}.")
@@ -454,8 +454,15 @@ def _is_selected_ion(datafile):
     mode = datafile.metadata.get('acquisition_mode')
     if mode in ('SIM', 'Scan'):
         return mode == 'SIM'
-    return getattr(datafile, 'data', None) is not None \
-        and datafile.data.ndim == 2 and datafile.data.shape[1] == 1
+    # Counted on the labels, not on the width of the data grid. They are the
+    # same for an ordinary read (one column per label), but the probe reads
+    # labels only, so the grid there is empty and would make every untagged
+    # channel look like a swept range.
+    try:
+        labels = datafile.ylabels
+    except Exception:
+        return False            # per scan: no shared axis to count
+    return labels is not None and getattr(labels, 'size', 0) == 1
 
 
 def _needs_the_probe(datadir, measured):
@@ -492,12 +499,22 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         centroid (bool, optional): Inspect the Agilent MassHunter centroid
             (MSPeak.bin). A centroid run's MS data is parsed only under this
             flag, so without it such a run looks like one with no MS at all.
+            A calibrated (TOF) centroid is parsed but not measured: its peaks
+            carry continuous m/z, so there is no lattice to report.
 
     Returns:
         dict: Each MS channel name mapped to its finest m/z spacing in
-            daltons. Empty if the run has no MS that was parsed. Agilent
-            quadrupole MS resolves to about 0.1 Da, Waters to between about
-            0.03 and 0.07 Da depending on the run.
+            daltons. Agilent quadrupole MS resolves to about 0.1 Da, Waters to
+            between about 0.03 and 0.07 Da depending on the run.
+
+            A channel appears only if a spacing describes it, so the dict can
+            be empty, or smaller than the run's MS channel count, for a run
+            whose MS was parsed. Selected-ion (SIM) channels are absent,
+            because the gaps between chosen ions are the method's choice and
+            not a grid, as are calibrated centroids. Key the result rather than
+            assuming a channel is in it::
+
+                spacing = rb.mz_resolution(path).get(name)
 
     """
     import warnings
@@ -510,8 +527,13 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         # decide which channels are parsed at all, not just how: Agilent ICP-MS
         # is gated behind `hrms` and yet comes back on a shared axis, so a
         # probe without the flag would not see it in either read.
+        # Labels only: _mz_spacings reads nothing but the m/z axis, and the
+        # intensity grid at this width is num_times x num_ylabels, which dwarfs
+        # the file it came from (an 8.7 MB run peaked at 350 MB, and a long run
+        # extrapolates to tens of gigabytes) purely to be discarded.
         return read(path, bin_width=1e-3, display_precision=4, hrms=hrms,
-                    centroid=centroid, requested_files=requested_files)
+                    centroid=centroid, requested_files=requested_files,
+                    _labels_only=True)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

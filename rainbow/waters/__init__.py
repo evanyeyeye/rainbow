@@ -7,7 +7,7 @@ from rainbow.datadirectory import DataDirectory
 
 
 def read(path, display_precision='auto', requested_files=None,
-         bin_width=None, **removed):
+         bin_width=None, labels_only=False, **removed):
     """
     Reads a Waters .raw directory.
 
@@ -32,7 +32,7 @@ def read(path, display_precision='auto', requested_files=None,
         bin_width = 1.0
     datafiles = []
     datafiles.extend(masslynx.parse_spectrum(
-        path, display_precision, bin_width, requested_files))
+        path, display_precision, bin_width, requested_files, labels_only))
     datafiles.extend(masslynx.parse_analog(path, requested_files))
 
     metadata = masslynx.parse_metadata(path)

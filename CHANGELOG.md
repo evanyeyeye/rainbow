@@ -75,6 +75,24 @@ to [Semantic Versioning](https://semver.org/).
   channel.
 
 ### Changed
+- **A diode-array channel in a 179/181 `.ch` container is now read as UV, not
+  FID. Breaking:** the container version says how the data is encoded, not what
+  measured it, and Chemstation writes both kinds into the same one. The
+  detector now comes from the channel's own signal string, so a channel
+  reporting `DAD1A,Sig=210,4 Ref=off` in mAU is ultraviolet absorbance at
+  210 nm rather than a flame ionization trace in pA. `DataDirectory.detectors`
+  and `by_detector` change accordingly for such a run, and
+  `get_detector('FID')` on one now raises where it previously returned the
+  diode-array channels. Those channels also gain a `wavelength` ylabel and
+  their optics in metadata. Reading the detector from the version byte was also
+  what sent whole liquid chromatography runs out as gas chromatography
+  documents measuring picoamps.
+- **Chemstation header strings are decoded as UTF-16 rather than by taking
+  every other byte.** The two agree while the text is ASCII; for anything else
+  the mangled bytes were not valid UTF-8, so the field was dropped and came
+  back empty. Headers written in any other script now read correctly, which
+  can add `notebook`, `method`, and similar fields to `DataFile.metadata` for
+  runs where they were previously missing.
 - **`import rainbow` is about five times faster** (roughly 165 ms to 35 ms on
   the machine this was measured on). `pandas`, needed only for the Waters
   transition table, was imported at module load and was by a wide margin the
@@ -190,7 +208,11 @@ to [Semantic Versioning](https://semver.org/).
   sensible bin was reported as too fine.
 - **`rb.mz_resolution(path, centroid=True)`** can inspect a centroid run. MS
   data in an `MSPeak.bin` is parsed only under that flag, so such a run
-  previously came back as though it had no MS at all.
+  previously came back as though it had no MS at all. A quantized centroid
+  (an uncalibrated quadrupole, whose peak m/z sit near nominal mass) reports
+  its quantization. A calibrated TOF centroid is parsed but reports nothing:
+  its peaks carry continuous m/z, so there is no lattice to state, and the
+  channel is absent from the result rather than given an invented number.
 - **`DataDirectory.list_analog()` no longer raises on a MassHunter DAD's
   telemetry.** It read a trace's description from a key MassHunter does not
   use, so listing the analog traces of a run acquired with a DAD raised

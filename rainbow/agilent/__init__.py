@@ -7,7 +7,8 @@ from rainbow.datasequence import DataSequence
 
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,
-         telemetry=False, centroid=False, bin_width=None, **removed):
+         telemetry=False, centroid=False, bin_width=None, labels_only=False,
+         **removed):
     """
     Reads an Agilent .D directory or .dx archive.
 
@@ -44,7 +45,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
 
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(
-        path, display_precision, bin_width, requested_files))
+        path, display_precision, bin_width, requested_files, labels_only))
     # MassHunter is always consulted, not only under the MS flags: a .d may also
     # hold DAD data, which is parsed unconditionally the way the Chemstation UV
     # formats are. The MS parsing inside stays gated on hrms/centroid.
