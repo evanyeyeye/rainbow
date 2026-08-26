@@ -43,6 +43,11 @@ _MS_INT_POW8 = np.array([1, 8, 64, 512], dtype=np.uint32)
 _SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
 _REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
 
+# Not every single-wavelength channel writes a Sig= clause. A variable- or
+# multi-wavelength detector often spells the same setting out, e.g.
+# "VWD1A, Wavelength=254 nm", with no bandwidth to report.
+_WAVELENGTH_RE = re.compile(r'Wavelength\s*=\s*([\d.]+)', re.IGNORECASE)
+
 
 def parse_optics(description):
     """
@@ -171,7 +176,7 @@ def parse_ch(path):
         return None
 
 
-def _detector_from_signal(metadata, default=None):
+def _detector_from_signal(metadata, default=None, uv_only=False):
     """
     The detector and ylabel a channel's own ``signal`` string reports.
 
@@ -181,16 +186,18 @@ def _detector_from_signal(metadata, default=None):
     tells them apart - "DAD1A,Sig=210,4  Ref=off" against "Front Signal" - so
     both parsers ask it, and the version byte decides nothing but the layout.
 
+    Set ``uv_only`` for a container that holds no flame ionization data, where
+    a settings clause in any spelling is an optical one.
+
     Returns ``(detector, ylabel)``, falling back to ``default`` and an empty
     ylabel for a signal that names no detector rainbow knows.
     """
     signal = metadata.get('signal') or ''
-    # The Sig= clause, not a bare "=". On the 179/181 container this call
-    # decides FID against UV, and so decides whether the whole run is exported
-    # as gas or liquid chromatography: any "=" at all would read a gain setting
-    # ("FID1A, Front Signal (Gain=1)") as a wavelength and publish picoamps as
-    # milli-absorbance. Matching the clause that actually carries the optics
-    # also means a UV channel always has a wavelength to report.
+    # The Sig= clause, not a bare "=". Where this call decides FID against UV
+    # it decides whether the whole run is exported as gas or liquid
+    # chromatography, so any "=" at all would read a gain setting ("FID1A,
+    # Front Signal (Gain=1)") as a wavelength and publish picoamps as
+    # milli-absorbance.
     sig = _SIG_RE.search(signal)
     if sig:
         # Surface the wavelength settings (shared with the .dx parser).
@@ -198,6 +205,19 @@ def _detector_from_signal(metadata, default=None):
         return 'UV', sig.group(1)
     if 'ADC' in signal:
         return ('ELSD' if 'CHANNEL' in signal else 'CAD'), ''
+    if uv_only:
+        # The 130/30 container holds no flame ionization channel, so the
+        # ambiguity that forces the Sig= clause on 179/181 does not arise here:
+        # a variable-wavelength channel spelling its setting out, "VWD1A,
+        # Wavelength=254 nm", is a UV channel and has to stay one. Typing it as
+        # nothing drops it out of the read entirely - it lands in analog rather
+        # than datafiles, so the detector and the export never see it.
+        wavelength = _WAVELENGTH_RE.search(signal)
+        if wavelength:
+            metadata['wavelength'] = float(wavelength.group(1))
+            return 'UV', wavelength.group(1)
+        if '=' in signal:
+            return 'UV', signal.split('=')[1].split(',')[0]
     return default, ''
 
 
@@ -379,7 +399,7 @@ def parse_ch_other(path, head):
     f.close()
 
     # Determine the detector and ylabels using metadata.
-    detector, ylabel = _detector_from_signal(metadata)
+    detector, ylabel = _detector_from_signal(metadata, uv_only=True)
     ylabels = np.array([ylabel])
 
     return DataFile(path, detector, times, ylabels, data, metadata)

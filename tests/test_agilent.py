@@ -92,6 +92,52 @@ def test_detector_is_read_from_the_wavelength_clause(signal, expected):
     assert ("wavelength" in metadata) == (expected[0] == "UV")
 
 
+@pytest.mark.parametrize(
+    "signal,expected",
+    [
+        # The 130/30 container holds no FID, so a settings clause in a
+        # spelling other than Sig= is still an optical one. Requiring Sig=
+        # here typed these as nothing, which is not a milder failure than
+        # typing them wrong: a detector of None routes the channel into
+        # analog, out of datafiles, out of by_detector, and out of the export.
+        ("VWD1A, Wavelength=254 nm", ("UV", "254")),
+        ("MWD1A, Wavelength=210.0 nm", ("UV", "210.0")),
+        ("Wavelength = 280 nm", ("UV", "280")),
+        # A clause rainbow cannot read a number out of still names a UV
+        # channel, as it did before, but invents no wavelength for it.
+        ("VWD1A, Signal=A", ("UV", "A")),
+        # And the detectors that name themselves are unaffected.
+        ("ADC1 CHANNEL A", ("ELSD", "")),
+        ("DAD1A,Sig=210,4  Ref=off", ("UV", "210")),
+        ("RID1A, Refractive Index Signal", (None, "")),
+    ],
+)
+def test_a_uv_only_container_reads_a_wavelength_in_any_spelling(
+        signal, expected):
+    from rainbow.agilent.chemstation import _detector_from_signal
+
+    metadata = {"signal": signal}
+    assert _detector_from_signal(metadata, uv_only=True) == expected
+    # The spelled-out wavelength reaches the ASM export the same way the Sig=
+    # clause does.
+    if "254" in signal:
+        assert metadata["wavelength"] == 254.0
+    if signal.endswith("Signal=A"):
+        assert "wavelength" not in metadata
+
+
+def test_the_uv_only_reading_is_not_applied_where_fid_lives():
+    # The same leniency on the 179/181 container is the bug it was written to
+    # fix: there a gain setting would be read as a wavelength, and the run
+    # would be published as liquid chromatography measuring absorbance.
+    from rainbow.agilent.chemstation import _detector_from_signal
+
+    signal = {"signal": "FID1A, Front Signal (Gain=1)"}
+    assert _detector_from_signal(signal, default="FID") == ("FID", "")
+    assert _detector_from_signal(signal, default="FID", uv_only=True) \
+        == ("UV", "1)")
+
+
 def test_header_strings_decode_beyond_ascii():
     # Chemstation header slots with a gap of two are UTF-16LE. Reading every
     # other byte agrees with a proper decode only while the text is ASCII; for
