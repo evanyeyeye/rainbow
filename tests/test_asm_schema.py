@@ -49,6 +49,34 @@ pytestmark = pytest.mark.skipif(
     reason="set RAINBOW_TEST_ASM_SCHEMA=1 to run the ASM schema test")
 
 
+# Most vendor formats record local wall clock with no UTC offset, and rainbow
+# will not invent one (see rainbow.asm._iso_timestamp), so its default output
+# carries offset-less timestamps. RFC 3339, which is what the schema's
+# `format: date-time` means, requires an offset. These fixtures are therefore
+# exported with an explicit offset, which is what a caller who knows where the
+# instrument was would do. The default is covered separately below.
+_TZ = "+00:00"
+
+
+def _format_checker():
+    """A format checker that actually checks ``date-time``.
+
+    jsonschema treats ``format`` as an annotation unless a checker is supplied,
+    and even with one it silently passes any format whose checker is not
+    installed. So a bare ``FormatChecker()`` looks like it validates timestamps
+    while checking nothing at all, which is how every non-ISO ``measurement
+    time`` rainbow used to emit passed this suite. ``date-time`` needs
+    rfc3339-validator, which the ``validate`` extra brings.
+    """
+    from jsonschema import FormatChecker
+
+    checker = FormatChecker()
+    if "date-time" not in checker.checkers:
+        pytest.skip("date-time format checking needs rfc3339-validator: "
+                    "pip install -e .[validate]")
+    return checker
+
+
 def _validator(url):
     """A validator for the embed schema at ``url``, skipping if unavailable."""
     pytest.importorskip("jsonschema", reason="pip install -e .[validate]")
@@ -63,7 +91,8 @@ def _validator(url):
         except Exception as error:  # network down, file moved, etc.
             pytest.skip("could not fetch Allotrope schema {}: {}".format(
                 url, error))
-    return Draft202012Validator(json.loads(cache.read_text()))
+    return Draft202012Validator(json.loads(cache.read_text()),
+                                format_checker=_format_checker())
 
 
 def _lc_validator():
@@ -87,7 +116,8 @@ def _assert_conforms(validator, document):
 
 
 def test_dx_conforms_to_lc_schema():
-    _assert_conforms(_lc_validator(), rb.read("tests/inputs/teal.dx").to_asm())
+    _assert_conforms(_lc_validator(),
+                     rb.read("tests/inputs/teal.dx").to_asm(timezone=_TZ))
 
 
 def _rich_lc_document():
@@ -119,7 +149,7 @@ def _rich_lc_document():
                    "area_percent": 60.0, "height_percent": 55.0,
                    "start_time": 1.4, "end_time": 1.6, "symmetry": 0.95}],
     }]
-    return datadir.to_asm()
+    return datadir.to_asm(timezone=_TZ)
 
 
 def test_rich_envelope_conforms_to_lc_schema():
@@ -132,30 +162,35 @@ def test_waters_uv_conforms_to_lc_schema():
     # violet.raw's _CHRO UV chromatograms report absorbance in AU, but the LC
     # schema pins the absorbance measure to mAU. The export must normalize AU to
     # mAU (and scale the values), or these measurements fail validation.
-    _assert_conforms(_lc_validator(), rb.read("tests/inputs/violet.raw").to_asm())
+    _assert_conforms(_lc_validator(),
+                     rb.read("tests/inputs/violet.raw").to_asm(timezone=_TZ))
 
 
 def test_sim_ms_conforms_to_lc_schema():
     # green.D's single-ion (SIM) MS channels export as mass chromatogram cubes,
     # which the liquid-chromatography ADM admits.
-    _assert_conforms(_lc_validator(), rb.read("tests/inputs/green.D").to_asm())
+    _assert_conforms(_lc_validator(),
+                     rb.read("tests/inputs/green.D").to_asm(timezone=_TZ))
 
 
 def test_cad_electric_current_conforms_to_lc_schema():
     # red.D's CAD channel now exports as an electric-current (pA) chromatogram,
     # a faithful generic detector cube the LC ADM admits (no longer absorbance).
-    _assert_conforms(_lc_validator(), rb.read("tests/inputs/red.D").to_asm())
+    _assert_conforms(_lc_validator(),
+                     rb.read("tests/inputs/red.D").to_asm(timezone=_TZ))
 
 
 def test_elsd_intensity_conforms_to_lc_schema():
     # orange.D's ELSD channel exports as an intensity (RLU) chromatogram.
-    _assert_conforms(_lc_validator(), rb.read("tests/inputs/orange.D").to_asm())
+    _assert_conforms(_lc_validator(),
+                     rb.read("tests/inputs/orange.D").to_asm(timezone=_TZ))
 
 
 def test_masshunter_dad_conforms():
     # bronze.D reaches the same cubes through the MassHunter DAD parser rather
     # than the Chemstation one, so it is worth conforming in its own right.
-    _assert_conforms(_lc_validator(), rb.read("tests/inputs/bronze.D").to_asm())
+    _assert_conforms(_lc_validator(),
+                     rb.read("tests/inputs/bronze.D").to_asm(timezone=_TZ))
 
 
 def _peaks_on(channel):
@@ -171,7 +206,7 @@ def test_cad_with_peaks_relabels_and_conforms_to_lc_schema():
     # the peak list can ride; the result still validates.
     datadir = rb.read("tests/inputs/red.D")
     datadir.peaks = _peaks_on("ADC1A.CH")
-    _assert_conforms(_lc_validator(), datadir.to_asm())
+    _assert_conforms(_lc_validator(), datadir.to_asm(timezone=_TZ))
 
 
 # --- Gas chromatography (FID routing) ---
@@ -187,7 +222,7 @@ def _rich_gc_document(fixture, ** to_asm_kwargs):
     datadir = rb.read(fixture)
     datadir.metadata["injection_volume"] = {"value": 1.0, "unit": "µL"}
     datadir.metadata["acq_method"] = "TEST.M"
-    return datadir.to_asm(**to_asm_kwargs)
+    return datadir.to_asm(timezone=_TZ, **to_asm_kwargs)
 
 
 def test_fid_gc_run_conforms_to_gc_schema():
@@ -233,4 +268,47 @@ def test_fid_with_peaks_relabels_and_conforms_to_gc_schema():
     datadir = rb.read("tests/inputs/pink.D")
     datadir.metadata["injection_volume"] = {"value": 1.0, "unit": "µL"}
     datadir.peaks = _peaks_on("DAD1A.ch")
-    _assert_conforms(_gc_validator(), datadir.to_asm())
+    _assert_conforms(_gc_validator(), datadir.to_asm(timezone=_TZ))
+
+
+# --- Timestamps ---
+
+
+def test_the_format_checker_actually_rejects_a_bad_timestamp():
+    """ The guard that the old suite lacked.
+
+    Without a format checker, jsonschema treats `format` as an annotation and
+    every timestamp passes, however malformed. This asserts the checker in use
+    really does reject one, so the suite cannot go back to silently validating
+    nothing.
+    """
+    document = rb.read("tests/inputs/red.D").to_asm(timezone=_TZ)
+    measurements = (document["liquid chromatography aggregate document"]
+                    ["liquid chromatography document"][0]
+                    ["measurement aggregate document"]["measurement document"])
+    measurements[0]["measurement time"] = "27-Feb-18, 10:11:50"
+    errors = list(_lc_validator().iter_errors(document))
+    assert errors, "a vendor-format timestamp must not validate"
+    assert any("measurement time" in "/".join(map(str, e.absolute_path))
+               for e in errors)
+
+
+def test_the_default_export_is_iso_but_carries_no_invented_offset():
+    """ rainbow will not fabricate a UTC offset the instrument never recorded.
+
+    Chemstation records local wall clock with no zone, so the default export is
+    ISO 8601 without an offset. That is deliberately not strict RFC 3339, which
+    is what `format: date-time` means, so a strict validator flags it, and only
+    it. A caller who knows where the instrument was passes timezone= (as every
+    other test here does) and gets a fully conforming document.
+    """
+    document = rb.read("tests/inputs/red.D").to_asm()
+    errors = list(_lc_validator().iter_errors(document))
+    flagged = {"/".join(map(str, e.absolute_path)).rsplit("/", 1)[-1]
+               for e in errors}
+    # The timestamps, and nothing else: the offset is the only thing missing.
+    assert flagged, "the offset-less default should be flagged"
+    assert flagged <= {"measurement time", "injection time"}, flagged
+    # Supplying the offset makes the same run fully conforming.
+    assert not list(_lc_validator().iter_errors(
+        rb.read("tests/inputs/red.D").to_asm(timezone=_TZ)))

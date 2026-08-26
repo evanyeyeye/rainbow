@@ -142,10 +142,15 @@ def test_injection_named_from_sample_identifier_when_present():
 def test_envelope_fields_round_trip():
     # red.D carries the envelope fields brown.D lacks; confirm they survive
     # .D -> ASM -> objects.
+    from rainbow.asm import _iso_timestamp
     original = rb.read("tests/inputs/red.D")
     back = rb.from_asm(original.to_asm())
     assert back.metadata["sample"] == original.metadata["sample"]
-    assert back.metadata["date"] == original.metadata["date"]
+    # The date comes back as the ISO 8601 timestamp ASM requires, not the
+    # Chemstation wall-clock string it went out as. Same instant, normalized:
+    # the vendor spelling is not a shape any ASM reader could be asked to parse.
+    assert back.metadata["date"] == _iso_timestamp(original.metadata["date"])
+    assert back.metadata["date"] == "2018-02-27T10:11:50"
     assert str(back.metadata["vialpos"]) == str(original.metadata["vialpos"])
     assert back.metadata["injection_volume"] == \
         original.metadata["injection_volume"]

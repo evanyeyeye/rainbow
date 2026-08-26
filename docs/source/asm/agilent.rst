@@ -72,7 +72,8 @@ What rainbow reads from an Agilent run fills the ASM envelope as follows:
    * - ``vialpos``
      - the sample's ``location identifier``
    * - ``date``
-     - the measurement time and the injection time
+     - the measurement time and the injection time, converted from the vendor
+       spelling to ISO 8601 (see :ref:`asm-timestamps`)
    * - ``injection_volume``
      - the injection document's autosampler volume setting (uL stored as mm^3)
    * - ``operator``

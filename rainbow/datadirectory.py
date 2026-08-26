@@ -148,7 +148,7 @@ class DataDirectory:
         self.get_file(filename).plot(label, **kwargs)
 
     def to_asm(self, export_dad_cube=True, wavelengths=None, ions=None,
-               decimal_places=None, technique=None):
+               decimal_places=None, technique=None, timezone=None):
         """
         Returns an Allotrope Simple Model (ASM) document for this directory.
 
@@ -179,10 +179,11 @@ class DataDirectory:
         """
         from rainbow import asm
         return asm.to_asm(self, export_dad_cube, wavelengths, ions,
-                          decimal_places, technique)
+                          decimal_places, technique, timezone)
 
     def export_asm(self, filename, export_dad_cube=True, wavelengths=None,
-                   ions=None, decimal_places=None, technique=None, indent=2):
+                   ions=None, decimal_places=None, technique=None,
+                   timezone=None, indent=2):
         """
         Writes an Allotrope Simple Model (ASM) JSON document for this directory.
 
@@ -212,4 +213,4 @@ class DataDirectory:
         from rainbow import asm
         with open(filename, 'w', encoding="utf-8") as f:
             asm.export_asm(self, f, export_dad_cube, wavelengths, ions,
-                           decimal_places, technique, indent)
+                           decimal_places, technique, timezone, indent)

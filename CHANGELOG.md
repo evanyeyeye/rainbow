@@ -112,6 +112,29 @@ to [Semantic Versioning](https://semver.org/).
   instrument rather than the quantity.
 
 ### Fixed
+- **ASM timestamps are ISO 8601.** `measurement time` and `injection time`
+  passed the vendor's own spelling straight through, so an exported document
+  carried values like `27-Feb-18, 10:11:50` where the Allotrope core schema
+  types an ISO 8601 timestamp ("All timestamps MUST be in ISO8601 date/time
+  format"). Every vendor path was affected except OpenLab `.dx`, which already
+  stores ISO. The ChemStation, Waters, and Agilent sequence spellings are now
+  converted; one rainbow cannot parse is omitted rather than passed through,
+  since a vendor-format string there is a value no ASM reader can read.
+
+  Most of those formats record local wall clock with no UTC offset, and rainbow
+  will not invent one: a fabricated offset would move the recorded instant by
+  up to a day. So the default output is ISO 8601 without an offset, which is
+  not strict RFC 3339 (what `format: date-time` means). Pass the new
+  `timezone=` argument to `to_asm`, `export_asm`, and their sequence
+  equivalents to supply the offset and get a fully conforming document; an
+  offset the source did record is never overridden. See the ASM documentation.
+- **The ASM conformance test now checks string formats.** It built its
+  validator without a format checker, and jsonschema treats `format` as an
+  annotation unless you supply one, so the suite validated structure and never
+  checked a single timestamp. That is why the non-ISO timestamps above passed
+  it. The `validate` extra now also installs `rfc3339-validator`, without which
+  jsonschema silently skips `date-time` even when a checker is supplied, and
+  the test skips loudly rather than passing vacuously if it is missing.
 - **A non-ultraviolet detector module is no longer reported as an ultraviolet
   one** in a document's instrument inventory. Any module whose type was
   `detector`, or whose name merely contained the word, was filed under the

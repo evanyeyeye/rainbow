@@ -148,3 +148,57 @@ The spectrum cube is the same, with a second ``wavelength`` dimension and a
 single flat ``measures`` array spanning the whole grid. Because the structure is
 fully self-described, :code:`rb.from_asm` can read either one straight back into
 a rainbow ``DataFile``; see :ref:`asm-roundtrip`.
+
+.. _asm-timestamps:
+
+Timestamps and time zones
+-------------------------
+
+ASM types every timestamp as ISO 8601, so rainbow converts what the vendor
+recorded. The vendors do not agree on a format, and rainbow reads all of them:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 34 26
+
+   * - What the file holds
+     - What rainbow emits
+     - Source
+   * - ``27-Feb-18, 10:11:50``
+     - ``2018-02-27T10:11:50``
+     - ChemStation channel
+   * - ``06-Aug-2021 10:52:20``
+     - ``2021-08-06T10:52:20``
+     - Waters ``_HEADER.TXT``
+   * - ``17 Dec 19  10:04 am``
+     - ``2019-12-17T10:04:00``
+     - Agilent sequence
+   * - ``3 Feb 22  11:22 am -0500``
+     - ``2022-02-03T11:22:00-05:00``
+     - Agilent sequence, with an offset
+   * - ``2025-06-19T20:30:07.2297248-04:00``
+     - ``2025-06-19T20:30:07.229724-04:00``
+     - OpenLab ``.dx``, already ISO
+
+Only two of those carry a UTC offset. The rest are local wall clock with no
+zone at all, because that is all the instrument wrote down.
+
+**rainbow does not invent one.** A fabricated offset would move the recorded
+instant by up to a day, and rainbow has no idea where the instrument was. So
+where the source has no offset, the timestamp is emitted without one.
+
+That is honest, and it is valid ISO 8601, but it is not valid **RFC 3339**,
+which is what the schema's ``format: date-time`` means and what the published
+Allotrope examples all use. A validator configured to check formats will flag
+those timestamps, and only those. If you know where the instrument was, say so
+and the document becomes fully conforming:
+
+.. code-block:: python
+
+   datadir.to_asm(timezone="-05:00")   # or "+00:00", or "Z"
+
+An offset the source *did* record always wins: passing ``timezone`` fills in
+what is missing, it never overrides what the instrument said.
+
+A timestamp rainbow cannot parse at all is left out rather than passed through,
+since a vendor-format string in that field is a value no ASM reader can read.

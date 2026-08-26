@@ -78,7 +78,7 @@ class DataSequence:
             f"Injections ({len(self.injections)}):\n{injections}\n"
 
     def to_asm(self, export_dad_cube=True, wavelengths=None, ions=None,
-               decimal_places=None, technique=None):
+               decimal_places=None, technique=None, timezone=None):
         """
         Returns an Allotrope Simple Model (ASM) document for this sequence.
 
@@ -115,11 +115,11 @@ class DataSequence:
         """
         from rainbow import asm
         return asm.sequence_to_asm(self, export_dad_cube, wavelengths, ions,
-                                   decimal_places, technique)
+                                   decimal_places, technique, timezone)
 
     def export_asm(self, filename, export_dad_cube=True, wavelengths=None,
-                   ions=None, decimal_places=None, technique=None, indent=2,
-                   per_injection=False):
+                   ions=None, decimal_places=None, technique=None,
+                   timezone=None, indent=2, per_injection=False):
         """
         Writes an Allotrope Simple Model (ASM) JSON document for this sequence.
 
@@ -160,7 +160,8 @@ class DataSequence:
         if per_injection:
             return asm.sequence_export_asm_per_injection(
                 self, filename, export_dad_cube, wavelengths, ions,
-                decimal_places, technique, indent)
+                decimal_places, technique, timezone, indent)
         with open(filename, 'w', encoding="utf-8") as f:
             asm.sequence_export_asm(self, f, export_dad_cube, wavelengths,
-                                    ions, decimal_places, technique, indent)
+                                    ions, decimal_places, technique, timezone,
+                                    indent)

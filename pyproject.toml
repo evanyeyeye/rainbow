@@ -43,8 +43,10 @@ test = ["pytest", "matplotlib", "pandas"]
 hrms = ["python-lzf"]
 # For the opt-in ASM schema-conformance test (see tests/test_asm_schema.py).
 # jsonschema >= 4.18 pulls in the `referencing` registry used to resolve the
-# Allotrope schema's cross-references.
-validate = ["jsonschema>=4.18"]
+# Allotrope schema's cross-references. rfc3339-validator is what makes
+# jsonschema's `date-time` format check real: without it, jsonschema accepts any
+# string in a timestamp field, so the conformance test silently checks nothing.
+validate = ["jsonschema>=4.18", "rfc3339-validator"]
 # DataFile.plot draws with matplotlib. Reading a file never needs it, and it is
 # the single heaviest thing rainbow can import, so it is not installed by
 # default; plot() says so if it is missing.

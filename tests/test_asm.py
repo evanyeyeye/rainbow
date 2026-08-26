@@ -205,10 +205,17 @@ def test_detector_wavelength_setting(teal):
 
 
 def test_sample_and_time_from_metadata(teal):
+    from datetime import datetime
     measurement = _measurements(teal.to_asm())[0]
     # teal is a standby flush, so the sample name is empty -> default.
     assert measurement["sample document"]["sample identifier"] == "unknown"
-    assert measurement["measurement time"] == teal.metadata["date"]
+    # .dx already stores ISO 8601, so the export carries the same instant. The
+    # strings are not identical: .NET writes 7 fractional digits and ISO 8601
+    # allows at most 6, so the export normalizes to microseconds.
+    emitted = datetime.fromisoformat(measurement["measurement time"])
+    assert emitted == datetime.fromisoformat(
+        teal.metadata["date"][:26] + teal.metadata["date"][27:])
+    assert measurement["measurement time"].endswith("-04:00")
 
 
 def test_export_asm_writes_file(teal, tmp_path):
@@ -747,3 +754,65 @@ def test_the_real_cad_instrument_inventory_agrees_with_its_cube():
     assert types["Analog/digital converter"] == "liquid chromatography detector"
     assert "ultraviolet detector" not in \
         {v for k, v in types.items() if k != "DAD"}
+
+
+# ASM types every timestamp as ISO 8601, but the vendors write wall clock in
+# their own formats. These are the shapes rainbow's parsers actually hand back.
+
+@pytest.mark.parametrize("vendor,expected", [
+    ("27-Feb-18, 10:11:50", "2018-02-27T10:11:50"),      # Chemstation .ch/.uv
+    ("14-Nov-19, 15:08:08", "2019-11-14T15:08:08"),
+    ("06-Aug-2021 10:52:20", "2021-08-06T10:52:20"),     # Waters _HEADER.TXT
+    ("17 Dec 19  10:04 am", "2019-12-17T10:04:00"),      # Agilent sequence
+    ("3 Feb 22  11:22 am -0500",                         # ... with an offset
+     "2022-02-03T11:22:00-05:00"),
+    ("2025-06-19T20:30:07.2297248-04:00",                # OpenLab .dx, already
+     "2025-06-19T20:30:07.229724-04:00"),                # ISO (.NET's 7 digits)
+])
+def test_vendor_timestamps_become_iso_8601(vendor, expected):
+    from rainbow.asm import _iso_timestamp
+    assert _iso_timestamp(vendor) == expected
+
+
+def test_an_unreadable_timestamp_is_dropped_not_passed_through():
+    # Emitting the vendor string would put a value in the document that no ASM
+    # reader can parse; the field is optional, so it is omitted instead.
+    from rainbow.asm import _iso_timestamp
+    for value in ("not a date", "", None, 17, "99-Zzz-99"):
+        assert _iso_timestamp(value) is None
+
+
+def test_timezone_fills_in_a_missing_offset_but_never_overrides_one():
+    from rainbow.asm import _iso_timestamp
+    # The source recorded no zone, so the caller's offset is used.
+    assert _iso_timestamp("27-Feb-18, 10:11:50", "-05:00") == \
+        "2018-02-27T10:11:50-05:00"
+    # The source recorded one, so it wins: it is what the instrument said.
+    assert _iso_timestamp("3 Feb 22  11:22 am -0500", "+09:00") == \
+        "2022-02-03T11:22:00-05:00"
+
+
+def test_timezone_option_is_validated():
+    from rainbow.asm import _utc_offset
+    assert _utc_offset(None) is None
+    assert _utc_offset("Z") == "+00:00"
+    assert _utc_offset("-0500") == "-05:00"
+    assert _utc_offset("+09:00") == "+09:00"
+    for bad in ("EST", "5", "+5:00", 3, "-25:00 extra"):
+        with pytest.raises(Exception, match="timezone must be"):
+            _utc_offset(bad)
+
+
+def test_export_emits_iso_timestamps_for_every_vendor():
+    # The end-to-end result: no fixture exports a vendor-format timestamp.
+    import json
+    import re
+    for fixture in ("red.D", "green.D", "pink.D", "teal.dx", "violet.raw",
+                    "yellow.D", "orange.D"):
+        document = json.dumps(rb.read("tests/inputs/" + fixture).to_asm())
+        stamps = re.findall(r'"(?:measurement|injection) time": "([^"]*)"',
+                            document)
+        assert stamps, fixture
+        for stamp in stamps:
+            assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", stamp), \
+                (fixture, stamp)

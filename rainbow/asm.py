@@ -236,7 +236,7 @@ _DETECTOR_CUBES = {
 
 
 def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
-           decimal_places=None, technique=None):
+           decimal_places=None, technique=None, timezone=None):
     """
     Builds an ASM liquid- or gas-chromatography document from a DataDirectory.
 
@@ -270,7 +270,8 @@ def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
         dict: The ASM document.
 
     """
-    options = _Options(export_dad_cube, wavelengths, ions, decimal_places)
+    options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
+                       timezone)
     metadata = datadir.metadata
     technique = _technique(datadir.datafiles, metadata, technique)
     return _aggregate_document(
@@ -280,7 +281,8 @@ def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
 
 
 def sequence_to_asm(datasequence, export_dad_cube=True, wavelengths=None,
-                    ions=None, decimal_places=None, technique=None):
+                    ions=None, decimal_places=None, technique=None,
+                    timezone=None):
     """
     Builds one ASM document from a DataSequence.
 
@@ -312,7 +314,8 @@ def sequence_to_asm(datasequence, export_dad_cube=True, wavelengths=None,
         dict: The ASM document.
 
     """
-    options = _Options(export_dad_cube, wavelengths, ions, decimal_places)
+    options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
+                       timezone)
     metadata = _sequence_metadata(datasequence)
     technique = _technique(
         _sequence_datafiles(datasequence), metadata, technique)
@@ -387,21 +390,21 @@ def _technique(datafiles, metadata, override=None):
 
 
 def to_asm_str(datadir, export_dad_cube=True, wavelengths=None, ions=None,
-               decimal_places=None, technique=None, indent=2):
+               decimal_places=None, technique=None, timezone=None, indent=2):
     """Returns the DataDirectory ASM document as a JSON string."""
     return json.dumps(
         to_asm(datadir, export_dad_cube, wavelengths, ions, decimal_places,
-               technique),
+               technique, timezone),
         indent=indent, ensure_ascii=False)
 
 
 def sequence_to_asm_str(datasequence, export_dad_cube=True, wavelengths=None,
                         ions=None, decimal_places=None, technique=None,
-                        indent=2):
+                        timezone=None, indent=2):
     """Returns the DataSequence ASM document as a JSON string."""
     return json.dumps(
         sequence_to_asm(datasequence, export_dad_cube, wavelengths, ions,
-                        decimal_places, technique),
+                        decimal_places, technique, timezone),
         indent=indent, ensure_ascii=False)
 
 
@@ -412,14 +415,16 @@ _DOCUMENTS_PLACEHOLDER = "@@RAINBOW_INJECTION_DOCUMENTS@@"
 
 
 def export_asm(datadir, fileobj, export_dad_cube=True, wavelengths=None,
-               ions=None, decimal_places=None, technique=None, indent=2):
+               ions=None, decimal_places=None, technique=None,
+               timezone=None, indent=2):
     """Streams a DataDirectory ASM document to an open text file.
 
     Equivalent to writing :func:`to_asm_str`, but the (potentially large) data
     cubes are serialized one injection document at a time so the whole JSON
     string is never held in memory. See :func:`to_asm` for the arguments.
     """
-    options = _Options(export_dad_cube, wavelengths, ions, decimal_places)
+    options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
+                       timezone)
     metadata = datadir.metadata
     technique = _technique(datadir.datafiles, metadata, technique)
     _stream_aggregate(fileobj, technique, _device_system(metadata, technique),
@@ -428,7 +433,7 @@ def export_asm(datadir, fileobj, export_dad_cube=True, wavelengths=None,
 
 def sequence_export_asm(datasequence, fileobj, export_dad_cube=True,
                         wavelengths=None, ions=None, decimal_places=None,
-                        technique=None, indent=2):
+                        technique=None, timezone=None, indent=2):
     """Streams a DataSequence ASM document to an open text file.
 
     Like :func:`sequence_to_asm_str`, but each injection document is built and
@@ -436,7 +441,8 @@ def sequence_export_asm(datasequence, fileobj, export_dad_cube=True,
     whole multi-gigabyte document at once. See :func:`sequence_to_asm` for the
     arguments.
     """
-    options = _Options(export_dad_cube, wavelengths, ions, decimal_places)
+    options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
+                       timezone)
     metadata = _sequence_metadata(datasequence)
     technique = _technique(
         _sequence_datafiles(datasequence), metadata, technique)
@@ -449,7 +455,8 @@ def sequence_export_asm(datasequence, fileobj, export_dad_cube=True,
 def sequence_export_asm_per_injection(datasequence, directory,
                                       export_dad_cube=True, wavelengths=None,
                                       ions=None, decimal_places=None,
-                                      technique=None, indent=2):
+                                      technique=None, timezone=None,
+                                      indent=2):
     """Streams one standalone ASM document per injection into ``directory``.
 
     Instead of bundling a long run into a single multi-gigabyte file, each
@@ -458,7 +465,8 @@ def sequence_export_asm_per_injection(datasequence, directory,
     written to ``<directory>/<injection name>.asm.json``. The directory is
     created if needed. Returns the list of paths written, in injection order.
     """
-    options = _Options(export_dad_cube, wavelengths, ions, decimal_places)
+    options = _Options(export_dad_cube, wavelengths, ions, decimal_places,
+                       timezone)
     metadata = _sequence_metadata(datasequence)
     technique = _technique(
         _sequence_datafiles(datasequence), metadata, technique)
@@ -552,6 +560,96 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
 _WAVELENGTH_TOLERANCE = 1.0
 
 
+# The wall-clock formats the vendor parsers hand back, tried in order. Only the
+# Agilent sequence format carries a UTC offset; the rest record local time with
+# no zone at all, which is the whole reason `timezone=` exists.
+#
+#   27-Feb-18, 10:11:50         Chemstation .ch/.uv/.ms
+#   06-Aug-2021 10:52:20        Waters _HEADER.TXT
+#   3 Feb 22  11:22 am -0500    Agilent sequence (the one with an offset)
+#   17 Dec 19  10:04 am         Agilent sequence, offset absent
+#
+# An Agilent OpenLab .dx already stores ISO 8601 and is handled separately.
+_TIMESTAMP_FORMATS = (
+    "%d-%b-%y, %H:%M:%S",
+    "%d-%b-%Y %H:%M:%S",
+    "%d-%b-%y %H:%M:%S",
+    "%d %b %y  %I:%M %p %z",
+    "%d %b %Y  %I:%M %p %z",
+    "%d %b %y  %I:%M %p",
+    "%d %b %Y  %I:%M %p",
+)
+
+# A .NET timestamp carries 7 fractional digits, and older Pythons accept at most
+# 6 (and no trailing Z), so an ISO string is normalized before it is parsed.
+_ISO_FRACTION = re.compile(r"(\.\d{1,})")
+_UTC_OFFSET = re.compile(r"^[+-]\d{2}:?\d{2}$")
+
+
+def _utc_offset(timezone):
+    """Validates a ``timezone`` export option, returning a UTC offset string."""
+    if timezone is None:
+        return None
+    if not isinstance(timezone, str):
+        raise Exception(
+            "timezone must be a UTC offset string such as '+00:00' or 'Z', "
+            "not {!r}.".format(timezone))
+    if timezone in ("Z", "z"):
+        return "+00:00"
+    if not _UTC_OFFSET.match(timezone):
+        raise Exception(
+            "timezone must be a UTC offset such as '+00:00', '-05:00', or "
+            "'Z', not {!r}.".format(timezone))
+    return timezone if ":" in timezone else timezone[:3] + ":" + timezone[3:]
+
+
+def _parse_iso(value):
+    """Parses an ISO 8601 timestamp, tolerating 'Z' and .NET's 7 digits."""
+    text = value.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    match = _ISO_FRACTION.search(text)
+    if match and len(match.group(1)) > 7:      # a dot plus at most 6 digits
+        text = text[:match.start() + 7] + text[match.end():]
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _iso_timestamp(value, timezone=None):
+    """
+    A vendor timestamp as ISO 8601, or None if it cannot be read.
+
+    ASM types every timestamp as ISO 8601, but the vendors write wall clock in
+    their own formats, and most of them record no UTC offset at all. Where the
+    source has one it is kept. Where it does not, the timestamp is emitted
+    without one rather than with an invented one: a fabricated offset would
+    move the recorded instant by up to a day, and rainbow does not know where
+    the instrument was. A caller who does know can supply ``timezone``.
+
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    from datetime import datetime
+
+    parsed = None
+    for fmt in _TIMESTAMP_FORMATS:
+        try:
+            parsed = datetime.strptime(value.strip(), fmt)
+            break
+        except ValueError:
+            continue
+    if parsed is None:
+        parsed = _parse_iso(value)
+    if parsed is None:
+        return None                            # a shape rainbow cannot read
+    if parsed.tzinfo is None and timezone is not None:
+        return parsed.isoformat() + timezone
+    return parsed.isoformat()
+
+
 class _Options:
     """The caller's export controls, threaded through the document builders.
 
@@ -562,14 +660,21 @@ class _Options:
         ions (float/list or None): m/z trace(s) to extract from full-scan MS.
         decimals (int or None): round emitted numeric values to this
             many decimal places; ``None`` keeps full precision.
+        timezone (str or None): UTC offset to stamp on timestamps the source
+            recorded without one.
     """
 
     def __init__(self, export_dad_cube=True, wavelengths=None, ions=None,
-                 decimal_places=None):
+                 decimal_places=None, timezone=None):
         self.export_dad_cube = export_dad_cube
         self.wavelengths = _wavelength_list(wavelengths)
         self.ions = ions
         self.decimals = decimal_places
+        self.timezone = _utc_offset(timezone)
+
+    def timestamp(self, value):
+        """``value`` as an ISO 8601 timestamp, or None if it cannot be read."""
+        return _iso_timestamp(value, self.timezone)
 
     def array(self, values):
         """The values as a Python list, rounded if a precision was set."""
@@ -851,8 +956,8 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     relabel = has_peaks and descriptor["concept"] != "absorbance"
     cube_descriptor = _ABSORBANCE_DESCRIPTOR if relabel else descriptor
     measurement = _measurement(
-        datafile, metadata, control,
-        _CHROMATOGRAM_CUBE, _detector_cube(datafile, cube_descriptor, options))
+        datafile, metadata, control, _CHROMATOGRAM_CUBE,
+        _detector_cube(datafile, cube_descriptor, options), options)
     if relabel:
         _note_relabeled_measure(measurement, descriptor)
     return measurement
@@ -939,7 +1044,7 @@ def _mass_chromatogram_measurement(datafile, metadata, intensities, mz,
     return _measurement(
         datafile, metadata, control,
         _MASS_CHROMATOGRAM_CUBE,
-        _mass_chromatogram_cube(intensities, mz, datafile, options),
+        _mass_chromatogram_cube(intensities, mz, datafile, options), options,
         identifier=identifier)
 
 
@@ -964,7 +1069,7 @@ def _nearest_ion(ylabels, mz):
     return index
 
 
-def _measurement(datafile, metadata, control, cube_key, cube,
+def _measurement(datafile, metadata, control, cube_key, cube, options,
                  identifier=None):
     """Wraps a data cube in the shared measurement envelope."""
     sample = {"sample identifier": metadata.get("sample", "unknown")}
@@ -979,8 +1084,12 @@ def _measurement(datafile, metadata, control, cube_key, cube,
         "chromatography column document": {},
         cube_key: cube,
     }
-    if "date" in metadata:
-        measurement["measurement time"] = metadata["date"]
+    # Omitted rather than passed through when the vendor string cannot be read
+    # as a timestamp: the field is optional, and ASM types it as ISO 8601, so a
+    # vendor-format string here would be a value no reader can parse.
+    timestamp = options.timestamp(metadata.get("date"))
+    if timestamp:
+        measurement["measurement time"] = timestamp
     return measurement
 
 
@@ -995,7 +1104,7 @@ def _spectrum_measurement(datafile, metadata, device_type, options):
         return None
     control = {"device type": device_type}
     return _measurement(
-        datafile, metadata, control, _SPECTRUM_CUBE, cube)
+        datafile, metadata, control, _SPECTRUM_CUBE, cube, options)
 
 
 def _add_injection_document(measurement, metadata, identifier, technique,
@@ -1033,8 +1142,9 @@ def _add_injection_document(measurement, metadata, identifier, technique,
                 "value": options.scalar(volume["value"]),
                 "unit": "μL",
             }
-    if "date" in metadata:
-        document["injection time"] = metadata["date"]
+    timestamp = options.timestamp(metadata.get("date"))
+    if timestamp:
+        document["injection time"] = timestamp
     measurement["injection document"] = document
 
 

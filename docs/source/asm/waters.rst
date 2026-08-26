@@ -68,7 +68,8 @@ available:
    * - ``sample``
      - the measurement's ``sample identifier``
    * - ``date``
-     - the measurement time
+     - the measurement time, converted from ``_HEADER.TXT``'s spelling to
+       ISO 8601 (see :ref:`asm-timestamps`)
    * - ``wavelength`` (per channel)
      - the detector control's wavelength setting
 
