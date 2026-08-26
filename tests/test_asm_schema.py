@@ -225,9 +225,9 @@ def _rich_gc_document(fixture, ** to_asm_kwargs):
 
 
 def test_fid_gc_run_conforms_to_gc_schema():
-    # pink.D routes to a gas chromatography document (its FID channels export as
-    # electric-current chromatograms; its DAD spectrum rides along).
-    _assert_conforms(_gc_validator(), _rich_gc_document("tests/inputs/pink.D"))
+    # yellow.D routes to a gas chromatography document: its FID channel exports
+    # as an electric-current chromatogram.
+    _assert_conforms(_gc_validator(), _rich_gc_document("tests/inputs/yellow.D"))
 
 
 def test_gc_ms_run_conforms_to_gc_schema():
@@ -264,9 +264,9 @@ def test_fid_with_peaks_relabels_and_conforms_to_gc_schema():
     # GC-FID peaks are the result of the run, so an FID channel with integrated
     # peaks is relabeled to absorbance to carry them; it still validates as a gas
     # chromatography document.
-    datadir = rb.read("tests/inputs/pink.D")
+    datadir = rb.read("tests/inputs/yellow.D")
     datadir.metadata["injection_volume"] = {"value": 1.0, "unit": "µL"}
-    datadir.peaks = _peaks_on("DAD1A.ch")
+    datadir.peaks = _peaks_on("FID1A.ch")
     _assert_conforms(_gc_validator(), datadir.to_asm(timezone=_TZ))
 
 

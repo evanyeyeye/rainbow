@@ -42,7 +42,16 @@ def _cube(measurement):
 
 
 def _by_label(document):
-    return {_cube(m)["label"]: m for m in _measurements(document)}
+    # Skips a measurement with no cube this helper knows: a GC-MS run carries
+    # mass chromatograms beside the FID, and a caller looking up one channel by
+    # name should not have to care about the others.
+    labels = {}
+    for measurement in _measurements(document):
+        try:
+            labels[_cube(measurement)["label"]] = measurement
+        except KeyError:
+            continue
+    return labels
 
 
 def test_to_asm_is_json_serializable(teal):
@@ -319,13 +328,13 @@ def test_fid_with_peaks_relabels_with_an_electric_current_note():
     # A GC-FID channel with integrated peaks (the common GC case) relabels to
     # absorbance, keeping the peaks, with a note naming the real quantity and a
     # device type that stays the flame ionization detector.
-    datadir = rb.read("tests/inputs/pink.D")
+    datadir = rb.read("tests/inputs/yellow.D")
     datadir.peaks = [{
-        "signal": "DAD1A", "wavelength": None, "description": None,
-        "channel_file": "DAD1A.ch",
+        "signal": "FID1A", "wavelength": None, "description": None,
+        "channel_file": "FID1A.ch",
         "peaks": [{"retention_time": 1.5, "area": 100.0, "height": 10.0}],
     }]
-    fid = _by_label(datadir.to_asm())["DAD1A.ch"]
+    fid = _by_label(datadir.to_asm())["FID1A.ch"]
     assert "processed data aggregate document" in fid
     control = (fid["device control aggregate document"]
                ["device control document"][0])
@@ -485,9 +494,12 @@ def test_non_fid_run_is_liquid_chromatography(teal):
 
 
 def test_fid_run_routes_to_gas_chromatography():
-    # pink.D has FID channels, so the whole run becomes a gas chromatography
-    # document on the gas-chromatography manifest.
-    document = rb.read("tests/inputs/pink.D").to_asm()
+    # An FID channel makes the whole run a gas chromatography document on the
+    # gas-chromatography manifest. yellow.D's method also declares GC, so the
+    # declaration is dropped here to leave the detector as the only evidence.
+    datadir = rb.read("tests/inputs/yellow.D")
+    del datadir.metadata["technique"]
+    document = datadir.to_asm()
     assert _aggregate_key(document) == "gas chromatography aggregate document"
     manifest = document["$asm.manifest"]
     assert "gas-chromatography" in manifest and "REC/2026/06" in manifest
@@ -497,8 +509,8 @@ def test_fid_exports_as_electric_current_chromatogram():
     # An FID channel is a 1D chromatogram whose measure is electric current in
     # pA (the FID's real quantity, faithfully), with a truthful device type and
     # detection type.
-    document = rb.read("tests/inputs/pink.D").to_asm()
-    fid = next(m for m in _measurements(document) if _CHROM_KEY in m)
+    document = rb.read("tests/inputs/yellow.D").to_asm()
+    fid = _by_label(document)["FID1A.ch"]
     cube = fid[_CHROM_KEY]
     assert cube["cube-structure"]["measures"][0] == {
         "concept": "electric current", "unit": "pA",
@@ -538,7 +550,9 @@ def test_gc_injection_document_uses_microlitres():
 def test_gc_document_carries_a_device_method_identifier():
     # A gas chromatography document requires a device method identifier; absent
     # method metadata it falls back rather than being omitted.
-    document = rb.read("tests/inputs/pink.D").to_asm()
+    datadir = rb.read("tests/inputs/yellow.D")
+    assert not datadir.metadata.get("method")
+    document = datadir.to_asm()
     gc_document = (document["gas chromatography aggregate document"]
                    ["gas chromatography document"][0])
     assert gc_document["device method identifier"] == "unknown"
@@ -554,9 +568,11 @@ def test_technique_override_forces_gc_on_a_non_fid_run(teal):
 
 
 def test_technique_override_beats_the_fid_fallback():
-    # pink.D has an FID and no method declaration, so it falls back to GC; an
-    # explicit technique="LC" overrides that.
-    document = rb.read("tests/inputs/pink.D").to_asm(technique="LC")
+    # With the method declaration removed, an FID channel is the only evidence
+    # and the run falls back to GC; an explicit technique="LC" overrides that.
+    datadir = rb.read("tests/inputs/yellow.D")
+    del datadir.metadata["technique"]
+    document = datadir.to_asm(technique="LC")
     assert _aggregate_key(document) == "liquid chromatography aggregate document"
 
 
@@ -572,7 +588,7 @@ def test_technique_override_beats_the_method_declaration():
 def test_method_declaration_beats_the_fid_fallback():
     # When the method records the technique, it wins over detector evidence: a
     # declared LC run with an FID channel stays liquid chromatography.
-    datadir = rb.read("tests/inputs/pink.D")
+    datadir = rb.read("tests/inputs/yellow.D")
     datadir.metadata["technique"] = "LC"
     assert _aggregate_key(datadir.to_asm()) \
         == "liquid chromatography aggregate document"
@@ -595,7 +611,7 @@ def test_sequence_routes_by_an_injection_technique():
     # A sequence is routed by its injections' technique: one GC/FID injection
     # makes the whole aggregate a gas chromatography document.
     from rainbow.datasequence import DataSequence
-    gc_injection = rb.read("tests/inputs/pink.D")
+    gc_injection = rb.read("tests/inputs/yellow.D")
     sequence = DataSequence("seq", [gc_injection], {})
     document = sequence.to_asm()
     assert _aggregate_key(document) == "gas chromatography aggregate document"
@@ -786,8 +802,14 @@ def test_rainbow_can_read_back_every_detector_label_it_writes():
 
 
 def test_a_gas_chromatography_document_claims_no_liquid_chromatography_parts():
-    """ pink.D is FID-routed to GC and its DAD channels ride along. """
-    document = rb.read("tests/inputs/pink.D").to_asm()
+    """ No part of a GC document may claim a liquid chromatography detector.
+
+    pink.D is a diode-array run, so forcing it to GC puts real absorbance
+    channels inside a gas chromatography document: they must come back as the
+    technique-neutral parent class rather than as a UV or diode array detector,
+    both of which the document would contradict.
+    """
+    document = rb.read("tests/inputs/pink.D").to_asm(technique="GC")
     aggregate = document["gas chromatography aggregate document"]
     types = {device.get("device type") for device
              in aggregate["device system document"]["device document"]}
@@ -800,7 +822,6 @@ def test_a_gas_chromatography_document_claims_no_liquid_chromatography_parts():
     assert "ultraviolet detector" not in types
     assert "diode array detector" not in types
     assert "electronic absorbance detector" in types
-    assert "flame ionization detector" in types
 
 
 def test_module_names_survive_any_separator():

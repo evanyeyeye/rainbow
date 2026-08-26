@@ -167,6 +167,29 @@ def parse_ch(path):
         return None
 
 
+def _detector_from_signal(metadata, default=None):
+    """
+    The detector and ylabel a channel's own ``signal`` string reports.
+
+    The container version at the head of a .ch says how the data is encoded,
+    not what measured it: Chemstation writes a diode-array channel and a flame
+    ionization channel into the same 179/181 container. Only the signal string
+    tells them apart - "DAD1A,Sig=210,4  Ref=off" against "Front Signal" - so
+    both parsers ask it, and the version byte decides nothing but the layout.
+
+    Returns ``(detector, ylabel)``, falling back to ``default`` and an empty
+    ylabel for a signal that names no detector rainbow knows.
+    """
+    signal = metadata.get('signal') or ''
+    if '=' in signal:
+        # Surface the wavelength settings (shared with the .dx parser).
+        metadata.update(parse_optics(signal))
+        return 'UV', signal.split('=')[1].split(',')[0]
+    if 'ADC' in signal:
+        return ('ELSD' if 'CHANNEL' in signal else 'CAD'), ''
+    return default, ''
+
+
 def parse_ch_fid(path, head):
     """
     Parses an Agilent .ch file with FID channel data. 
@@ -240,14 +263,19 @@ def parse_ch_fid(path, head):
     scaling_factor = struct.unpack('>d', f.read(8))[0]
     data *= scaling_factor
 
-    # No ylabel for FID data. 
-    ylabels = np.array([''])
-
     # Extract metadata from file header.
     metadata = read_header(f, metadata_offsets)
     f.close()
 
-    return DataFile(path, 'FID', times, ylabels, data, metadata)
+    # FID only if the signal does not say otherwise. A real FID channel is
+    # "Front Signal" in pA and has no ylabel; a diode-array channel in the same
+    # container reports "DAD1A,Sig=210,4  Ref=off" in mAU and is absorbance at
+    # 210 nm. Calling the second one FID sent whole LC runs out as gas
+    # chromatography documents measuring picoamps.
+    detector, ylabel = _detector_from_signal(metadata, default='FID')
+    ylabels = np.array([ylabel])
+
+    return DataFile(path, detector, times, ylabels, data, metadata)
 
 
 def parse_ch_other(path, head):
@@ -333,17 +361,8 @@ def parse_ch_other(path, head):
     metadata = read_header(f, metadata_offsets, gap=gap)
     f.close()
 
-    # Determine the detector and ylabels using metadata. 
-    detector = None
-    ylabel = ''
-    signal = metadata['signal']
-    if '=' in signal:
-        ylabel = signal.split('=')[1].split(',')[0]
-        detector = 'UV'
-        # Surface the wavelength settings (shared with the .dx parser).
-        metadata.update(parse_optics(signal))
-    elif 'ADC' in signal:
-        detector = 'ELSD' if 'CHANNEL' in signal else 'CAD'
+    # Determine the detector and ylabels using metadata.
+    detector, ylabel = _detector_from_signal(metadata)
     ylabels = np.array([ylabel])
 
     return DataFile(path, detector, times, ylabels, data, metadata)

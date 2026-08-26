@@ -112,7 +112,7 @@ def _document_with_all_device_types():
                 {"name": "RID1A", "type": "Detector"},
                 {"name": "FLD1A", "type": "Detector"},
             ]),
-            ("pink.D", "GC", [
+            ("yellow.D", "GC", [
                 {"name": "TCD Back", "type": "Detector"},
                 {"name": "ECD1", "type": "Detector"},
                 {"name": "FID1", "type": "Detector"},
@@ -145,12 +145,13 @@ def test_emitted_terms_are_afo_classes():
     terms = set()
     # A .D and a .dx together exercise both the chromatogram and spectrum cubes;
     # red.D adds a non-UV (CAD) detector, green.D adds the SIM MS mass
-    # chromatogram (mass spectrometer device type, count measure), pink.D adds
-    # the FID (flame ionization detector device type, electric current measure)
-    # in a gas chromatography document; the instrument document adds every
-    # module device type.
+    # chromatogram (mass spectrometer device type, count measure), yellow.D is a
+    # real GC-MS run and adds the FID (flame ionization detector device type,
+    # electric current measure) inside a gas chromatography document; the
+    # instrument document adds every module device type.
     for path in ("tests/inputs/red.D", "tests/inputs/teal.dx",
-                 "tests/inputs/green.D", "tests/inputs/pink.D",
+                 "tests/inputs/green.D", "tests/inputs/yellow.D",
+                 "tests/inputs/pink.D",
                  "tests/inputs/orange.D", "tests/inputs/bronze.D"):
         _collect_terms(rb.read(path).to_asm(), terms)
     for document in _document_with_all_device_types():
@@ -158,7 +159,7 @@ def test_emitted_terms_are_afo_classes():
     _collect_terms(_gc_document_with_a_generic_detector(), terms)
 
     # Guard that the key device types and measures are actually present. red.D's
-    # CAD and pink.D's FID exercise "electric current"; orange.D's ELSD exercises
+    # CAD and yellow.D's FID exercise "electric current"; orange.D's ELSD exercises
     # "intensity"; the faithful detector measures now in use.
     for required in ("diode array detector", "pump", "autosampler",
                      "column compartment", "liquid chromatography detector",
@@ -233,11 +234,11 @@ def test_the_ancestor_lookup_actually_returns_ancestors():
 
 
 @pytest.mark.parametrize("fixture,technique,aggregate", [
-    ("pink.D", None, "gas chromatography aggregate document"),
+    ("yellow.D", None, "gas chromatography aggregate document"),
     ("red.D", "GC", "gas chromatography aggregate document"),
     ("teal.dx", "GC", "gas chromatography aggregate document"),
     ("red.D", None, "liquid chromatography aggregate document"),
-    ("pink.D", "LC", "liquid chromatography aggregate document"),
+    ("yellow.D", "LC", "liquid chromatography aggregate document"),
 ])
 def test_no_device_type_contradicts_its_documents_technique(
         fixture, technique, aggregate):
