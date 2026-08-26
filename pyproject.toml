@@ -15,6 +15,10 @@ authors = [
 classifiers = [
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
 ]
+# The interpreters wheels are built for (see [tool.cibuildwheel] below), so pip
+# on an older one resolves an older rainbow instead of installing this and
+# failing at import.
+requires-python = ">=3.8"
 # What every install needs to read a file, and nothing more. lxml is here for
 # speed, not correctness: the parsers fall back to the standard library and
 # reach the same answer, but rb.read_metadata is about 2.5x slower that way, so
@@ -26,8 +30,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The suite exercises the optional paths as well as the core ones, so it wants
-# the extras too; each such test skips rather than fails if one is missing.
+# The suite covers the optional paths as well as the core ones, so this brings
+# in what those paths need: matplotlib for plot(), pandas for the Waters
+# transition table. They are here so CI exercises those tests rather than
+# skipping them. The tests still skip rather than fail where one is absent, so
+# the suite also runs against a bare install.
 test = ["pytest", "matplotlib", "pandas"]
 # Agilent MassHunter profile data (MSProfile.bin) can carry LZF-compressed
 # segments whose decode needs python-lzf. It is only imported when such a

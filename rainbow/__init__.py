@@ -217,19 +217,22 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     if not isinstance(centroid, bool):
         raise Exception(f"The centroid flag must be a boolean.")
 
-    # precision is a label precision (decimals for reported m/z). 'auto' is
-    # finalized per file inside each parser, where the data type is actually
-    # known: high-resolution data (the HRMS profile, and TOF centroids) resolves
-    # to 4 decimals; unit-resolution data (UV, GC/quadrupole MS, Waters) to whole
-    # numbers.
+    # display_precision is a label precision (decimals for the reported m/z),
+    # and is cosmetic: it rounds the labels, never the data. 'auto' is finalized
+    # per file inside each parser, where the acquisition is actually known:
+    # high-resolution data (the HRMS profile, and calibrated TOF centroids)
+    # resolves to 4 decimals; unit-resolution data (UV, GC/quadrupole MS,
+    # Waters) to whole numbers.
     #
-    # bin_width is the width of the shared HRMS profile grid, and it is what turns
-    # binning on: omit it for the per-scan representation, pass a width to project
-    # onto one shared grid. It is entirely independent of precision (precision
-    # only rounds the reported m/z labels, never the grid), with no default,
-    # because the shared grid has no sensible universal width. (If precision is
-    # too coarse to label the bins distinctly, parse_msdata warns; it is not an
-    # error.)
+    # bin_width is the lossy control: it is the width of the m/z bin that
+    # intensities are summed into. Regular MS binning defaults to nominal mass
+    # (1 Da); for the per-scan representations (the HRMS profile, a centroid
+    # peak list) there is no default, because a shared grid has no sensible
+    # universal width, and omitting it is what keeps them per scan. The two are
+    # independent. (If display_precision is too coarse to label the bins
+    # distinctly, the parser warns; it is not an error.) Whether a bin_width is
+    # finer than the channel can support is checked after the read, where the
+    # parsed channels say which floor applies.
     _validate_bin_width(bin_width)
 
     if requested_files is not None and not isinstance(requested_files, list):

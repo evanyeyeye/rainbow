@@ -14,7 +14,12 @@ sys.path.insert(0, os.path.abspath('../..'))
 project = 'rainbow'
 copyright = '2022, Evan Shi and Eugene Kwan'
 author = 'Evan Shi and Eugene Kwan'
-release = '1.0'
+# Read from the installed package so this cannot drift from pyproject.toml.
+try:
+    from importlib.metadata import version as _version
+    release = _version("rainbow-api")
+except Exception:                       # building from a source tree
+    release = ''
 
 language = 'en'
 master_doc = 'index'

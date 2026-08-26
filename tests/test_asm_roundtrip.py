@@ -535,3 +535,67 @@ def test_from_asm_still_reads_a_lone_measurement_object():
             "liquid chromatography document"][0][
             "measurement aggregate document"]["measurement document"][0]
     assert [df.name for df in rb.from_asm(document).datafiles] == ["solo.ch"]
+
+
+# The idempotence contract the ASM round-trip documentation states, run as a
+# test so the two cannot drift apart. Exact document equality is NOT the
+# contract: an export-only channel is absent from the second document, and the
+# seconds-to-minutes conversion is not always reversible to the last bit.
+
+def _asm_measurements(document):
+    aggregate, = (v for k, v in document.items()
+                  if k.endswith("aggregate document"))
+    injections, = (v for k, v in aggregate.items()
+                   if k.endswith("chromatography document"))
+    for injection in injections:
+        yield from injection[
+            "measurement aggregate document"]["measurement document"]
+
+
+def _asm_cube(measurement):
+    key, = (k for k in measurement if k.endswith("data cube"))
+    return measurement[key]["data"]
+
+
+@pytest.mark.parametrize("fixture", [
+    "red.D",          # UV channels beside an export-only CAD channel
+    "violet.raw",     # UV channels beside an export-only ELSD channel
+    "white.raw",      # all absorbance; retention times drift by ulps
+    "teal.dx",
+    "bronze.D",
+])
+def test_a_second_export_reproduces_the_first(fixture):
+    import numpy as np
+    datadir = rb.read(os.path.join(INPUTS, fixture))
+    first = datadir.to_asm()
+    again = rb.from_asm(first, name=datadir.name).to_asm()
+
+    rebuilt = {m["measurement identifier"]: m for m in _asm_measurements(again)}
+    compared = 0
+    for before in _asm_measurements(first):
+        after = rebuilt.get(before["measurement identifier"])
+        if after is None:
+            continue  # export-only (a non-absorbance cube), as documented
+        assert _asm_cube(before)["measures"] == _asm_cube(after)["measures"]
+        assert np.allclose(_asm_cube(before)["dimensions"][0],
+                           _asm_cube(after)["dimensions"][0])
+        compared += 1
+    assert compared, "no channel was rebuilt, so nothing was compared"
+
+
+def test_exact_equality_is_not_the_round_trip_contract():
+    """ white.raw re-exports with retention times differing in the last digit.
+
+    The documentation used to assert `again == first`, which this fixture
+    falsifies: the values are unchanged, but the seconds-to-minutes conversion
+    is not exactly reversible for these times.
+    """
+    import numpy as np
+    datadir = rb.read(os.path.join(INPUTS, "white.raw"))
+    first = datadir.to_asm()
+    again = rb.from_asm(first, name=datadir.name).to_asm()
+    assert again != first
+    for before, after in zip(_asm_measurements(first),
+                             _asm_measurements(again)):
+        assert np.allclose(_asm_cube(before)["dimensions"][0],
+                           _asm_cube(after)["dimensions"][0])

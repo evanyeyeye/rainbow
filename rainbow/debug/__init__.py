@@ -1,5 +1,5 @@
 """
-Debug metadata subsystem (target: rainbow 1.4).
+Debug metadata subsystem.
 
 rainbow's normal read path surfaces a lean set of metadata to keep overhead low.
 A vendor run directory, however, ships many sidecar files (registers, INIs,

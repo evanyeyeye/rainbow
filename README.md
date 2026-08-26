@@ -26,7 +26,7 @@ There is [documentation](http://rainbow-api.readthedocs.io/) for *rainbow* that 
 pip install rainbow-api
 ```
 
-That installs everything needed to read a file. Three things are separate,
+That installs everything needed to read a file. Four things are separate,
 because most callers never reach them:
 
 | Extra | Install | What it adds |

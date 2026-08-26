@@ -22,8 +22,10 @@
       parse_metadata
       parse_ms
       parse_ms_partial
+      parse_optics
       parse_uv
       parse_uv_partial
       read_header
+      read_sample_metadata
       read_string
    

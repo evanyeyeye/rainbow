@@ -115,8 +115,9 @@ def transition_dir(tmp_path):
 
 
 def test_transition_table_parses_when_pandas_is_installed(transition_dir):
-    # Skipped rather than failed where pandas is absent, since it is an extra:
-    # a bare `pip install -e .[test]` does not bring it.
+    # `pip install -e .[test]` brings pandas, so this runs in CI. It is still
+    # skipped rather than failed where pandas is absent, so the suite also runs
+    # against a bare install, where pandas is an extra nobody asked for.
     pytest.importorskip("pandas", reason="pip install -e .[waters]")
     from rainbow.waters import masslynx
     table = masslynx.parse_compound_names(transition_dir)

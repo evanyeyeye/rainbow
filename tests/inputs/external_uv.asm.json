@@ -29,7 +29,7 @@
                 "device control document": [
                   {
                     "device type": "diode array uv detector",
-                    "equipment serial number": "REDACTED",
+                    "equipment serial number": "SN-0001",
                     "detector wavelength setting": {"value": 254.0, "unit": "nm"}
                   }
                 ]
