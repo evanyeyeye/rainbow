@@ -4,43 +4,67 @@ from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
 from rainbow import agilent, waters, debug
+from rainbow._binning import MZ_FLOORS
 from rainbow.asm import from_asm, sequence_from_asm
 
 
 # Vendor parsers that rainbow can dispatch to.
 VENDORS = ('agilent', 'waters')
 
-# Finest meaningful m/z bin width per vendor (the m/z grid the binary records;
-# see the per-vendor MS docs). A bin_width below this only inserts empty bins.
-_MZ_FLOORS = {'agilent': 0.1, 'waters': 0.05}
-# High-resolution MassHunter (TOF/Q-TOF) profile data resolves much finer.
-_HRMS_MZ_FLOOR = 1e-6
 
-
-def _check_bin_width(bin_width, vendor, hrms, centroid=False):
-    """Validates ``bin_width`` and warns if it is finer than the binary records.
-
-    The lossy m/z bin cannot resolve finer than the m/z grid the vendor binary
-    actually stores, so a ``bin_width`` below that floor only inserts empty bins.
-
-    The vendor floors describe unit-resolution data. Calibrated MassHunter
-    TOF data, profile or centroid, resolves far below them, so no floor is
-    asserted for it rather than warning about a bin the run can in fact support.
-    """
+def _validate_bin_width(bin_width):
+    """Rejects a ``bin_width`` that is not a positive number."""
     if bin_width is None:
         return
     if (isinstance(bin_width, bool)
             or not isinstance(bin_width, (int, float)) or bin_width <= 0):
         raise Exception(f"Invalid bin_width: {bin_width}.")
-    if centroid and not hrms:
+
+
+def _mz_floor(datafile, vendor):
+    """
+    The finest m/z bin ``datafile``'s binary meaningfully records, or None.
+
+    A per-scan channel was never binned, so no floor applies to it. Otherwise
+    the floor belongs to the parser that read the channel: one that knows its
+    data resolves differently than the vendor default records that floor on the
+    file it returns (calibrated MassHunter TOF data resolves far below any
+    vendor floor, profile or centroid alike).
+    """
+    if hasattr(datafile, 'mass_labels'):
+        return None
+    return getattr(datafile, '_mz_floor', MZ_FLOORS.get(vendor))
+
+
+def _warn_bin_width_floor(datafiles, bin_width, vendor):
+    """
+    Warns if ``bin_width`` is finer than the m/z grid a parsed channel records.
+
+    The lossy m/z bin cannot resolve finer than the grid the vendor binary
+    actually stores, so a finer ``bin_width`` only inserts empty bins.
+
+    Which floor applies is a property of the channel that was parsed, not of the
+    flags the caller passed, so this runs over the parsed files rather than
+    guessing from the request. A run read with ``centroid=True`` can still hold
+    an ordinary quadrupole channel that does have a floor, and the flag must not
+    silence the warning that channel has earned.
+    """
+    if bin_width is None:
         return
-    floor = _HRMS_MZ_FLOOR if hrms else _MZ_FLOORS.get(vendor)
-    if floor is not None and bin_width < floor:
-        import warnings
-        label = "HRMS profile" if hrms else vendor
-        warnings.warn(
-            f"bin_width={bin_width} is finer than the {label} m/z grid "
-            f"(about {floor} Da); it only inserts empty bins.")
+    too_fine = {}
+    for datafile in datafiles:
+        if datafile.detector != 'MS':
+            continue
+        floor = _mz_floor(datafile, vendor)
+        if floor is not None and bin_width < floor:
+            too_fine[datafile.name] = floor
+    if not too_fine:
+        return
+    import warnings
+    warnings.warn(
+        f"bin_width={bin_width} is finer than the m/z grid recorded by "
+        f"{', '.join(sorted(too_fine))} (about {max(too_fine.values())} Da); "
+        f"it only inserts empty bins.")
 
 
 def _sniff_vendor(path):
@@ -206,7 +230,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     # because the shared grid has no sensible universal width. (If precision is
     # too coarse to label the bins distinctly, parse_msdata warns; it is not an
     # error.)
-    _check_bin_width(bin_width, vendor, hrms, centroid)
+    _validate_bin_width(bin_width)
 
     if requested_files is not None and not isinstance(requested_files, list):
         raise Exception(f"The requested_files argument must be a list.")
@@ -225,7 +249,51 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
 
     if datadir is None:
         raise Exception(f"Rainbow cannot read {path}.")
+    # Warned here, not before the read, because the floor is a property of the
+    # channels the parsers actually returned.
+    _warn_bin_width_floor(datadir.datafiles, bin_width, vendor)
     return datadir
+
+
+def _mz_spacings(datadir, only_per_scan=False):
+    """
+    Finest m/z spacing of each MS channel in ``datadir``.
+
+    A per-scan channel (the HRMS profile, a centroid peak list) is measured
+    from one scan's own m/z axis; a binned channel from its shared axis. With
+    ``only_per_scan``, the binned channels are skipped, so a caller that read
+    them on the wrong grid can measure them separately.
+
+    """
+    import numpy as np
+
+    resolutions = {}
+    for datafile in datadir.datafiles:
+        if datafile.detector != 'MS':
+            continue
+        per_scan = hasattr(datafile, 'mass_labels')
+        if only_per_scan and not per_scan:
+            continue
+        try:
+            if per_scan:               # per-scan: one scan's own m/z axis
+                mz = np.asarray(datafile.mass_labels(0), dtype=float)
+            else:
+                mz = np.asarray(datafile.ylabels, dtype=float)
+        except Exception:
+            continue                   # a per-scan channel with no shared axis
+        mz = np.unique(mz)
+        if mz.size >= 2:
+            # Round off floating-point noise, but finely enough to keep a true
+            # high-resolution (HRMS) spacing, which can be well below 1e-4 Da.
+            resolutions[datafile.name] = round(float(np.min(np.diff(mz))), 7)
+    return resolutions
+
+
+def _has_binned_ms(datadir):
+    """Whether ``datadir`` holds an MS channel on a shared (binned) m/z axis."""
+    return any(datafile.detector == 'MS'
+               and not hasattr(datafile, 'mass_labels')
+               for datafile in datadir.datafiles)
 
 
 def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
@@ -255,49 +323,38 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
 
     """
     import warnings
-    import numpy as np
+
+    def _probe():
+        # A grid far finer than any vendor lattice exposes the underlying
+        # spacing (bin_datapairs keeps only populated bins). The labels must be
+        # displayed finely too, or display_precision would round them back
+        # together and hide the spacing.
+        return read(path, bin_width=1e-3, display_precision=4,
+                    requested_files=requested_files)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        if hrms:
-            # Display the per-scan m/z finely, or the default 4-decimal rounding
-            # would hide a true sub-mDa profile spacing (or collapse it to 0).
-            datadir = read(path, hrms=True, display_precision=8,
-                           centroid=centroid,
-                           requested_files=requested_files)
-        elif centroid:
-            # Centroid peak lists are per scan and already at the instrument's
-            # own resolution, so they are read as they are rather than binned.
-            datadir = read(path, centroid=True, display_precision=8,
-                           requested_files=requested_files)
-        else:
-            # A grid far finer than any vendor lattice exposes the underlying
-            # spacing (bin_datapairs keeps only populated bins). The labels must
-            # be displayed finely too, or display_precision would round them back
-            # together and hide the spacing.
-            datadir = read(path, bin_width=1e-3, display_precision=4,
-                           requested_files=requested_files)
+        if not (hrms or centroid):
+            return _mz_spacings(_probe())
 
-    resolutions = {}
-    for datafile in datadir.datafiles:
-        if datafile.detector != 'MS':
-            continue
-        if hasattr(datafile, 'mass_labels'):
-            try:                       # per-scan HRMS: one scan's own m/z axis
-                mz = np.asarray(datafile.mass_labels(0), dtype=float)
-            except Exception:
-                continue
-        else:
-            try:
-                mz = np.asarray(datafile.ylabels, dtype=float)
-            except Exception:
-                continue               # a per-scan profile with no shared axis
-        mz = np.unique(mz)
-        if mz.size >= 2:
-            # Round off floating-point noise, but finely enough to keep a true
-            # high-resolution (HRMS) spacing, which can be well below 1e-4 Da.
-            resolutions[datafile.name] = round(float(np.min(np.diff(mz))), 7)
-    return resolutions
+        # The HRMS profile and the centroid peak list are per scan and already
+        # at the instrument's own resolution, so they are read as they are
+        # rather than binned, and measured from one scan's own axis. Display
+        # that axis finely, or the default 4-decimal rounding would hide a true
+        # sub-mDa spacing (or collapse it to 0).
+        datadir = read(path, hrms=hrms, centroid=centroid,
+                       display_precision=8, requested_files=requested_files)
+        resolutions = _mz_spacings(datadir, only_per_scan=True)
+
+        # A per-scan channel can share a directory with an ordinary binned one
+        # (a Chemstation .ms beside a MassHunter MSPeak.bin). The read above
+        # binned those at the default nominal width, so measuring them there
+        # would report that default instead of the grid the binary records.
+        # They get the probe grid, in a second read, which the common case of
+        # a run with no binned MS channel does not pay for.
+        if _has_binned_ms(datadir):
+            resolutions.update(_mz_spacings(_probe()))
+        return resolutions
 
 
 def _detect_sequence_vendor(path):
@@ -397,7 +454,7 @@ def read_sequence(path, display_precision='auto', hrms=False,
     if not isinstance(peaks, bool):
         raise Exception("The peaks flag must be a boolean.")
 
-    _check_bin_width(bin_width, vendor, hrms, centroid)
+    _validate_bin_width(bin_width)
 
     if requested_files is not None and not isinstance(requested_files, list):
         raise Exception("The requested_files argument must be a list.")
@@ -413,6 +470,11 @@ def read_sequence(path, display_precision='auto', hrms=False,
 
     if datasequence is None:
         raise Exception(f"Rainbow cannot read {path} as a sequence.")
+    # One warning for the sequence, not one per injection: the injections of a
+    # sequence share an acquisition method, so they share their channels.
+    _warn_bin_width_floor(
+        [datafile for injection in datasequence.injections
+         for datafile in injection.datafiles], bin_width, vendor)
     return datasequence
 
 

@@ -13,6 +13,7 @@ try:
 except ImportError:
     import xml.etree.ElementTree as etree
 from rainbow import DataFile
+from rainbow._binning import HRMS_MZ_FLOOR, MZ_FLOORS
 from rainbow.agilent.chemstation import parse_optics
 
 # NOTE: `lzf` (python-lzf) is imported lazily inside parse_msdata, and only
@@ -862,6 +863,20 @@ MS PARSING METHODS
 
 """
 
+def _with_mz_floor(datafile, floor):
+    """
+    Records the finest m/z bin ``datafile``'s binary meaningfully records.
+
+    :func:`rainbow.read` reads this back to decide whether a caller's
+    ``bin_width`` was finer than the data can support. It is set here, where the
+    acquisition is known, because the vendor default it replaces is right for
+    unit-resolution data and wrong for calibrated TOF data. Left unset, a
+    channel falls back to its vendor's floor.
+    """
+    datafile._mz_floor = floor
+    return datafile
+
+
 def parse_msdata(path, display_precision='auto', bin_width=None):
     """
     Parses Masshunter MS data.
@@ -1058,7 +1073,9 @@ def parse_msdata(path, display_precision='auto', bin_width=None):
     mz_ylabels, data = bin_to_grid(
         mz_arr, intensities, rows, num_times, display_precision, bin_width)
 
-    return DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {})
+    return _with_mz_floor(
+        DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {}),
+        HRMS_MZ_FLOOR)
 
 
 def _build_per_scan_profiles(times, inten_arrs, grid_keys, calib_vals,
@@ -1448,18 +1465,24 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None):
 
     # A bin_width projects the per-scan peaks onto one shared m/z grid (lossy),
     # the same way the profile binning does.
+    # A calibrated (TOF/Q-TOF) centroid axis resolves far below the quadrupole
+    # floor; an uncalibrated one is GC-quadrupole data that stores nominal m/z
+    # directly, so the ordinary Agilent floor is the right one for it.
+    floor = HRMS_MZ_FLOOR if calib_vals is not None else MZ_FLOORS['agilent']
+
     mz_arr = np.concatenate(mz_per_scan)
     if mz_arr.size == 0:
-        return DataFile(
+        return _with_mz_floor(DataFile(
             "MSPeak.bin", 'MS', times, np.array([], dtype=np.float64),
-            np.zeros((num_times, 0), dtype=np.uint64), {})
+            np.zeros((num_times, 0), dtype=np.uint64), {}), floor)
     intensities = np.concatenate(inten_per_scan)
     num_peaks_per_time = np.array(
         [len(m) for m in mz_per_scan], dtype=np.int64)
     rows = np.repeat(np.arange(num_times), num_peaks_per_time)
     mz_ylabels, data = bin_to_grid(
         mz_arr, intensities, rows, num_times, display_precision, bin_width)
-    return DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data, {})
+    return _with_mz_floor(
+        DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data, {}), floor)
 
 
 def _select_centroid_block(blocks):

@@ -1341,7 +1341,7 @@ def test_floor_warning_agilent_and_waters():
 
 
 def test_floor_warning_hrms_names_the_profile():
-    with pytest.warns(UserWarning, match="HRMS profile"):
+    with pytest.warns(UserWarning, match="MSProfile.bin"):
         rb.read(MAGENTA_D, hrms=True, bin_width=1e-8)          # below 1e-6 Da
 
 
@@ -1353,14 +1353,37 @@ def test_no_floor_warning_at_the_grid():
     assert not any("empty bins" in str(w.message) for w in caught)
 
 
+def test_centroid_flag_does_not_silence_other_channels():
+    """ The floor belongs to the channel parsed, not to the flags requested.
+
+    A blanket centroid carve-out silenced the warning for every channel in the
+    run, including ordinary quadrupole and Waters data that has a real floor.
+    """
+    with pytest.warns(UserWarning, match="MSD1.MS"):
+        rb.read("tests/inputs/orange.D", centroid=True, bin_width=0.001)
+    with pytest.warns(UserWarning, match="_func001.dat"):
+        # centroid is an Agilent flag; it must not reach a Waters read at all.
+        rb.read("tests/inputs/turquoise.raw", centroid=True, bin_width=0.001)
+
+
+def test_uncalibrated_centroid_keeps_the_quadrupole_floor():
+    """ A GC-quadrupole centroid stores nominal m/z, so 0.1 Da still applies.
+
+    Only a calibrated (TOF) centroid resolves below the vendor floor; yellow's
+    MSPeak.bin has no calibration and is unit-resolution like any .ms channel.
+    """
+    with pytest.warns(UserWarning, match="MSPeak.bin"):
+        rb.read("tests/inputs/yellow.D", centroid=True, bin_width=0.001)
+
+
 def test_read_sequence_rejects_bad_bin_width():
     # read_sequence shares read's bin_width guard (a regression let bin_width=0
     # through to a divide-by-zero).
-    from rainbow import _check_bin_width
+    from rainbow import _validate_bin_width
     with pytest.raises(Exception, match="Invalid bin_width"):
-        _check_bin_width(0, "agilent", False)
+        _validate_bin_width(0)
     with pytest.raises(Exception, match="Invalid bin_width"):
-        _check_bin_width(-1, "agilent", False)
+        _validate_bin_width(-1)
 
 
 # Centroids mirror the profile: per-scan by default (ragged peak lists), a
@@ -1503,6 +1526,24 @@ def test_mz_resolution_sees_centroid_data():
     resolved = rb.mz_resolution(GOLD_D, centroid=True)
     assert "MSPeak.bin" in resolved
     assert 0 < resolved["MSPeak.bin"] < 2
+
+
+def test_mz_resolution_centroid_flag_leaves_binned_channels_alone():
+    """ The centroid flag must not change what a binned MS channel reports.
+
+    yellow.D holds a Chemstation data.ms beside a MassHunter MSPeak.bin. The
+    centroid read is unbinned (the peak lists are per scan), which binned
+    data.ms at the default nominal width, so it reported that default instead
+    of the 0.1 Da grid the binary records.
+    """
+    yellow = os.path.join("tests", "inputs", "yellow.D")
+    binned = rb.mz_resolution(yellow)
+    assert binned["data.ms"] == 0.1
+    with_centroid = rb.mz_resolution(yellow, centroid=True)
+    assert with_centroid["data.ms"] == binned["data.ms"]
+    assert with_centroid["dataSim.ms"] == binned["dataSim.ms"]
+    # The centroid channel is still measured per scan, not on the probe grid.
+    assert with_centroid["MSPeak.bin"] > 1e-3
 
 
 def test_list_analog_handles_masshunter_telemetry(capsys):

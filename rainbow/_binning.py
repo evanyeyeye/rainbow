@@ -15,6 +15,17 @@ precision for presentation, which is purely cosmetic and never merges data.
 import numpy as np
 
 
+# Finest meaningful m/z bin width per vendor (the m/z grid the binary records;
+# see the per-vendor MS docs). A bin_width below this only inserts empty bins.
+# These describe unit-resolution data, the default assumption for a channel
+# whose parser does not record a floor of its own.
+MZ_FLOORS = {'agilent': 0.1, 'waters': 0.05}
+
+# Calibrated MassHunter (TOF/Q-TOF) data, profile or centroid, resolves far
+# below any vendor floor, so its parsers record this one instead.
+HRMS_MZ_FLOOR = 1e-6
+
+
 def bin_datapairs(keys, values, pair_counts, bin_width,
                   display_precision=None, data_dtype=np.int64):
     """
