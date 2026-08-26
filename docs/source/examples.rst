@@ -35,18 +35,26 @@ Suppose we have a directory MY_DATASET that contains hundreds of Agilent .D subd
        |- A3.D
        |- ...
 
-The following code reads every subdirectory in MY_DATASET using multiprocessing for faster speed. The resulting variable :code:`dirpaths` is a list of DataDirectory objects. 
+The following code reads every subdirectory in MY_DATASET using multiprocessing
+for faster speed. The resulting variable :code:`datadirs` is a list of
+DataDirectory objects.
 
-.. code-block:: python 
-   
-   import rainbow as rb 
+The :code:`if __name__ == "__main__"` guard is not optional. On macOS and
+Windows a worker process starts by re-importing the module that created the
+pool, so without the guard each worker creates its own pool, and so on until the
+machine gives out.
+
+.. code-block:: python
+
+   import rainbow as rb
    import multiprocessing as mp
    import os
 
    DATASET = "MY_DATASET"
-   dirpaths = [os.path.join(DATASET, name) for name in os.listdir(DATASET) if name != ".DS_Store"]
 
-   pool = mp.Pool()
-   datadirs = pool.map(rb.read, dirpaths)
-   pool.close()
-   pool.join()
+   if __name__ == "__main__":
+       dirpaths = [os.path.join(DATASET, name)
+                   for name in os.listdir(DATASET) if name != ".DS_Store"]
+
+       with mp.Pool() as pool:
+           datadirs = pool.map(rb.read, dirpaths)

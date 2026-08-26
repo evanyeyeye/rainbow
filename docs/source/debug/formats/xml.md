@@ -149,8 +149,8 @@ The `XmlContent` elements hold **gzip+base64 sub-documents**, but decoding them
 `SampleContainerDevice` with an identifier, a display name, location counts, and
 an escaped rendering `XML` - with no sample or person identifiers. Expanding them
 would add tens of KB of geometry to `inspect` for no identifier gain, so they are
-deliberately left as the verbatim base64 string. (The dev tool
-`tools/aux_parsers/formats.py` can expand them if the geometry is ever needed.)
+deliberately left as the verbatim base64 string, which a caller who does want
+the geometry can decode themselves.
 
 ### AnalyticalResultsModuleData - `*.drvml`  (canonical: yes)
 

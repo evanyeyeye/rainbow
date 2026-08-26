@@ -91,6 +91,20 @@ by iterating:
    first = sequence.injections[0]
    count = len(sequence)
    named = sequence.get_injection("008-D1F-A1-caffeine_5min_01.D")
+   named = sequence["008-D1F-A1-caffeine_5min_01.D"]   # the same
+   if "008-D1F-A1-caffeine_5min_01.D" in sequence:
+       ...
+
+If the directories were renamed and you want the order the instrument ran them
+in, sort on each injection's own timestamp. rainbow does not do this for you,
+because an injection whose date is missing or unreadable has no place in such
+an ordering and silently dropping it would be worse than name order:
+
+.. code-block:: python
+
+   timed = sorted(
+       (i for i in sequence if i.metadata.get("date")),
+       key=lambda i: i.metadata["date"])
 
 Internally :code:`rb.read_sequence` just calls :code:`rb.read` on each injection
 subdirectory and layers the run-level metadata on top, so the per-injection
@@ -170,7 +184,8 @@ Exporting a sequence to ASM
 
 A whole sequence moves into the open **Allotrope Simple Model** in one step: one
 ASM document with a single device system document for the shared instrument and
-one liquid chromatography document per injection, in acquisition order. Peaks
+one liquid chromatography document per injection, in the same order
+:code:`sequence.injections` gives them. Peaks
 read with :code:`peaks=True` become each injection's processed data.
 
 .. code-block:: python
@@ -204,7 +219,7 @@ Quick reference
    * - ``rb.read_sequence(path, peaks=True)``
      - the same, with integrated peaks attached
    * - ``sequence.injections``
-     - the injections, in acquisition order
+     - the injections, in sorted-name order
    * - ``sequence.metadata``
      - instrument, operator, injection count
    * - ``sequence.to_asm()`` / ``.export_asm(path)``

@@ -1,8 +1,5 @@
 # Debug metadata subsystem
 
-Target release: **1.4**. The parsers ship inside the package and the
-`rainbow.debug` API (`inspect` / `fields`) is public.
-
 Start here for the design and the two entry points, then see
 [`formats.md`](formats.md) for the at-a-glance catalog and canonical-field
 table, and `formats/<name>.md` for the deep reverse-engineering reference on each
@@ -121,38 +118,20 @@ list-valued fields - `serials`, `devices`, `computers`, `users`, `signal_optics`
 - accumulate across files; every other field is a scalar that takes the first
 non-empty value.
 
-## What ships vs dev-only
+## Cost, and what to expect of it
 
-- **Ships** (inside `rainbow/debug/`): the structured format **parsers**. They
-  are the debug-mode engine. Default-off, so no normal-path overhead.
-- **Dev-only** (stays in top-level `tools/aux_parsers/`, excluded from the
-  wheel + sdist): the audit harness - `coverage_map.py` (instruments rainbow's
-  file access) and `dump.py` (bulk readable-content dump). These instrument
-  rainbow internals and are for *our* auditing, not a user feature.
+Nothing here runs on the normal read path. `rainbow.debug` is imported on first
+use, so a program that never calls it does not pay to have it installed, and
+`rb.read` and `rb.read_metadata` surface the same lean metadata they always did.
 
-The dev audit harness is what *found* these unparsed sidecars (a parse-coverage
-audit showed rainbow leaves the metadata files untouched, concentrated in
-`yellow.D` 58/66, `orange.D` 35/38, `red.D` 16/21). The debug parsers are the
-productized answer to that finding.
+It does need `lxml`, which is a default dependency but is otherwise optional for
+reading: recovering structure from malformed and mis-encoded sidecars is exactly
+what a recovering parser is for, so this subsystem requires it outright.
 
-## Decisions log
-
-- **Default-off debug mode, not always-on.** Surfacing every field on the normal
-  path would add overhead for data nobody usually wants. A separate `debug`
-  entry point keeps `rb.read` / `rb.read_metadata` lean.
-- **API shape = `rainbow.debug` submodule** (`inspect` / `fields`), chosen over a
-  `debug=` flag on `read` or a `full=` flag on `read_metadata`, to keep the core
-  API untouched and give the parsers a natural home.
-- **Parsers ship and the API is public.** The parser code lands in the package
-  and `rainbow.debug` (`inspect` / `fields`) is exported alongside the vendor
-  modules, so `from rainbow import debug` works out of the box. The canonical
-  vocabulary still grows as formats are added, but the two entry points are
-  stable.
-- **Depth and output shape decided per format**, on the evidence of what each
-  format actually contains - see `formats.md`.
-- **Faithful + canonical, both.** `inspect` keeps the lossless structure;
-  `fields` promotes the well-known keys. The lossless half guarantees nothing is
-  dropped; the canonical half makes fields comparable across vendors.
+Two entry points are the stable surface. The canonical vocabulary grows as
+formats are added, so treat a field's absence as "not promoted yet" rather than
+"not in the file", and reach for `inspect` when you need a key `fields` does not
+carry.
 
 ```{toctree}
 :hidden:

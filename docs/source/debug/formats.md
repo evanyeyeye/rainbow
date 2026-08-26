@@ -141,6 +141,5 @@ provenance map of which file carries what.
   instrument, the acquisition/conversion software, and `parentFile` references
   back to the source vendor run. See [`formats/mzxml.md`](formats/mzxml.md).
 
-The dev-only decoders in `tools/aux_parsers/` already read several of these well
-enough to enumerate their fields; the parsers here are the structured,
-canonical, shipped successors.
+The parsers here are the structured, canonical answer to those formats: each
+decodes what the format actually carries rather than dumping its text.

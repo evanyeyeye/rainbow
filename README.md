@@ -68,6 +68,53 @@ The raw UV data is contained in numpy arrays that are attributes of `datafile`. 
 
 There is a [tutorial](https://rainbow-api.readthedocs.io/en/latest/tutorial.html) available. There are also example [snippets](https://rainbow-api.readthedocs.io/en/latest/examples.html) for basic tasks. Or just check out the full [API](https://rainbow-api.readthedocs.io/en/latest/api.html). 
 
+### A whole sequence at once
+
+A sequence directory, one injection subdirectory per sample, reads in one call.
+Injections come back in sorted-name order, which for the names ChemStation
+writes by default is the order they ran.
+
+```python
+sequence = rb.read_sequence("Caffeine_Stability")
+first = sequence[0]
+one = sequence.get_injection("008-D1F-A1-sample_01.D")
+```
+
+See [Sequences](https://rainbow-api.readthedocs.io/en/latest/sequences.html).
+
+### Getting the data out of the vendor's format
+
+Any run, or any sequence, exports to the
+[Allotrope Simple Model](https://www.allotrope.org/): an open, published JSON
+format that other tools read, so the data stops depending on *rainbow* or on the
+instrument vendor. It validates against the published Allotrope schemas, and it
+reads back.
+
+```python
+datadir.export_asm("caffeine.asm.json")           # one run
+sequence.export_asm("stability.asm.json")         # the whole sequence
+back = rb.from_asm(json.load(open("caffeine.asm.json")))
+```
+
+A full-scan MS channel is a 2D grid the format cannot hold faithfully, so ask
+for the ions you want: `datadir.to_asm(ions=[195.1])`. See
+[ASM export](https://rainbow-api.readthedocs.io/en/latest/asm.html).
+
+### The metadata the normal read leaves behind
+
+A vendor run ships sidecar files the data parsers never touch, holding the
+acquisition context: module serials, firmware versions, the operator, method
+details, vial positions, timestamps. `rainbow.debug` decodes them on demand,
+and costs nothing if you never call it.
+
+```python
+from rainbow import debug
+debug.fields("mydata.D")     # one merged record of the whole run
+debug.inspect("mydata.D")    # every recognized sidecar, in full
+```
+
+See [Debug metadata](https://rainbow-api.readthedocs.io/en/latest/debug/overview.html).
+
 ## Performance
 
 A few inherently-sequential decode loops are sped up by optional compiled
