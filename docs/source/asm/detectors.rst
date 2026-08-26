@@ -184,7 +184,7 @@ so it exports faithfully as a ``chromatogram data cube`` measuring ``electric
 current`` in ``pA``, with the device named a ``flame ionization detector``.
 
 Because FID is a gas-chromatography detector, a run that has one is exported as a
-gas chromatography document, which on ``REC/2026/03`` admits the run's UV and MS
+gas chromatography document, which on ``REC/2026/06`` admits the run's UV and MS
 cubes too, so a GC-MS or UV-plus-FID run exports losslessly. The technique is
 read from the method (ChemStation's ``Sample Inlet : GC``), with an FID-presence
 fallback; force it with ``to_asm(technique="GC")`` or ``"LC"``.

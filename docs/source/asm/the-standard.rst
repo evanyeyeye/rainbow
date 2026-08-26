@@ -32,20 +32,20 @@ version it conforms to. A liquid-chromatography run declares:
 .. code-block:: json
 
    {
-     "$asm.manifest": "http://purl.allotrope.org/manifests/liquid-chromatography/REC/2026/03/liquid-chromatography.manifest",
+     "$asm.manifest": "http://purl.allotrope.org/manifests/liquid-chromatography/REC/2026/06/liquid-chromatography.manifest",
      "liquid chromatography aggregate document": { "...": "..." }
    }
 
 and a gas-chromatography run (any run with an FID channel) declares the
 gas-chromatography manifest instead. The corresponding schemas, the ones this
-output is meant to validate against, are the published ADMs at ``REC/2026/03``:
+output is meant to validate against, are the published ADMs at ``REC/2026/06``:
 
-   http://purl.allotrope.org/json-schemas/adm/liquid-chromatography/REC/2026/03/
+   http://purl.allotrope.org/json-schemas/adm/liquid-chromatography/REC/2026/06/
 
-   http://purl.allotrope.org/json-schemas/adm/gas-chromatography/REC/2026/03/
+   http://purl.allotrope.org/json-schemas/adm/gas-chromatography/REC/2026/06/
 
-``REC`` is the maturity stage (a recommendation), and ``2026/03`` is the
-release. rainbow targets ``2026/03`` because, unlike the earlier ``2023/09``,
+``REC`` is the maturity stage (a recommendation), and ``2026/06`` is the
+release. rainbow targets ``2026/06`` because, unlike the earlier ``2023/09``,
 its gas-chromatography ADM carries the FID, MS, and UV cubes together, so a
 gas-chromatography run exports losslessly. The manifests and the target schema
 URLs all live in :code:`rainbow/asm.py`, so there is a single place that says
@@ -78,7 +78,7 @@ turn them on with one environment variable.
 
 **Schema conformance** (:code:`tests/test_asm_schema.py`). Validates emitted
 documents against the published JSON schemas with ``jsonschema``. It checks the
-official Allotrope ``REC/2026/03`` liquid- and gas-chromatography schemas the
+official Allotrope ``REC/2026/06`` liquid- and gas-chromatography schemas the
 manifests declare, across an Agilent ``.dx``, a Waters ``.raw``, a metadata-rich
 LC envelope (instrument, injection, peaks), and gas-chromatography runs (an FID
 chromatogram and a GC-MS run). This catches a wrong structure, a missing
@@ -108,7 +108,7 @@ checked against the published schema with the same tooling:
    document = rb.read("caffeine.dx").to_asm()
 
    url = ("http://purl.allotrope.org/json-schemas/adm/liquid-chromatography/"
-          "REC/2026/03/liquid-chromatography.tabular.embed.schema.json")
+          "REC/2026/06/liquid-chromatography.tabular.embed.schema.json")
    schema = json.load(urllib.request.urlopen(url))
 
    errors = list(Draft202012Validator(schema).iter_errors(document))

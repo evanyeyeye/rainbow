@@ -481,7 +481,7 @@ def test_non_fid_run_is_liquid_chromatography(teal):
     document = teal.to_asm()
     assert _aggregate_key(document) == "liquid chromatography aggregate document"
     assert "liquid-chromatography" in document["$asm.manifest"]
-    assert "REC/2026/03" in document["$asm.manifest"]
+    assert "REC/2026/06" in document["$asm.manifest"]
 
 
 def test_fid_run_routes_to_gas_chromatography():
@@ -490,7 +490,7 @@ def test_fid_run_routes_to_gas_chromatography():
     document = rb.read("tests/inputs/pink.D").to_asm()
     assert _aggregate_key(document) == "gas chromatography aggregate document"
     manifest = document["$asm.manifest"]
-    assert "gas-chromatography" in manifest and "REC/2026/03" in manifest
+    assert "gas-chromatography" in manifest and "REC/2026/06" in manifest
 
 
 def test_fid_exports_as_electric_current_chromatogram():
@@ -512,7 +512,7 @@ def test_fid_exports_as_electric_current_chromatogram():
 def test_gc_run_keeps_its_ms_channels():
     # yellow.D is a GC-MS run (an FID channel plus SIM/scan MS). Routing to a
     # gas chromatography document does not drop the MS: the SIM ions still
-    # export as mass chromatograms (the 2026/03 GC ADM admits that cube), and
+    # export as mass chromatograms (the 2026/06 GC ADM admits that cube), and
     # the FID rides alongside as an electric-current chromatogram.
     document = rb.read("tests/inputs/yellow.D").to_asm()
     assert _aggregate_key(document) == "gas chromatography aggregate document"

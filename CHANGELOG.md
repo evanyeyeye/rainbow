@@ -25,7 +25,9 @@ to [Semantic Versioning](https://semver.org/).
   `to_asm(ions=[...])`), and flame-ionization channels, which route to a
   gas-chromatography document. Integrated peaks become processed data. New
   documentation page, "Open data: the Allotrope Simple Model"
-  (`docs/source/asm.rst`).
+  (`docs/source/asm.rst`). Documents target Allotrope revision `REC/2026/06`,
+  the current one, and an opt-in test suite validates rainbow's own output
+  against the published liquid- and gas-chromatography schemas.
 - **`rb.from_asm` also reads ASM documents rainbow did not write** (for example
   a third-party converter's richer envelope): it reconstructs the UV traces it
   recognizes, ignores unfamiliar fields, and skips cubes it cannot represent

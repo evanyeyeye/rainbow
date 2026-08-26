@@ -2,7 +2,7 @@
 Opt-in ASM schema-conformance test.
 
 Validates rainbow's emitted ASM documents against the published Allotrope
-liquid- and gas-chromatography JSON schemas (revision REC/2026/03, the revision
+liquid- and gas-chromatography JSON schemas (revision REC/2026/06, the revision
 rainbow's manifests declare). This test is opt-in and network-dependent: it runs
 only when ``RAINBOW_TEST_ASM_SCHEMA=1`` is set, ``jsonschema`` is installed (the
 ``validate`` extra), and the schemas can be fetched. It is skipped in CI, which
@@ -32,7 +32,7 @@ import rainbow as rb
 
 
 # The official self-contained embed schemas for the revision rainbow targets.
-_REVISION = "REC/2026/03"
+_REVISION = "REC/2026/06"
 _BASE = "http://purl.allotrope.org/json-schemas/adm/"
 _LC_URL = (_BASE + "liquid-chromatography/" + _REVISION +
            "/liquid-chromatography.tabular.embed.schema.json")
@@ -41,7 +41,7 @@ _GC_URL = (_BASE + "gas-chromatography/" + _REVISION +
 
 _CACHE = Path(os.environ.get(
     "RAINBOW_ASM_SCHEMA_CACHE",
-    Path(tempfile.gettempdir()) / "rainbow-asm-schemas" / "rec-2026-03"))
+    Path(tempfile.gettempdir()) / "rainbow-asm-schemas" / "rec-2026-06"))
 
 
 pytestmark = pytest.mark.skipif(
@@ -232,7 +232,7 @@ def test_fid_gc_run_conforms_to_gc_schema():
 
 
 def test_gc_ms_run_conforms_to_gc_schema():
-    # yellow.D is a GC-MS run: an FID channel plus SIM MS. The 2026/03 gas
+    # yellow.D is a GC-MS run: an FID channel plus SIM MS. The 2026/06 gas
     # chromatography ADM admits both the electric-current and mass chromatogram
     # cubes, so the whole run validates as one gas chromatography document.
     _assert_conforms(_gc_validator(),

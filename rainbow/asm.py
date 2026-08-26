@@ -10,7 +10,7 @@ DataDirectory (one injection) or DataSequence (a whole run). The technique is
 read from the acquisition method (the sample inlet rainbow records as
 ``metadata['technique']``); absent that, a run with an FID channel is taken as
 gas chromatography, and the caller can force either with ``technique=``. rainbow
-targets Allotrope revision REC/2026/03, whose gas-chromatography ADM admits the
+targets Allotrope revision REC/2026/06, whose gas-chromatography ADM admits the
 FID, MS, and UV cubes together, so a gas-chromatography run exports losslessly.
 rainbow's data model already is an ASM data cube:
 
@@ -63,20 +63,20 @@ import warnings
 import numpy as np
 
 # Each ASM document declares the manifest for its technique and schema revision.
-# rainbow targets REC/2026/03: unlike 2023/09, its gas-chromatography ADM carries
+# rainbow targets REC/2026/06: unlike 2023/09, its gas-chromatography ADM carries
 # cubes for FID, MS, and UV together, so a gas-chromatography run exports
 # losslessly. The exact manifest must match the schema this output is validated
 # against; see the module note and tests/test_asm_schema.py.
 _LC_MANIFEST = (
     "http://purl.allotrope.org/manifests/"
-    "liquid-chromatography/REC/2026/03/liquid-chromatography.manifest")
+    "liquid-chromatography/REC/2026/06/liquid-chromatography.manifest")
 _GC_MANIFEST = (
     "http://purl.allotrope.org/manifests/"
-    "gas-chromatography/REC/2026/03/gas-chromatography.tabular.manifest")
+    "gas-chromatography/REC/2026/06/gas-chromatography.tabular.manifest")
 
 # A run is exported as one technique's document. FID is a gas-chromatography
 # detector, so any run that has an FID channel becomes a gas chromatography
-# document (which on 2026/03 also admits the run's UV and MS cubes); every other
+# document (which on 2026/06 also admits the run's UV and MS cubes); every other
 # run stays a liquid chromatography document. The two differ only in the manifest
 # and the aggregate/document wrapper keys; the measurement documents are shared.
 _LC = {
@@ -401,7 +401,7 @@ def _technique(datafiles, metadata, override=None):
     then the technique the method recorded (``metadata['technique']``, read from
     the acquisition method's sample inlet); then, only when neither is present, a
     fallback to detector evidence, where an FID channel (a gas-chromatography
-    detector) marks a gas-chromatography run. On 2026/03 the gas-chromatography
+    detector) marks a gas-chromatography run. On 2026/06 the gas-chromatography
     document also admits the run's UV and MS cubes, so a mixed GC-MS or
     UV-plus-FID run stays lossless.
     """
