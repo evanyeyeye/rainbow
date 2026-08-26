@@ -1551,6 +1551,14 @@ _VOLUME_TO_MICROLITRES = {
 }
 
 
+def _volume_unit_key(unit):
+    """A volume unit reduced to the spelling :data:`_VOLUME_TO_MICROLITRES`
+    keys on: case-folded, unspaced, with either mu and the cubed sign
+    normalized."""
+    key = str(unit).strip().lower().replace("µ", "u").replace("μ", "u")
+    return key.replace(" ", "").replace("³", "^3")
+
+
 def _volume_in_microlitres(volume, options, identifier):
     """The recorded injection volume in microlitres, or None.
 
@@ -1563,9 +1571,7 @@ def _volume_in_microlitres(volume, options, identifier):
     unit = volume.get("unit")
     if unit is None or unit == "":
         return value
-    key = str(unit).strip().lower().replace("µ", "u").replace("μ", "u")
-    key = key.replace(" ", "").replace("³", "^3")
-    factor = _VOLUME_TO_MICROLITRES.get(key)
+    factor = _VOLUME_TO_MICROLITRES.get(_volume_unit_key(unit))
     if factor is None:
         _warn_once_per_run(
             options, "injection-volume-unit:{}".format(unit),
@@ -2075,10 +2081,16 @@ def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
     for measurement in measurements:
         if not isinstance(measurement, dict):
             continue
+        # Before the datafile, not after it. The envelope describes the
+        # injection, not the channel, and a measurement can carry one without
+        # the other: a flame ionization run's only cube is export-only, so
+        # skipping the envelope with the channel lost the run its sample, its
+        # date and its injection volume, and re-exporting it then warned that
+        # it recorded no volume.
+        _absorb_envelope(measurement, metadata)
         datafile = _datafile_from_measurement(measurement)
         if datafile is None:
             continue  # a measurement rainbow did not write (no UV cube)
-        _absorb_envelope(measurement, metadata)
         datafiles.append(datafile)
         group = _peaks_from_measurement(measurement)
         if group:
@@ -2105,12 +2117,50 @@ def _absorb_envelope(measurement, metadata):
     injection_identifier = _text(injection.get("injection identifier"))
     if injection_identifier and injection_identifier != "unknown":
         metadata.setdefault("injection_identifier", injection_identifier)
-    volume = _number(injection.get(
-        "autosampler injection volume setting (chromatography)"))
+    volume = _injection_volume_in_microlitres(injection)
     if volume is not None:
-        # ASM stores mm^3; rainbow reports uL (1 mm^3 == 1 uL).
         metadata.setdefault(
             "injection_volume", {"value": volume, "unit": "µL"})
+
+
+# The two ADMs neither name nor measure the injection volume the same way.
+_INJECTION_VOLUME_KEYS = (
+    # Liquid chromatography, in mm^3.
+    "autosampler injection volume setting (chromatography)",
+    # Gas chromatography, in microlitres.
+    "injection volume setting",
+)
+
+
+def _injection_volume_in_microlitres(injection):
+    """The volume an ASM injection document records, in microlitres, or None.
+
+    Reading only the liquid chromatography spelling meant a gas chromatography
+    document rainbow had just written came back without the volume it plainly
+    carried, and re-exporting it then warned that the run recorded none. Both
+    spellings are read, and the unit each declares is honoured rather than
+    assumed: mm^3 and uL are the same number of microlitres, but a foreign
+    writer is free to use neither.
+    """
+    for key in _INJECTION_VOLUME_KEYS:
+        field = injection.get(key)
+        value = _number(field)
+        if value is None:
+            continue
+        unit = field.get("unit") if isinstance(field, dict) else None
+        if not unit:
+            return value
+        factor = _VOLUME_TO_MICROLITRES.get(_volume_unit_key(unit))
+        if factor is None:
+            # Publishing the number under rainbow's unit would misreport it by
+            # whatever the two units differ by, silently.
+            warnings.warn(
+                "This document records its injection volume in {!r}, which "
+                "rainbow cannot convert to microlitres; it is dropped rather "
+                "than reported under the wrong unit.".format(unit))
+            continue
+        return value if factor == 1.0 else value * factor
+    return None
 
 
 def _datafile_from_measurement(measurement):

@@ -220,6 +220,51 @@ def test_an_unconvertible_injection_volume_unit_is_omitted_with_a_warning():
     assert not [m for m in _measurements(document) if "injection document" in m]
 
 
+def test_a_gas_chromatography_envelope_survives_the_round_trip():
+    # The two ADMs name the injection volume differently, and read it in
+    # different units. Reading only the liquid chromatography spelling meant a
+    # gas chromatography document rainbow had just written came back without
+    # the volume it carried, and re-exporting it warned that the run recorded
+    # none. The date went with it, because a flame ionization run's only
+    # measurement yields no datafile and the envelope was read after the
+    # channel rather than before it.
+    datadir = rb.read("tests/inputs/yellow.D")
+    datadir.metadata["injection_volume"] = {"value": 1.5, "unit": "uL"}
+    document = datadir.to_asm()
+
+    injection = _measurements(document)[0]["injection document"]
+    assert injection["injection volume setting"] == {
+        "value": 1.5, "unit": "μL"}
+
+    back = rb.from_asm(document)
+    assert back.metadata["injection_volume"] == {"value": 1.5, "unit": "µL"}
+    # The date comes back in the spelling the document used, not the vendor's.
+    assert back.metadata["date"] == _measurements(document)[0][
+        "measurement time"]
+
+    # And the second export no longer says the run recorded no volume.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        back.to_asm()
+    assert not [w for w in caught
+                if "records no injection volume" in str(w.message)]
+
+
+def test_a_foreign_injection_volume_unit_is_dropped_rather_than_misreported():
+    # Neither ADM constrains the unit to the one rainbow writes, and a volume
+    # in an unplaceable unit reported as microlitres is wrong by whatever the
+    # two differ by, with nothing to show for it.
+    datadir = rb.read("tests/inputs/red.D")
+    document = datadir.to_asm()
+    for measurement in _measurements(document):
+        measurement.setdefault("injection document", {})[
+            "autosampler injection volume setting (chromatography)"] = {
+                "value": 2.0, "unit": "drops"}
+    with pytest.warns(UserWarning, match="cannot convert"):
+        back = rb.from_asm(document)
+    assert "injection_volume" not in back.metadata
+
+
 @pytest.mark.parametrize("bad", [-1, -3, True, 1.5, "2"])
 def test_decimal_places_rejects_a_value_that_would_gut_the_document(bad):
     # round() and np.round() accept a negative precision, so decimal_places=-3
