@@ -108,6 +108,10 @@ class DataSequence:
             technique (str, optional): Force the export technique, ``"GC"`` or
                 ``"LC"``, overriding the method's declaration and the
                 FID-presence fallback.
+            timezone (str, optional): UTC offset such as
+                ``"-05:00"`` or ``"Z"``, stamped on timestamps the
+                instrument recorded without one. An offset the source
+                did record is never overridden.
 
         Returns:
             dict: The ASM document.
@@ -150,6 +154,10 @@ class DataSequence:
             technique (str, optional): Force the export technique, ``"GC"`` or
                 ``"LC"``, overriding the method's declaration and the
                 FID-presence fallback.
+            timezone (str, optional): UTC offset such as
+                ``"-05:00"`` or ``"Z"``, stamped on timestamps the
+                instrument recorded without one. An offset the source
+                did record is never overridden.
             indent (int, optional): Indentation for the output JSON.
             per_injection (bool, optional): Write one standalone document per
                 injection into ``filename`` (a directory) instead of one bundled

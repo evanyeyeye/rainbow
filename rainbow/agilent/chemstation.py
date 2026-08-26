@@ -975,6 +975,19 @@ def parse_metadata(path, datafiles):
     vialposs = Counter(datafile.metadata['vialpos'] for datafile in datafiles if 'vialpos' in datafile.metadata)
     if dates:
         metadata['date'] = dates.most_common(1)[0][0]
+        # The MS spelling of an instant carries a UTC offset where the .ch and
+        # .uv spellings of the same instant do not, and which one wins the vote
+        # comes down to how many channels the run happened to have. Keep the
+        # winner (it is usually the more precise one), but hold on to the
+        # offset if any file recorded it, so a consumer is not left inventing
+        # one the run actually knows.
+        offsets = [match.group(0) for match in
+                   (re.search(r"[+-]\d{2}:?\d{2}$", date) for date in dates)
+                   if match]
+        if offsets and not re.search(r"[+-]\d{2}:?\d{2}$", metadata['date']):
+            offset = offsets[0]
+            metadata['utc_offset'] = \
+                offset if ':' in offset else offset[:3] + ':' + offset[3:]
     if vialposs:
         metadata['vialpos'] = vialposs.most_common(1)[0][0]
 

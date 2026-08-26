@@ -172,10 +172,10 @@ recorded. The vendors do not agree on a format, and rainbow reads all of them:
      - Waters ``_HEADER.TXT``
    * - ``17 Dec 19  10:04 am``
      - ``2019-12-17T10:04:00``
-     - Agilent sequence
+     - ChemStation ``.ms``
    * - ``3 Feb 22  11:22 am -0500``
      - ``2022-02-03T11:22:00-05:00``
-     - Agilent sequence, with an offset
+     - ChemStation ``.ms``, with an offset
    * - ``2025-06-19T20:30:07.2297248-04:00``
      - ``2025-06-19T20:30:07.229724-04:00``
      - OpenLab ``.dx``, already ISO
@@ -198,7 +198,32 @@ and the document becomes fully conforming:
    datadir.to_asm(timezone="-05:00")   # or "+00:00", or "Z"
 
 An offset the source *did* record always wins: passing ``timezone`` fills in
-what is missing, it never overrides what the instrument said.
+what is missing, it never overrides what the instrument said. That holds even
+when the offset is in a different file from the timestamp that won the vote. A
+ChemStation run spells the same instant differently per detector, and often
+only the ``.ms`` spelling carries a zone, so rainbow keeps that offset aside
+and uses it rather than yours.
 
-A timestamp rainbow cannot parse at all is left out rather than passed through,
-since a vendor-format string in that field is a value no ASM reader can read.
+The offset is applied uniformly, so it is a fixed offset and not a zone. A
+sequence that runs across a daylight-saving transition needs the two halves
+exported separately if both are to be exact.
+
+Two notes for anyone comparing rainbow's output against another converter.
+Most ASM producers, including Benchling's ``allotropy``, default to stamping
+UTC on a zone-less timestamp rather than leaving it bare. rainbow does not,
+for the reason above. And a consumer that reads a bare timestamp will usually
+apply *its* default, so an offset-less value often becomes a UTC one downstream
+anyway. Passing ``timezone`` is how you keep that decision yours.
+
+A timestamp rainbow cannot parse at all is normally left out rather than passed
+through, since a vendor-format string in that field is a value no ASM reader
+can read. The exception is a field the schema requires, ``injection time``:
+dropping that would break the document's structure rather than one field's
+format, and would throw away the only copy of the acquisition time, so the
+vendor string is written through and rainbow warns.
+
+rainbow refuses a timestamp it might misread rather than guessing. An all-numeric
+date such as ``02/03/2022`` is ambiguous between day-first and month-first, so it
+is not accepted at all. Month names are matched directly rather than through the
+C library, so the parse does not change with the locale of whatever application
+rainbow is embedded in.

@@ -7,6 +7,7 @@ liquid-chromatography schema is a separate, later step.
 
 """
 import json
+import warnings
 
 import pytest
 
@@ -782,6 +783,78 @@ def test_an_unreadable_timestamp_is_dropped_not_passed_through():
         assert _iso_timestamp(value) is None
 
 
+@pytest.mark.parametrize("locale_name", ["fr_FR.UTF-8", "de_DE.UTF-8",
+                                         "ja_JP.UTF-8"])
+def test_vendor_timestamps_parse_under_a_non_english_locale(locale_name):
+    """ A month name must not be read through the process locale.
+
+    rainbow is a library; the application embedding it may well have called
+    setlocale(LC_ALL, ''), which is enough to make strptime's %b and %p reject
+    every vendor spelling. That would silently drop the acquisition time on a
+    non-English workstation while passing on the developer's machine.
+    """
+    import locale
+    from rainbow.asm import _iso_timestamp
+    previous = locale.setlocale(locale.LC_TIME)
+    try:
+        try:
+            locale.setlocale(locale.LC_TIME, locale_name)
+        except locale.Error:
+            pytest.skip(locale_name + " is not installed")
+        assert _iso_timestamp("27-Feb-18, 10:11:50") == "2018-02-27T10:11:50"
+        assert _iso_timestamp("17 Dec 19  10:04 am") == "2019-12-17T10:04:00"
+        assert _iso_timestamp("3 Feb 22  11:22 am -0500") == \
+            "2022-02-03T11:22:00-05:00"
+    finally:
+        locale.setlocale(locale.LC_TIME, previous)
+
+
+@pytest.mark.parametrize("value,expected", [
+    # .NET writes 7 fractional digits and trims trailing zeros, so the same
+    # .dx can arrive with any width. Pythons before 3.11 accept only 3 or 6.
+    ("2025-06-19T20:30:07.2297248-04:00", "2025-06-19T20:30:07.229724-04:00"),
+    ("2025-06-19T20:30:07.2297-04:00", "2025-06-19T20:30:07.229700-04:00"),
+    ("2025-06-19T20:30:07.22-04:00", "2025-06-19T20:30:07.220000-04:00"),
+    ("2025-06-19T20:30:07.229724-04:00", "2025-06-19T20:30:07.229724-04:00"),
+])
+def test_a_fractional_second_of_any_width_is_read(value, expected):
+    from rainbow.asm import _iso_timestamp
+    assert _iso_timestamp(value) == expected
+
+
+@pytest.mark.parametrize("value", [
+    "02/03/2022 11:22:00",          # numeric: day and month indistinguishable
+    "31-Feb-18, 10:11:50",          # a day the calendar does not have
+    "3 Feb 22  13:22 pm",           # a 12-hour clock reading 13
+    "3 Feb 22  11:22 am +053045",   # ISO 8601 allows seconds, RFC 3339 does not
+])
+def test_a_timestamp_that_could_be_misread_is_refused(value):
+    """ A timestamp read into the wrong instant is worse than one refused. """
+    from rainbow.asm import _iso_timestamp
+    assert _iso_timestamp(value) is None
+
+
+def test_a_required_timestamp_is_written_through_rather_than_dropped():
+    """ Dropping a required field breaks structure, not just format.
+
+    injection time is required by both ADMs, and the injection document itself
+    is required for gas chromatography. Omitting an unreadable one turns a
+    format violation into a required-property violation and throws away the
+    only copy of the acquisition time, so it is written through with a warning.
+    """
+    from rainbow.asm import _Options
+    options = _Options()
+    with pytest.warns(UserWarning, match="omitting the field"):
+        assert options.timestamp("no idea") is None
+    with pytest.warns(UserWarning, match="schema requires the field"):
+        assert options.timestamp("no idea", required=True) == "no idea"
+    # A value that reads cleanly is unaffected, and says nothing.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert options.timestamp("27-Feb-18, 10:11:50", required=True) == \
+            "2018-02-27T10:11:50"
+
+
 def test_timezone_fills_in_a_missing_offset_but_never_overrides_one():
     from rainbow.asm import _iso_timestamp
     # The source recorded no zone, so the caller's offset is used.
@@ -792,13 +865,44 @@ def test_timezone_fills_in_a_missing_offset_but_never_overrides_one():
         "2022-02-03T11:22:00-05:00"
 
 
+def test_an_offset_a_sibling_file_recorded_outranks_the_callers():
+    """ timezone= must fill in a missing zone, never overwrite a recorded one.
+
+    A ChemStation run spells the same instant differently per detector, and
+    only the MS spelling carries a UTC offset. Which spelling wins the
+    directory-level vote comes down to how many channels the run happened to
+    have, so without this a caller passing timezone= would silently move
+    orange.D's timestamps five hours while the right offset sat in a sibling.
+    """
+    datadir = rb.read("tests/inputs/orange.D")
+    # The vote is unchanged: the .ch spelling is the more precise one.
+    assert datadir.metadata["date"] == "14-Nov-19, 15:08:08"
+    assert datadir.metadata["utc_offset"] == "-05:00"
+    lc = datadir.to_asm(timezone="+00:00")[
+        "liquid chromatography aggregate document"][
+        "liquid chromatography document"][0]
+    for measurement in lc["measurement aggregate document"][
+            "measurement document"]:
+        assert measurement["measurement time"] == "2019-11-14T15:08:08-05:00"
+
+
 def test_timezone_option_is_validated():
     from rainbow.asm import _utc_offset
     assert _utc_offset(None) is None
     assert _utc_offset("Z") == "+00:00"
     assert _utc_offset("-0500") == "-05:00"
     assert _utc_offset("+09:00") == "+09:00"
-    for bad in ("EST", "5", "+5:00", 3, "-25:00 extra"):
+    assert _utc_offset("+14:00") == "+14:00"          # the largest real offset
+    # Whitespace survives a config read or a shell capture, and the offset is
+    # concatenated onto every timestamp, so it is stripped rather than carried.
+    assert _utc_offset("+05:00\n") == "+05:00"
+    assert _utc_offset("  -05:00  ") == "-05:00"
+    for bad in ("EST", "5", "+5:00", 3, "-25:00 extra", "",
+                # Shape alone is not enough: these all match [+-]dd:?dd but no
+                # RFC 3339 reader accepts the timestamps they would produce.
+                "+24:00", "+99:99", "+05:60", "+14:01",
+                # \d is Unicode-aware, so digits need pinning to ASCII.
+                "+٠٥:٣٠"):
         with pytest.raises(Exception, match="timezone must be"):
             _utc_offset(bad)
 

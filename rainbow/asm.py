@@ -265,6 +265,10 @@ def to_asm(datadir, export_dad_cube=True, wavelengths=None, ions=None,
             ``"LC"``, overriding what the method declares and the FID-presence
             fallback. By default the technique is read from the acquisition
             method (see :func:`_technique`).
+        timezone (str, optional): UTC offset such as
+            ``"-05:00"`` or ``"Z"``, stamped on timestamps the
+            instrument recorded without one. An offset the source
+            did record is never overridden.
 
     Returns:
         dict: The ASM document.
@@ -309,6 +313,10 @@ def sequence_to_asm(datasequence, export_dad_cube=True, wavelengths=None,
         technique (str, optional): Force the export technique, ``"GC"`` or
             ``"LC"``, overriding the method's declaration and the FID-presence
             fallback.
+        timezone (str, optional): UTC offset such as
+            ``"-05:00"`` or ``"Z"``, stamped on timestamps the
+            instrument recorded without one. An offset the source
+            did record is never overridden.
 
     Returns:
         dict: The ASM document.
@@ -560,30 +568,36 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
 _WAVELENGTH_TOLERANCE = 1.0
 
 
-# The wall-clock formats the vendor parsers hand back, tried in order. Only the
-# Agilent sequence format carries a UTC offset; the rest record local time with
-# no zone at all, which is the whole reason `timezone=` exists.
+# The wall-clock spellings the vendor parsers hand back. Only the ChemStation
+# MS-file form carries a UTC offset, and not always; the rest record local time
+# with no zone at all, which is the whole reason `timezone=` exists.
 #
-#   27-Feb-18, 10:11:50         Chemstation .ch/.uv/.ms
+#   27-Feb-18, 10:11:50         ChemStation .ch/.uv header
 #   06-Aug-2021 10:52:20        Waters _HEADER.TXT
-#   3 Feb 22  11:22 am -0500    Agilent sequence (the one with an offset)
-#   17 Dec 19  10:04 am         Agilent sequence, offset absent
+#   3 Feb 22  11:22 am -0500    ChemStation .ms (the one with an offset)
+#   17 Dec 19  10:04 am         ChemStation .ms, offset absent
 #
 # An Agilent OpenLab .dx already stores ISO 8601 and is handled separately.
-_TIMESTAMP_FORMATS = (
-    "%d-%b-%y, %H:%M:%S",
-    "%d-%b-%Y %H:%M:%S",
-    "%d-%b-%y %H:%M:%S",
-    "%d %b %y  %I:%M %p %z",
-    "%d %b %Y  %I:%M %p %z",
-    "%d %b %y  %I:%M %p",
-    "%d %b %Y  %I:%M %p",
-)
+_MONTHS = {name: number for number, name in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun",
+     "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
 
-# A .NET timestamp carries 7 fractional digits, and older Pythons accept at most
-# 6 (and no trailing Z), so an ISO string is normalized before it is parsed.
-_ISO_FRACTION = re.compile(r"(\.\d{1,})")
-_UTC_OFFSET = re.compile(r"^[+-]\d{2}:?\d{2}$")
+# One pattern covers all four spellings above. strptime would be the obvious
+# tool, but its %b and %p read the process locale: under a non-English LC_TIME
+# every vendor timestamp fails to parse, and rainbow is a library that does not
+# control the locale of the application embedding it. Matching the month name
+# here keeps the parse independent of that.
+_VENDOR_TIMESTAMP = re.compile(r"""
+    ^(?P<day>[0-9]{1,2})[-\s]+(?P<month>[A-Za-z]{3,9})[-\s]+(?P<year>[0-9]{2,4})
+    [\s,]+(?P<hour>[0-9]{1,2}):(?P<minute>[0-9]{2})(?::(?P<second>[0-9]{2}))?
+    (?:\s*(?P<meridiem>[AaPp])\.?[Mm]\.?)?
+    (?:\s*(?P<offset>[+-][0-9]{2}:?[0-9]{2}))?$
+""", re.VERBOSE)
+
+# A .NET timestamp carries 7 fractional digits, and older Pythons accept exactly
+# 3 or 6 (and no trailing Z), so an ISO string is normalized before it is parsed.
+_ISO_FRACTION = re.compile(r"\.([0-9]+)")
+_UTC_OFFSET = re.compile(r"[+-][0-9]{2}:?[0-9]{2}\Z")
 
 
 def _utc_offset(timezone):
@@ -594,13 +608,61 @@ def _utc_offset(timezone):
         raise Exception(
             "timezone must be a UTC offset string such as '+00:00' or 'Z', "
             "not {!r}.".format(timezone))
+    # An offset arriving from a config file or a shell capture keeps its
+    # trailing newline, and the offset is concatenated onto every timestamp in
+    # the document, so a stray one would corrupt all of them at once.
+    timezone = timezone.strip()
     if timezone in ("Z", "z"):
         return "+00:00"
-    if not _UTC_OFFSET.match(timezone):
-        raise Exception(
-            "timezone must be a UTC offset such as '+00:00', '-05:00', or "
-            "'Z', not {!r}.".format(timezone))
-    return timezone if ":" in timezone else timezone[:3] + ":" + timezone[3:]
+    invalid = Exception(
+        "timezone must be a UTC offset such as '+00:00', '-05:00', or 'Z', "
+        "not {!r}.".format(timezone))
+    if not _UTC_OFFSET.fullmatch(timezone):
+        raise invalid
+    normalized = timezone if ":" in timezone else timezone[:3] + ":" + timezone[3:]
+    # The shape alone is not enough: the offset is written into the document
+    # verbatim, so an out-of-range one produces a timestamp no RFC 3339 reader
+    # will accept, and validation is opt-in so nothing would catch it.
+    hours, minutes = int(normalized[1:3]), int(normalized[4:6])
+    if hours > 14 or minutes > 59 or (hours == 14 and minutes):
+        raise invalid
+    return normalized
+
+
+def _parse_vendor(value):
+    """Parses a vendor wall-clock spelling, independent of the locale."""
+    from datetime import datetime, timedelta, timezone as _timezone
+
+    match = _VENDOR_TIMESTAMP.match(value)
+    if match is None:
+        return None
+    month = _MONTHS.get(match.group("month")[:3].lower())
+    if month is None:
+        return None
+    year = int(match.group("year"))
+    if len(match.group("year")) <= 2:
+        # The same pivot strptime's %y uses, so no vendor's two-digit year
+        # changes meaning: 69-99 is last century, 00-68 is this one.
+        year += 1900 if year >= 69 else 2000
+    hour = int(match.group("hour"))
+    meridiem = match.group("meridiem")
+    if meridiem:
+        if hour > 12:
+            return None
+        hour = hour % 12 + (12 if meridiem.lower() == "p" else 0)
+    offset = match.group("offset")
+    tzinfo = None
+    if offset:
+        sign = -1 if offset[0] == "-" else 1
+        digits = offset[1:].replace(":", "")
+        tzinfo = _timezone(sign * timedelta(
+            hours=int(digits[:2]), minutes=int(digits[2:])))
+    try:
+        return datetime(year, month, int(match.group("day")), hour,
+                        int(match.group("minute")),
+                        int(match.group("second") or 0), tzinfo=tzinfo)
+    except ValueError:
+        return None                        # a day or time the calendar rejects
 
 
 def _parse_iso(value):
@@ -609,8 +671,12 @@ def _parse_iso(value):
     if text.endswith(("Z", "z")):
         text = text[:-1] + "+00:00"
     match = _ISO_FRACTION.search(text)
-    if match and len(match.group(1)) > 7:      # a dot plus at most 6 digits
-        text = text[:match.start() + 7] + text[match.end():]
+    if match and len(match.group(1)) != 6:
+        # Pythons before 3.11 accept exactly 3 or 6 fractional digits. .NET
+        # writes 7 and trims trailing zeros, so both padding and truncating are
+        # needed for the same .dx to read on every interpreter rainbow supports.
+        text = (text[:match.start()] + "." + match.group(1)[:6].ljust(6, "0")
+                + text[match.end():])
     try:
         from datetime import datetime
         return datetime.fromisoformat(text)
@@ -632,17 +698,7 @@ def _iso_timestamp(value, timezone=None):
     """
     if not isinstance(value, str) or not value.strip():
         return None
-    from datetime import datetime
-
-    parsed = None
-    for fmt in _TIMESTAMP_FORMATS:
-        try:
-            parsed = datetime.strptime(value.strip(), fmt)
-            break
-        except ValueError:
-            continue
-    if parsed is None:
-        parsed = _parse_iso(value)
+    parsed = _parse_vendor(value.strip()) or _parse_iso(value)
     if parsed is None:
         return None                            # a shape rainbow cannot read
     if parsed.tzinfo is None and timezone is not None:
@@ -672,9 +728,34 @@ class _Options:
         self.decimals = decimal_places
         self.timezone = _utc_offset(timezone)
 
-    def timestamp(self, value):
-        """``value`` as an ISO 8601 timestamp, or None if it cannot be read."""
-        return _iso_timestamp(value, self.timezone)
+    def timestamp(self, value, required=False, recorded_offset=None):
+        """
+        ``value`` as an ISO 8601 timestamp, or None if it cannot be read.
+
+        An unreadable vendor spelling is normally dropped: ASM types every
+        timestamp as ISO 8601, so passing the vendor string through would put a
+        value there that no reader can parse. Where the schema makes the field
+        required that trade goes the other way, because omitting it breaks the
+        document's structure rather than one field's format, and it throws away
+        the only copy of the acquisition time. Such a field keeps the vendor
+        string, and either way the caller is told.
+
+        """
+        # An offset another file in the same run recorded outranks the
+        # caller's: it is what the instrument said, and `timezone` is only
+        # meant to fill in a zone nothing recorded.
+        stamped = _iso_timestamp(value, recorded_offset or self.timezone)
+        if stamped is not None or not isinstance(value, str) or not value.strip():
+            return stamped
+        if required:
+            warnings.warn(
+                f"cannot read {value!r} as a timestamp; writing it through "
+                "unchanged, because the schema requires the field. The "
+                "document will not validate until the value is corrected.")
+            return value
+        warnings.warn(
+            f"cannot read {value!r} as a timestamp; omitting the field.")
+        return None
 
     def array(self, values):
         """The values as a Python list, rounded if a precision was set."""
@@ -1084,10 +1165,11 @@ def _measurement(datafile, metadata, control, cube_key, cube, options,
         "chromatography column document": {},
         cube_key: cube,
     }
-    # Omitted rather than passed through when the vendor string cannot be read
-    # as a timestamp: the field is optional, and ASM types it as ISO 8601, so a
-    # vendor-format string here would be a value no reader can parse.
-    timestamp = options.timestamp(metadata.get("date"))
+    # Optional in both ADMs, so an unreadable vendor spelling is dropped rather
+    # than passed through: ASM types this as ISO 8601, and a vendor-format
+    # string here would be a value no reader can parse.
+    timestamp = options.timestamp(
+        metadata.get("date"), recorded_offset=metadata.get("utc_offset"))
     if timestamp:
         measurement["measurement time"] = timestamp
     return measurement
@@ -1142,7 +1224,11 @@ def _add_injection_document(measurement, metadata, identifier, technique,
                 "value": options.scalar(volume["value"]),
                 "unit": "μL",
             }
-    timestamp = options.timestamp(metadata.get("date"))
+    # Required by both ADMs, so an unreadable vendor spelling is written
+    # through rather than dropped; see _Options.timestamp.
+    timestamp = options.timestamp(
+        metadata.get("date"), required=True,
+        recorded_offset=metadata.get("utc_offset"))
     if timestamp:
         document["injection time"] = timestamp
     measurement["injection document"] = document
