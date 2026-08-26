@@ -1262,6 +1262,21 @@ def _as_documents(value):
     return value if isinstance(value, list) else []
 
 
+def _text(value):
+    """
+    A schema string field as a string, or None.
+
+    A value datum may be written either bare or as a ``{"value": ...}`` object,
+    and a document rainbow did not write may put anything at all in a field it
+    declares as text. rainbow's own objects take strings, so a non-string here
+    has to become None rather than propagate to a constructor that rejects it.
+
+    """
+    if isinstance(value, dict):
+        value = value.get("value")
+    return value if isinstance(value, str) else None
+
+
 def _cube_data(cube):
     """
     A cube's inlined ``(dimensions, measures)``, or None when it has none.
@@ -1365,7 +1380,7 @@ def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
     """Reads one liquid chromatography document into datafiles and metadata."""
     if not isinstance(lc_document, dict):
         return
-    analyst = lc_document.get("analyst")
+    analyst = _text(lc_document.get("analyst"))
     if analyst and analyst != "unknown":
         metadata.setdefault("operator", analyst)
     # A document rainbow did not write may carry neither key, or emit a single
@@ -1390,15 +1405,16 @@ def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
 def _absorb_envelope(measurement, metadata):
     """Lifts a measurement's envelope fields up to directory metadata."""
     sample = _first(measurement.get("sample document"))
-    identifier = sample.get("sample identifier")
+    identifier = _text(sample.get("sample identifier"))
     if identifier and identifier != "unknown":
         metadata.setdefault("sample", identifier)
-    location = sample.get("location identifier")
+    location = _text(sample.get("location identifier"))
     if location:
         metadata.setdefault("vialpos", location)
-    if measurement.get("measurement time"):
-        metadata.setdefault("date", measurement["measurement time"])
-    volume = measurement.get("injection document", {}).get(
+    date = _text(measurement.get("measurement time"))
+    if date:
+        metadata.setdefault("date", date)
+    volume = _first(measurement.get("injection document")).get(
         "autosampler injection volume setting (chromatography)")
     if isinstance(volume, dict) and volume.get("value") is not None:
         # ASM stores mm^3; rainbow reports uL (1 mm^3 == 1 uL).
@@ -1411,51 +1427,60 @@ def _datafile_from_measurement(measurement):
     import numpy as np
     from rainbow.datafile import DataFile
 
-    name = measurement.get("measurement identifier", "trace")
+    name = _text(measurement.get("measurement identifier")) or "trace"
     file_metadata = {}
 
     control = _first(_first(measurement.get(
         "device control aggregate document")).get("device control document"))
     setting = control.get("detector wavelength setting")
     wavelength = setting.get("value") if isinstance(setting, dict) else None
+    if not isinstance(wavelength, (int, float)) or isinstance(wavelength, bool):
+        wavelength = None
 
-    if _SPECTRUM_CUBE in measurement:
-        cube = _cube_data(measurement[_SPECTRUM_CUBE])
-        if cube is None or len(cube[0]) < 2:
-            return None  # no inlined grid to rebuild
-        dimensions, measures = cube
-        times, wavelengths = dimensions[0], dimensions[1]
-        xlabels = np.array(times, dtype=float) / _SECONDS_PER_MINUTE
-        ylabels = np.array(wavelengths, dtype=float)
-        # Un-flatten the grid (wavelength varied fastest, i.e. C order).
-        data = np.array(measures[0], dtype=float).reshape(
-            len(times), len(wavelengths))
-    elif _CHROMATOGRAM_CUBE in measurement and _is_absorbance(
-            measurement[_CHROMATOGRAM_CUBE]):
-        cube = _cube_data(measurement[_CHROMATOGRAM_CUBE])
-        if cube is None:
-            return None  # no inlined values to rebuild
-        dimensions, measures = cube
-        xlabels = np.array(dimensions[0], dtype=float) / _SECONDS_PER_MINUTE
-        data = np.array(measures[0], dtype=float).reshape(-1, 1)
-        if wavelength is not None:
-            ylabels = np.array([wavelength])
-            file_metadata["wavelength"] = wavelength
+    # A cube's inlined values are declared numeric, but nothing stops another
+    # writer putting text (or nulls) there. The channel is skipped the way an
+    # unrepresentable one is, rather than failing the whole read.
+    try:
+        if _SPECTRUM_CUBE in measurement:
+            cube = _cube_data(measurement[_SPECTRUM_CUBE])
+            if cube is None or len(cube[0]) < 2:
+                return None  # no inlined grid to rebuild
+            dimensions, measures = cube
+            times, wavelengths = dimensions[0], dimensions[1]
+            xlabels = np.array(times, dtype=float) / _SECONDS_PER_MINUTE
+            ylabels = np.array(wavelengths, dtype=float)
+            # Un-flatten the grid (wavelength varied fastest, i.e. C order).
+            data = np.array(measures[0], dtype=float).reshape(
+                len(times), len(wavelengths))
+        elif _CHROMATOGRAM_CUBE in measurement and _is_absorbance(
+                measurement[_CHROMATOGRAM_CUBE]):
+            cube = _cube_data(measurement[_CHROMATOGRAM_CUBE])
+            if cube is None:
+                return None  # no inlined values to rebuild
+            dimensions, measures = cube
+            xlabels = np.array(dimensions[0], dtype=float) / _SECONDS_PER_MINUTE
+            data = np.array(measures[0], dtype=float).reshape(-1, 1)
+            if wavelength is not None:
+                ylabels = np.array([wavelength])
+                file_metadata["wavelength"] = wavelength
+            else:
+                ylabels = np.array([''])
         else:
-            ylabels = np.array([''])
-    else:
-        # Reconstruct only an absorbance (UV) trace. A faithful generic detector
-        # cube (CAD/ELSD/FID electric current or intensity) or a mass
-        # chromatogram is export-only, so it is skipped. A CAD/ELSD/FID channel
-        # relabeled to absorbance to carry peaks does come back, as a UV trace;
-        # that is the documented cost of the relabel.
-        return None
-
+            # Reconstruct only an absorbance (UV) trace. A faithful generic
+            # detector cube (CAD/ELSD/FID electric current or intensity) or a
+            # mass chromatogram is export-only, so it is skipped. A CAD/ELSD/FID
+            # channel relabeled to absorbance to carry peaks does come back, as
+            # a UV trace; that is the documented cost of the relabel.
+            return None
+    except (TypeError, ValueError):
+        return None  # values that are not the numbers the cube declares
     return DataFile(name, 'UV', xlabels, ylabels, data, file_metadata)
 
 
 def _is_absorbance(cube):
     """Whether a chromatogram cube's measure is absorbance (a UV trace)."""
+    if not isinstance(cube, dict):
+        return False
     measures = _first(cube.get("cube-structure")).get("measures")
     return _first(measures).get("concept") == "absorbance"
 
@@ -1464,16 +1489,18 @@ def _peaks_from_measurement(measurement):
     """Reconstructs a peak group from a measurement's processed data, or None."""
     processed = _first(measurement.get(_PROCESSED_DATA))
     document = _first(processed.get("processed data document"))
-    asm_peaks = _as_documents(_first(document.get("peak list")).get("peak"))
+    asm_peaks = [peak for peak
+                 in _as_documents(_first(document.get("peak list")).get("peak"))
+                 if isinstance(peak, dict)]
     if not asm_peaks:
         return None
 
-    channel = measurement.get("measurement identifier")
+    channel = _text(measurement.get("measurement identifier"))
     wavelength = None
     control = _first(_first(measurement.get(
         "device control aggregate document")).get("device control document"))
     setting = control.get("detector wavelength setting")
-    if setting:
+    if isinstance(setting, dict):
         wavelength = setting.get("value")
     return {
         "signal": _channel_key(channel) if channel else None,
@@ -1508,24 +1535,26 @@ def _peak_from_asm(peak):
 
 def _instrument_from_device_system(device_system):
     """Reconstructs the instrument dict from a device system document, or None."""
-    if not device_system:
+    if not isinstance(device_system, dict):
         return None
     modules = []
-    for device in device_system.get("device document", []):
+    for device in _as_documents(device_system.get("device document")):
+        if not isinstance(device, dict):
+            continue
         if "model number" not in device \
                 and "equipment serial number" not in device:
-            continue  # the bare "liquid chromatograph" fallback entry
+            continue  # the bare chromatograph fallback entry
         modules.append({
-            "name": device.get("written name")
-            or device.get("device identifier"),
-            "type": device.get("device type"),
-            "part_no": device.get("model number"),
-            "serial_no": device.get("equipment serial number"),
-            "firmware": device.get("firmware version"),
+            "name": _text(device.get("written name"))
+            or _text(device.get("device identifier")),
+            "type": _text(device.get("device type")),
+            "part_no": _text(device.get("model number")),
+            "serial_no": _text(device.get("equipment serial number")),
+            "firmware": _text(device.get("firmware version")),
         })
     if not modules:
         return None
     return {
-        "name": device_system.get("asset management identifier"),
+        "name": _text(device_system.get("asset management identifier")),
         "modules": modules,
     }

@@ -135,8 +135,15 @@ to [Semantic Versioning](https://semver.org/).
   tolerated one shape and crashed on the rest: a missing measurement aggregate,
   a lone object where a list is declared, an empty device-control list, and a
   cube described without its `data` member, which the published cube structure
-  does not require. Anything it cannot represent is skipped, as an
-  unrepresentable cube always was.
+  does not require. It also no longer raises when a field holds something other
+  than its declared type: a cube, injection document, or device system that is
+  not an object, a device document that is not a list, a name or analyst that is
+  not a string, a timestamp written in the `{"value": ...}` form the core schema
+  also permits, or cube values that are not the numbers the cube declares.
+  Anything it cannot represent is skipped, as an unrepresentable cube always
+  was, and an unreadable field costs only itself: the channel still comes back.
+  Verified by mutating every field of five documents, rainbow's own and two
+  third-party, to each of eleven wrong shapes (10,362 reads, no exception).
 - **`rb.read(path, centroid=True, bin_width=...)` no longer warns falsely.** The
   m/z floors describe unit-resolution data, but were applied to calibrated
   MassHunter TOF centroids, which resolve far below them, so a perfectly

@@ -405,6 +405,19 @@ _STRUCTURE = {"cube-structure": {
     "measures": [{"concept": "absorbance", "unit": "mAU"}]}}
 
 
+def _with_cube(**measurement):
+    """A measurement carrying a real absorbance cube, plus ``measurement``.
+
+    A measurement with no cube is skipped before its envelope is ever read, so a
+    document shape attached to a cubeless measurement tests nothing. Anything
+    exercising the envelope (sample document, device control, processed data)
+    has to hang off a measurement that actually reconstructs.
+    """
+    measurement["chromatogram data cube"] = dict(_STRUCTURE, data={
+        "dimensions": [[0.0, 60.0]], "measures": [[1.0, 2.0]]})
+    return measurement
+
+
 @pytest.mark.parametrize("document", [
     pytest.param(_lc({"chromatogram data cube": dict(_STRUCTURE)}),
                  id="chromatogram-cube-without-data"),
@@ -417,17 +430,56 @@ _STRUCTURE = {"cube-structure": {
     pytest.param(_lc({"three-dimensional ultraviolet spectrum data cube": dict(
         _STRUCTURE, data={"dimensions": [[0.0]], "measures": [[1.0]]})}),
         id="spectrum-cube-missing-its-second-axis"),
-    pytest.param(_lc({"device control aggregate document":
-                      {"device control document": []}}),
+    pytest.param(_lc(_with_cube(**{"device control aggregate document":
+                                   {"device control document": []}})),
                  id="empty-device-control-document"),
-    pytest.param(_lc({"device control aggregate document":
-                      {"device control document": {"device type": "x"}}}),
+    pytest.param(_lc(_with_cube(**{"device control aggregate document":
+                                   {"device control document":
+                                    {"device type": "x"}}})),
                  id="lone-device-control-object"),
-    pytest.param(_lc({"sample document": [{"sample identifier": "s"}]}),
+    pytest.param(_lc(_with_cube(**{"sample document":
+                                   [{"sample identifier": "s"}]})),
                  id="sample-document-as-a-list"),
-    pytest.param(_lc({"processed data aggregate document":
-                      {"processed data document": {"peak list": {"peak": []}}}}),
+    pytest.param(_lc(_with_cube(**{"processed data aggregate document":
+                                   {"processed data document":
+                                    {"peak list": {"peak": []}}}})),
                  id="lone-processed-data-object"),
+    # Fields a foreign writer may fill with something other than the declared
+    # type. Each hangs off a real cube, so the envelope is genuinely parsed.
+    pytest.param(_lc(_with_cube(**{"injection document": "not an object"})),
+                 id="injection-document-is-not-an-object"),
+    pytest.param(_lc(_with_cube(**{"measurement identifier": ["a", "b"]})),
+                 id="measurement-identifier-is-not-a-string"),
+    pytest.param(_lc(_with_cube(**{"measurement time": {"value": "now"}})),
+                 id="measurement-time-as-a-value-object"),
+    pytest.param(_lc(_with_cube(**{"sample document":
+                                   {"sample identifier": 7}})),
+                 id="sample-identifier-is-not-a-string"),
+    pytest.param(_lc(_with_cube(**{"processed data aggregate document":
+                                   {"processed data document":
+                                    {"peak list": {"peak": ["nope"]}}}})),
+                 id="peak-list-entry-is-not-an-object"),
+    pytest.param({"liquid chromatography aggregate document": {
+        "device system document": "not an object",
+        "liquid chromatography document": []}},
+        id="device-system-is-not-an-object"),
+    pytest.param({"liquid chromatography aggregate document": {
+        "device system document": {"device document": None},
+        "liquid chromatography document": []}},
+        id="device-document-is-not-a-list"),
+    pytest.param({"liquid chromatography aggregate document": {
+        "device system document": {"device document": ["nope"]},
+        "liquid chromatography document": []}},
+        id="device-document-entry-is-not-an-object"),
+    pytest.param({"liquid chromatography aggregate document": {
+        "liquid chromatography document": [{"analyst": {"value": "someone"}}]}},
+        id="analyst-as-a-value-object"),
+    pytest.param(_lc({"chromatogram data cube": "not an object"}),
+                 id="chromatogram-cube-is-not-an-object"),
+    pytest.param(_lc({"chromatogram data cube": dict(
+        _STRUCTURE, data={"dimensions": [["not a number"]],
+                          "measures": [[1.0]]})}),
+        id="cube-values-are-not-numbers"),
     pytest.param({"liquid chromatography aggregate document": {
         "liquid chromatography document": {"analyst": "someone"}}},
         id="lone-lc-document-object"),
@@ -443,6 +495,32 @@ def test_from_asm_does_not_raise_on_a_foreign_document_shape(document):
     datadir = rb.from_asm(document)
     # Whatever it could not represent is skipped, not fatal.
     assert isinstance(datadir.datafiles, list)
+    # The same document read as a sequence takes a different path through the
+    # envelope (the device system, the injection naming), so it is read too.
+    assert isinstance(rb.sequence_from_asm(document).injections, list)
+
+
+def test_a_foreign_envelope_shape_does_not_cost_the_channel():
+    """ A shape rainbow cannot read must cost only the field it sits in.
+
+    Every one of these hangs off a real absorbance cube: the channel still comes
+    back, and only the unreadable field is dropped. Without this the shapes
+    above could be attached to cubeless measurements, which are skipped before
+    the envelope is ever parsed, and would assert nothing.
+    """
+    shapes = [
+        {"injection document": "not an object"},
+        {"measurement identifier": ["a", "b"]},
+        {"sample document": {"sample identifier": 7}},
+        {"device control aggregate document":
+            {"device control document": {"device type": "x"}}},
+        {"processed data aggregate document":
+            {"processed data document": {"peak list": {"peak": ["nope"]}}}},
+    ]
+    for shape in shapes:
+        datadir = rb.from_asm(_lc(_with_cube(**shape)))
+        assert len(datadir.datafiles) == 1, shape
+        assert datadir.datafiles[0].data.shape == (2, 1), shape
 
 
 def test_from_asm_still_reads_a_lone_measurement_object():
