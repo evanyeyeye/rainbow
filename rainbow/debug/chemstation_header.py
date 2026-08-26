@@ -106,13 +106,22 @@ def _read_string(buf, offset, gap):
     n = buf[offset]
     if n == 0:
         return None
-    raw = buf[offset + 1: offset + 1 + n * gap: gap]
-    if len(raw) < n:
+    raw = buf[offset + 1: offset + 1 + n * gap]
+    if len(raw) < n * gap:
         return None
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        text = raw.decode("latin-1")
+    if gap == 2:
+        # A gap of two is UTF-16LE, not "every other byte": taking the stride
+        # keeps the low byte of each unit, which is right only while the text
+        # is ASCII and turns any accented character into mojibake.
+        try:
+            text = raw.decode("utf-16-le")
+        except UnicodeDecodeError:
+            text = raw[::2].decode("latin-1")
+    else:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1")
     text = text.strip()
     return text or None
 

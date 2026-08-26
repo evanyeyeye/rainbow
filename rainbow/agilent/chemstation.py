@@ -954,10 +954,21 @@ def read_string(f, offset, gap=2):
     """
     f.seek(offset)
     str_len = struct.unpack("<B", f.read(1))[0] * gap
+    raw = f.read(str_len)
     try:
-        return f.read(str_len)[::gap].decode().strip()
+        # A gap of two is UTF-16LE, not "every other byte". Taking the stride
+        # keeps the low byte of each unit, which reads the same for ASCII and
+        # garbles anything outside it, so a header in any other script decoded
+        # to invalid UTF-8 and was swallowed as an empty string. The stride is
+        # kept as the fallback for a slot that is not valid UTF-16 at all.
+        if gap == 2:
+            return raw.decode("utf-16-le").strip()
+        return raw[::gap].decode().strip()
     except Exception:
-        return ""
+        try:
+            return raw[::gap].decode().strip()
+        except Exception:
+            return ""
 
 
 """ 

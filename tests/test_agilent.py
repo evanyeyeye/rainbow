@@ -90,3 +90,28 @@ def test_detector_is_read_from_the_wavelength_clause(signal, expected):
     # A channel typed UV always carries the wavelength the ASM export needs for
     # its detector wavelength setting; nothing else invents one.
     assert ("wavelength" in metadata) == (expected[0] == "UV")
+
+
+def test_header_strings_decode_beyond_ascii():
+    # Chemstation header slots with a gap of two are UTF-16LE. Reading every
+    # other byte agrees with a proper decode only while the text is ASCII; for
+    # anything else it produced invalid UTF-8, which the reader swallowed, so
+    # the field came back empty rather than wrong.
+    import io
+    from rainbow.agilent.chemstation import read_string
+
+    for text in ["Front Signal", "Café Münster", "样品-001",
+                 "Проба 12"]:
+        encoded = text.encode("utf-16-le")
+        buf = b"\x00" * 8 + bytes([len(text)]) + encoded
+        assert read_string(io.BytesIO(buf), offset=8, gap=2) == text.strip()
+
+
+def test_an_undecodable_header_slot_still_returns_a_string():
+    # A slot that is not valid UTF-16 at all must not raise; the stride remains
+    # the fallback so a malformed header degrades rather than breaking the read.
+    import io
+    from rainbow.agilent.chemstation import read_string
+
+    buf = b"\x00" * 8 + bytes([2]) + b"\xff\xdc\xff\xdc"
+    assert isinstance(read_string(io.BytesIO(buf), offset=8, gap=2), str)
