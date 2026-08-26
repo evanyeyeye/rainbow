@@ -25,6 +25,43 @@ MZ_FLOORS = {'agilent': 0.1, 'waters': 0.05}
 # below any vendor floor, so its parsers record this one instead.
 HRMS_MZ_FLOOR = 1e-6
 
+# Beyond this many decimals a float64 m/z label carries no more information, so
+# the search below stops rather than looping forever on a denormal bin_width.
+_MAX_LABEL_DECIMALS = 17
+
+# Above this many bins in the span, lay the bins out by sorting rather than by
+# allocating an array over the whole span. Matches the cap the MassHunter grid
+# builder uses. At about 9 bytes a bin the dense path costs ~450 MB here, and
+# the spans that exceed it are almost entirely empty bins.
+_MAX_DENSE_BINS = 50_000_000
+
+
+def label_precision(display_precision, bin_width):
+    """
+    ``display_precision``, raised if it is too coarse to label every bin.
+
+    Rounding bin centres for display is meant to be cosmetic. It stops being
+    cosmetic once it is coarser than the bins themselves: adjacent centres round
+    to the same number, and the labels no longer name the columns one to one.
+    A caller then cannot address a column at all, and the ones that silently
+    lose are the columns that share a label with an earlier one, so
+    ``extract_traces`` returns part of the signal at that m/z and a CSV export
+    repeats the header.
+
+    Bin centres are multiples of ``bin_width``, so adjacent labels differ by
+    exactly ``bin_width`` and stay distinct as long as the rounding step is no
+    larger than that. The vendor default is 0 decimals (unit-resolution data),
+    which collides for every ``bin_width`` below 1, including the sub-unit
+    widths :func:`rainbow.mz_resolution` recommends.
+
+    """
+    if display_precision is None or bin_width is None or not bin_width > 0:
+        return display_precision
+    decimals = display_precision
+    while decimals < _MAX_LABEL_DECIMALS and 10.0 ** -decimals > bin_width:
+        decimals += 1
+    return decimals
+
 
 def bin_datapairs(keys, values, pair_counts, bin_width,
                   display_precision=None, data_dtype=np.int64):
@@ -69,28 +106,50 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
         return (np.empty(0, dtype=np.float64),
                 np.zeros((num_times, 0), dtype=data_dtype))
 
-    # Assign each key to a bin of width bin_width (this is the lossy step), then
-    # densify the bin indices so the unique bins and per-pair columns come from a
-    # histogram, not a sort.
-    bins = np.rint(np.asarray(keys, dtype=np.float64) / bin_width).astype(
-        np.int64)
+    # Assign each key to a bin of width bin_width (this is the lossy step).
+    # A bin_width small enough to send a key past the float64 range, or past
+    # what an int64 bin index can hold, would silently wrap: every key would
+    # cast to the same index and the whole run would collapse into one column
+    # holding the total signal. Refuse instead of returning that.
+    scaled = np.asarray(keys, dtype=np.float64) / bin_width
+    if not np.isfinite(scaled).all() or np.abs(scaled).max() >= 2.0 ** 62:
+        raise ValueError(
+            f"bin_width={bin_width!r} is too small for keys up to "
+            f"{float(np.max(keys)):g}: the bin index overflows.")
+    bins = np.rint(scaled).astype(np.int64)
     base = int(bins.min())
-    dense = bins - base
+    span = int(bins.max()) - base + 1
 
-    present = np.zeros(int(dense.max()) + 1, dtype=bool)
-    present[dense] = True
-    num_ylabels = int(present.sum())
-
-    # Column of each pair = its dense bin's rank among the present bins. Columns
-    # increase with the key value, so the ylabels come out sorted.
-    columns = (np.cumsum(present) - 1)[dense]
+    # Densifying the bin indices gets the unique bins and per-pair columns from
+    # a histogram rather than a sort, but it allocates over the whole span, not
+    # just the bins that occur. A bin_width far below the vendor grid makes that
+    # span enormous while the number of occupied bins stays small (a 1e-8 width
+    # over a few hundred daltons is tens of billions of bins, most of them
+    # empty), so past a cap it sorts instead. Without the cap the allocation
+    # reaches gigabytes and the process is killed before the too-fine-bin_width
+    # warning, which runs after the parse, can be printed.
+    if span <= _MAX_DENSE_BINS:
+        dense = bins - base
+        present = np.zeros(span, dtype=bool)
+        present[dense] = True
+        num_ylabels = int(present.sum())
+        # Column of each pair = its dense bin's rank among the present bins.
+        # Columns increase with the key value, so the ylabels come out sorted.
+        columns = (np.cumsum(present) - 1)[dense]
+        occupied = np.flatnonzero(present) + base
+    else:
+        occupied = np.unique(bins)
+        num_ylabels = occupied.size
+        columns = np.searchsorted(occupied, bins)
 
     # The ylabel of each present bin is its centre (bin index * bin_width),
     # rounded only for display. Rounding is cosmetic: the binning above already
-    # set which pairs share a column.
-    centres = (np.flatnonzero(present) + base) * float(bin_width)
+    # set which pairs share a column. It is held to a precision fine enough to
+    # keep every centre distinct, so that it stays cosmetic and the labels go on
+    # naming the columns one to one.
+    centres = occupied * float(bin_width)
     ylabels = centres if display_precision is None \
-        else np.round(centres, display_precision)
+        else np.round(centres, label_precision(display_precision, bin_width))
 
     rows = np.repeat(np.arange(num_times), pair_counts)
     flat_indices = rows * num_ylabels + columns

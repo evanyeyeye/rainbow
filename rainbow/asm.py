@@ -1579,11 +1579,22 @@ def _number(value):
     user code directly, so a non-number has to become None here rather than
     surface as a TypeError halfway through a read.
 
+    JSON integer literals are unbounded while Python floats are not, so an int
+    too large to convert is dropped rather than returned. Returning it would
+    raise OverflowError out of the first arithmetic that touched it: dividing a
+    peak time to minutes on the way in, or scaling one back to seconds on the
+    way out, which would leave a value that reads but cannot be re-exported.
+
     """
     if isinstance(value, dict):
         value = value.get("value")
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
+    if isinstance(value, int):
+        try:
+            return float(value)
+        except OverflowError:
+            return None
     return value
 
 

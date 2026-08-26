@@ -13,7 +13,7 @@ try:
 except ImportError:
     import xml.etree.ElementTree as etree
 from rainbow import DataFile
-from rainbow._binning import HRMS_MZ_FLOOR, MZ_FLOORS
+from rainbow._binning import HRMS_MZ_FLOOR, MZ_FLOORS, label_precision
 from rainbow.agilent.chemstation import parse_optics
 
 # NOTE: `lzf` (python-lzf) is imported lazily inside parse_msdata, and only
@@ -932,15 +932,11 @@ def parse_msdata(path, display_precision='auto', bin_width=None):
     if display_precision == 'auto':
         display_precision = 4
 
-    # bin_width and display_precision are independent: bin_width sets the grid, display_precision
-    # only rounds the reported labels. If display_precision is too coarse for the
-    # bin_width, neighbouring bins can round to the same label; warn, but still
-    # bin (the labels are cosmetic, and the caller may not need them distinct).
-    if bin_width is not None and bin_width < 10 ** -display_precision:
-        warnings.warn(
-            f"display_precision={display_precision} is coarser than bin_width={bin_width}: some "
-            f"shared-grid m/z labels may collide (distinct bins rounding to the "
-            f"same value). Raise display_precision to label every bin distinctly.")
+    # bin_width and display_precision are independent: bin_width sets the grid,
+    # display_precision only rounds the reported labels. A display_precision
+    # too coarse for the bin_width would round neighbouring bins onto one
+    # label; bin_to_grid raises it to the decimals the grid needs rather than
+    # returning labels that cannot name their own columns.
 
     # MSScan.xsd: Extract the file structure of MSScan.bin.
     complextypes_dict = parse_scan_xsd(os.path.join(path, "MSScan.xsd"))
@@ -1344,6 +1340,11 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
         keys = np.round(mz_arr * (10 ** display_precision)).astype(np.int64)
     else:
         keys = np.round(mz_arr / bin_width).astype(np.int64)
+    # Label the bins finely enough to tell them apart. On the None default the
+    # grid is 10**-display_precision, which already matches, so this changes
+    # nothing there; an explicit bin_width finer than the labels would round
+    # neighbouring bins onto one label without it.
+    decimals = label_precision(display_precision, width)
     low = int(keys.min())
     span = int(keys.max()) - low + 1
 
@@ -1353,7 +1354,7 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
         grid = _scatter_sum(idx, intensities, num_times * span)
         grid = grid.reshape(num_times, span)
         present = np.nonzero(grid.any(axis=0))[0]
-        return np.round((low + present) * width, display_precision), grid[:, present]
+        return np.round((low + present) * width, decimals), grid[:, present]
 
     # Sparse path: map bins onto only the columns that occur, then drop any
     # column whose intensity summed to zero. The profile stream can contain
@@ -1367,7 +1368,7 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision, bin_wid
     grid = _scatter_sum(idx, intensities, num_times * uniq.size)
     grid = grid.reshape(num_times, uniq.size)
     present = np.nonzero(grid.any(axis=0))[0]
-    return np.round(uniq[present] * width, display_precision), grid[:, present]
+    return np.round(uniq[present] * width, decimals), grid[:, present]
 
 
 # Bytes-per-peak -> (mz dtype, intensity dtype) for the MSPeak.bin centroid

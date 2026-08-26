@@ -520,6 +520,19 @@ def _with_cube(**measurement):
                                         {"retention time":
                                          {"value": "1.5", "unit": "s"}}]}}}})),
         id="peak-quantity-is-a-numeric-string"),
+    # The same unbounded integer in a peak time, which is divided to minutes on
+    # the way in. The cube path above was guarded a round before this one was.
+    pytest.param(_lc(_with_cube(**{"processed data aggregate document":
+                                   {"processed data document":
+                                    {"peak list": {"peak": [
+                                        {"retention time": 10 ** 400}]}}}})),
+        id="peak-time-overflows-a-float"),
+    pytest.param(_lc(_with_cube(**{"processed data aggregate document":
+                                   {"processed data document":
+                                    {"peak list": {"peak": [
+                                        {"retention time": 1.5,
+                                         "peak area": {"value": 10 ** 400}}]}}}})),
+        id="peak-area-overflows-a-float"),
     pytest.param(_lc(_with_cube(**{"injection document": {
         "autosampler injection volume setting (chromatography)":
             {"value": "lots"}}})),
@@ -536,6 +549,11 @@ def test_from_asm_does_not_raise_on_a_foreign_document_shape(document):
     # The same document read as a sequence takes a different path through the
     # envelope (the device system, the injection naming), so it is read too.
     assert isinstance(rb.sequence_from_asm(document).injections, list)
+    # Reading it must not leave behind something that cannot be written back
+    # out. A value that survives the read but overflows on the way to seconds
+    # would raise here, out of a method the caller has every reason to expect
+    # works on anything from_asm returned.
+    assert isinstance(datadir.to_asm(), dict)
 
 
 def test_a_foreign_envelope_shape_does_not_cost_the_channel():

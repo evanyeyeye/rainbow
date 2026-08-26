@@ -123,3 +123,110 @@ def test_unit_resolution_data_still_warns():
     import rainbow as rb
     with pytest.warns(UserWarning, match="finer than"):
         rb.read("tests/inputs/orange.D", bin_width=0.001)
+
+
+def test_labels_stay_distinct_below_the_vendor_display_precision():
+    """ A sub-unit bin_width must not round neighbouring bins onto one label.
+
+    Chemstation and Waters resolve an 'auto' display_precision to 0 decimals,
+    which is coarser than any bin_width below 1 - including the widths
+    rb.mz_resolution reports as the practical ceiling for those files. Rounding
+    is documented as cosmetic, so it has to stay fine enough for the labels to
+    name the columns one to one. When they collided, extract_traces returned
+    whichever column the duplicate label found first (a fraction of the signal
+    at that m/z) and to_csvstr repeated the header.
+    """
+    import warnings
+    import rainbow as rb
+    for path, bin_width in (("tests/inputs/orange.D", 0.1),
+                            ("tests/inputs/turquoise.raw", 0.05)):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            datadir = rb.read(path, bin_width=bin_width)
+        for datafile in datadir.datafiles:
+            if datafile.detector != 'MS':
+                continue
+            labels = np.asarray(datafile.ylabels, dtype=float)
+            assert np.unique(labels).size == labels.size, (
+                "{} {} labels {} bins".format(
+                    path, np.unique(labels).size, labels.size))
+            # The whole signal at a label is reachable through that label.
+            total = float(np.asarray(datafile.data).sum())
+            traced = float(np.asarray(
+                datafile.extract_traces(list(labels))).sum())
+            assert traced == pytest.approx(total)
+
+
+def test_label_precision_only_raises_what_the_grid_needs():
+    from rainbow._binning import label_precision
+
+    assert label_precision(0, 1.0) == 0        # unit bins, unit labels
+    assert label_precision(0, 0.1) == 1
+    assert label_precision(0, 0.05) == 2
+    assert label_precision(4, 1e-6) == 6
+    assert label_precision(8, 0.1) == 8        # never lowers a fine request
+    assert label_precision(None, 0.1) is None  # unrounded stays unrounded
+
+
+def test_a_bin_width_far_below_the_grid_does_not_allocate_the_whole_span():
+    """ The dense layout allocates over the span, not the occupied bins.
+
+    A bin_width far below the vendor grid makes that span enormous while the
+    occupied bins stay few, so past a cap the bins are laid out by sorting.
+    Without it the allocation reached gigabytes and the process was killed
+    before the too-fine-bin_width warning, which runs after the parse, could be
+    printed.
+    """
+    import warnings
+    import rainbow as rb
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        coarse = rb.read("tests/inputs/orange.D", bin_width=0.1)
+        fine = rb.read("tests/inputs/orange.D", bin_width=1e-8)
+    fine_ms = [f for f in fine.datafiles if f.detector == 'MS'][0]
+    coarse_ms = [f for f in coarse.datafiles if f.detector == 'MS'][0]
+    # Every occupied bin survives, and no empty ones were invented.
+    assert fine_ms.ylabels.size == coarse_ms.ylabels.size
+    assert np.unique(fine_ms.ylabels).size == fine_ms.ylabels.size
+    assert float(np.asarray(fine_ms.data).sum()) == pytest.approx(
+        float(np.asarray(coarse_ms.data).sum()))
+
+
+def test_a_bin_width_that_overflows_the_bin_index_is_refused():
+    """ Silently collapsing every key into one bin is worse than refusing.
+
+    Below about 1e-17 the key/bin_width division overflows, every bin index
+    casts to the same int64, and the run came back as a single column labelled
+    0.0 holding the total signal - while the warning said the width was too
+    fine to resolve anything.
+    """
+    import rainbow as rb
+    with pytest.raises(ValueError, match="overflows"):
+        rb.read("tests/inputs/turquoise.raw", bin_width=1e-300)
+
+
+def test_a_binned_sibling_does_not_overwrite_a_per_scan_resolution():
+    """ The probe read must not clobber the answer the first read got right.
+
+    mz_resolution measures per-scan channels from one scan's own axis, then
+    re-reads on a fine probe grid to measure the channels that sit on a shared
+    axis. The probe passes a bin_width, which is exactly what turns a per-scan
+    channel into a binned one, so the per-scan channel came back from the probe
+    looking binned and overwrote its own measurement with the probe constant.
+    yellow.D is the case that shows it: a per-scan centroid beside two binned
+    .ms channels, so the second read happens at all.
+    """
+    import warnings
+    import rainbow as rb
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        datadir = rb.read("tests/inputs/yellow.D", centroid=True,
+                          display_precision=8)
+        mz = np.unique(np.asarray(
+            datadir.get_file("MSPeak.bin").mass_labels(0), dtype=float))
+        expected = round(float(np.min(np.diff(mz))), 7)
+        got = rb.mz_resolution("tests/inputs/yellow.D", centroid=True)
+    assert got["MSPeak.bin"] == expected
+    assert got["MSPeak.bin"] != 1e-3        # the probe constant
+    # The binned siblings are still measured, and on the probe grid.
+    assert got["data.ms"] == 0.1

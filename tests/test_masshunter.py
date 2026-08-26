@@ -712,20 +712,24 @@ def test_bin_width_decouples_from_precision():
     assert coarse.ylabels.size < fine.ylabels.size
 
 
-def test_bin_width_finer_than_labels_warns():
-    """ precision and bin_width are independent, so a bin_width finer than the
-    labels is allowed; it only WARNS (labels may collide), it does not raise, and
-    it still produces a grid. """
-    with pytest.warns(UserWarning, match="may collide"):
-        out = rb.read(MAGENTA_D, hrms=True, display_precision=2, bin_width=0.001)
-    assert out.get_file("MSProfile.bin").data.shape[1] > 0
+def test_bin_width_finer_than_labels_still_labels_every_bin():
+    """ display_precision and bin_width are independent, so a bin_width finer
+    than the labels is allowed. Display rounding is documented as cosmetic, so
+    it is raised to the decimals the grid needs rather than rounding
+    neighbouring bins onto one label: a label that named several columns would
+    make extract_traces return part of the signal at that m/z and to_csvstr
+    repeat a header. """
+    out = rb.read(MAGENTA_D, hrms=True, display_precision=2, bin_width=0.001)
+    labels = out.get_file("MSProfile.bin").ylabels
+    assert labels.size > 0
+    assert np.unique(labels).size == labels.size
 
 
-def test_bin_width_finer_than_labels_warns_direct():
-    """ The warning fires at the direct (non-rb.read) entry point too. """
+def test_bin_width_finer_than_labels_still_labels_every_bin_direct():
+    """ The same holds at the direct (non-rb.read) entry point. """
     acqdata = os.path.join(MAGENTA_D, "AcqData")
-    with pytest.warns(UserWarning, match="may collide"):
-        masshunter.parse_msdata(acqdata, display_precision=2, bin_width=0.001)
+    out = masshunter.parse_msdata(acqdata, display_precision=2, bin_width=0.001)
+    assert np.unique(out.ylabels).size == out.ylabels.size
 
 
 def test_bin_width_invalid_value_rejected():

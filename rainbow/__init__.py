@@ -402,11 +402,17 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         # the default nominal width, so measuring them there would report that
         # default instead of the grid the binary records. They get the probe
         # grid, in a second read, which the common case of a run with no such
-        # channel does not pay for. Only they are taken from it: the probe
-        # displays labels at 4 decimals, which would flatten a true sub-mDa
-        # per-scan spacing the first read measured correctly.
+        # channel does not pay for.
+        #
+        # Only the channels the first read did not already measure are taken
+        # from the probe. `only=False` cannot be trusted to exclude the rest:
+        # the probe passes a bin_width, which is exactly what turns a per-scan
+        # channel into a binned one, so a channel measured correctly above
+        # comes back from the probe as binned and would otherwise overwrite its
+        # own answer with 1e-3, the probe constant.
         if _has_binned_ms(datadir):
-            resolutions.update(_mz_spacings(_probe(), only=False))
+            for name, spacing in _mz_spacings(_probe(), only=False).items():
+                resolutions.setdefault(name, spacing)
         return resolutions
 
 
