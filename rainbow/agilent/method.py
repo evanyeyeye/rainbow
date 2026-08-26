@@ -38,6 +38,14 @@ _ACQ_MODE_RE = re.compile(
 
 # The "Sample Inlet : GC" / "Sample Inlet : LC" line names the separation
 # technique (gas vs liquid chromatography), the instrument's own record of it.
+# The banner a Chemstation method report opens with, through the end of the
+# line that names the instrument. Bounded to a few lines so a mention of the
+# instrument type elsewhere in the report (a file path, an operator's note)
+# does not read as the instrument declaring itself.
+_INSTRUMENT_BANNER_RE = re.compile(
+    r"INSTRUMENT\s+CONTROL\s+PARAMETERS\s*:.*?(?:\n.*?){0,3}\n",
+    re.IGNORECASE | re.DOTALL)
+
 _SAMPLE_INLET_RE = re.compile(
     r"^\s*Sample Inlet\s*:\s*(?P<inlet>\S+)", re.MULTILINE | re.IGNORECASE)
 
@@ -93,7 +101,11 @@ def _from_acq_method(path):
         return {}
     try:
         doc = acaml.read(acq_path)
-    except ET.ParseError:
+    except (ET.ParseError, ValueError, LookupError, OSError):
+        # A sidecar that is missing or unreadable contributes nothing, which
+        # includes one whose XML declaration names an encoding Python does not
+        # have: that raises LookupError out of the parser, and taking the whole
+        # read down over an optional metadata file is the wrong failure mode.
         return {}
     sections = doc["sections"]
 
@@ -123,7 +135,7 @@ def _from_sample_xml(path):
         return {}
     try:
         root = ET.parse(sample_path).getroot()
-    except (ET.ParseError, ValueError):
+    except (ET.ParseError, ValueError, LookupError, OSError):
         return {}
 
     out = {}
@@ -251,7 +263,18 @@ def acquisition_technique(path):
         inlet = match.group("inlet").upper()
         if inlet in ("GC", "LC"):
             return inlet
-    if re.search(r"GC\s*/?\s*MS|GCMS", text, re.IGNORECASE):
+    # Scoped to the instrument banner, not the whole report. Searched over the
+    # entire file, any path that happens to contain the letters (a method
+    # filed under \METHODS\porting-from-GCMS\) declared the run GC, which
+    # downgrades every UV detector class and makes the schema-required
+    # injection volume mandatory. The banner is where the instrument names
+    # itself, and it is the only place this claim is worth reading.
+    banner = _INSTRUMENT_BANNER_RE.search(text)
+    if banner and re.search(r"\bGC\b|GCMS", banner.group(0), re.IGNORECASE):
+        # Inside the banner, the bare word is enough and is what a real report
+        # gives: "7890A GC / 5975C MS" names the model between the two, so a
+        # pattern requiring GC and MS to be adjacent misses it, and a GC-FID
+        # run with no MS at all is still gas chromatography.
         return "GC"
     return None
 

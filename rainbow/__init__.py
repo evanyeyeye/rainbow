@@ -309,6 +309,9 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     if not isinstance(centroid, bool):
         raise Exception(f"The centroid flag must be a boolean.")
 
+    if not isinstance(telemetry, bool):
+        raise Exception("The telemetry flag must be a boolean.")
+
     # display_precision is a label precision (decimals for the reported m/z),
     # and is cosmetic: it rounds the labels, never the data. 'auto' is finalized
     # per file inside each parser, where the acquisition is actually known:
@@ -653,6 +656,9 @@ def read_sequence(path, display_precision='auto', hrms=False,
 
     if not isinstance(centroid, bool):
         raise Exception("The centroid flag must be a boolean.")
+
+    if not isinstance(telemetry, bool):
+        raise Exception("The telemetry flag must be a boolean.")
 
     if not isinstance(peaks, bool):
         raise Exception("The peaks flag must be a boolean.")

@@ -1060,7 +1060,34 @@ def _measurements(datadir, options, technique):
             if group and _admits_peaks(measurement):
                 _add_processed_data(measurement, group, options)
             measurements.append(measurement)
+    if not measurements:
+        _warn_nothing_to_export(datadir)
     return measurements
+
+
+def _warn_nothing_to_export(datadir):
+    """Warns that a directory produced no measurements, and says why.
+
+    The schema requires a non-empty measurement document, so this document
+    will not validate. Silence was the worse failure: a full-scan MS run is
+    the ordinary case that exports nothing without ``ions=``, and its owner
+    got a well-formed file with an empty list in it and no indication that
+    anything had been left out.
+    """
+    if not datadir.datafiles:
+        warnings.warn(
+            f"{datadir.name} has no parsed channels, so its ASM document has "
+            "no measurements and will not validate. An Agilent HRMS profile "
+            "or centroid run is only parsed when read with hrms=True or "
+            "centroid=True.")
+        return
+    skipped = ", ".join(sorted(f.name for f in datadir.datafiles))
+    warnings.warn(
+        f"{datadir.name} exported no measurements, so its ASM document will "
+        f"not validate. Nothing in {skipped} is exported by default: a "
+        "full-scan MS channel becomes a mass chromatogram only for the ions "
+        "you ask for, so pass ions=[...] to export them (see "
+        "rainbow.DataDirectory.to_asm).")
 
 
 def _admits_peaks(measurement):
@@ -1294,6 +1321,17 @@ def _spectrum_measurement(datafile, metadata, device_type, options):
         datafile, metadata, control, _SPECTRUM_CUBE, cube, options)
 
 
+def _warn_once_per_run(options, key, message):
+    """Warns once per export, however many measurements share the cause."""
+    seen = getattr(options, "_warned", None)
+    if seen is None:
+        seen = options._warned = set()
+    if key in seen:
+        return
+    seen.add(key)
+    warnings.warn(message)
+
+
 def _add_injection_document(measurement, metadata, identifier, technique,
                             options):
     """Adds an injection document, per the technique's rules.
@@ -1322,6 +1360,16 @@ def _add_injection_document(measurement, metadata, identifier, technique,
         }
     else:
         document = {"injection identifier": identifier or "unknown"}
+        if not has_volume:
+            # Required by the GC ADM, so the document will not validate
+            # without it. Said once per run rather than once per measurement,
+            # because it is a property of the run's metadata.
+            _warn_once_per_run(
+                options, "gc-injection-volume",
+                "{} records no injection volume, which the gas chromatography "
+                "schema requires: the exported document will not validate. "
+                "Set metadata['injection_volume'] to {{'value': ..., 'unit': "
+                "'uL'}} to supply it.".format(identifier or "this run"))
         if has_volume:
             # The GC ADM expresses injection volume in microlitres. The schema
             # pins the Greek small mu (U+03BC), not the micro sign (U+00B5).

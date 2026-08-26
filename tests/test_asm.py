@@ -1050,3 +1050,65 @@ def test_export_emits_iso_timestamps_for_every_vendor():
         for stamp in stamps:
             assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", stamp), \
                 (fixture, stamp)
+
+
+# --- the arithmetic that turns a vendor timestamp into an instant ---
+#
+# These pin the three calculations a wrong answer would slip through
+# silently: they produce a plausible timestamp, not an error. Mutation
+# testing found all three unguarded.
+
+
+@pytest.mark.parametrize("vendor,expected", [
+    # Noon and midnight are the two hours the % 12 exists for, and the two it
+    # gets wrong if dropped: 12 pm is 12:00, not 24:00 (which raises, so the
+    # timestamp silently disappears), and 12 am is 00:00, not 12:00.
+    ("3 Feb 22  12:22 pm", "2022-02-03T12:22:00"),
+    ("3 Feb 22  12:22 am", "2022-02-03T00:22:00"),
+    ("3 Feb 22  12:00 am", "2022-02-03T00:00:00"),
+    ("3 Feb 22  11:22 am", "2022-02-03T11:22:00"),
+    ("3 Feb 22  11:22 pm", "2022-02-03T23:22:00"),
+    ("3 Feb 22  1:22 pm", "2022-02-03T13:22:00"),
+])
+def test_the_meridiem_hour_converts_at_noon_and_midnight(vendor, expected):
+    from rainbow.asm import _iso_timestamp
+    assert _iso_timestamp(vendor) == expected
+
+
+@pytest.mark.parametrize("vendor,expected", [
+    # The pivot strptime's %y uses. Either side of it is a plausible date, so
+    # getting it wrong moves a run by a century without complaint.
+    ("3 Feb 68  10:11:50", "2068-02-03T10:11:50"),
+    ("3 Feb 69  10:11:50", "1969-02-03T10:11:50"),
+    ("3 Feb 99  10:11:50", "1999-02-03T10:11:50"),
+    ("3 Feb 00  10:11:50", "2000-02-03T10:11:50"),
+])
+def test_the_two_digit_year_pivots_where_strptime_does(vendor, expected):
+    from rainbow.asm import _iso_timestamp
+    assert _iso_timestamp(vendor) == expected
+
+
+def test_absorbance_in_au_is_scaled_to_the_milli_absorbance_the_schema_pins():
+    """ The LC schema pins absorbance to mAU, and Waters records AU.
+
+    A missing or wrong factor exports the signal a thousand times too small,
+    which validates cleanly and is wrong by three orders of magnitude. Only
+    the network-dependent schema suite covered this, and it skips by default.
+    """
+    import numpy as np
+    from rainbow.datafile import DataFile
+    from rainbow.datadirectory import DataDirectory
+
+    channel = DataFile("UV1.dat", "UV",
+                       np.array([0.0, 1.0]), np.array([254.0]),
+                       np.array([[-1.6], [2.5]]), {"unit": "AU"})
+    document = DataDirectory("run", [channel], {}).to_asm()
+    measurement = _by_label(document)["UV1.dat"]
+    cube = measurement[_CHROM_KEY]
+    assert cube["cube-structure"]["measures"][0]["unit"] == "mAU"
+    assert cube["data"]["measures"][0] == [-1600.0, 2500.0]
+
+    # A channel already in mAU is passed through unscaled.
+    channel.metadata["unit"] = "mAU"
+    again = _by_label(DataDirectory("run", [channel], {}).to_asm())["UV1.dat"]
+    assert again[_CHROM_KEY]["data"]["measures"][0] == [-1.6, 2.5]

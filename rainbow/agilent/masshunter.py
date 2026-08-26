@@ -1050,8 +1050,8 @@ def parse_msdata(path, display_precision='auto', bin_width=None):
                 import lzf
             except ModuleNotFoundError:
                 raise ModuleNotFoundError(
-                    "You must install python-lzf to parse LZF-compressed "
-                    "MSProfile.bin (HRMS) data.")
+                    "Reading LZF-compressed MSProfile.bin (HRMS) data needs "
+                    "python-lzf: pip install rainbow-api[hrms]")
             decomp_view = memoryview(lzf.decompress(comp_bytes, decomp_len))
             start_mz, delta_mz = twodoubles_unpack(decomp_view[:16])
             inten = np.ndarray(num_mz, '<I', bytes(decomp_view[16:]))

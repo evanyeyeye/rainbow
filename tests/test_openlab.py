@@ -108,8 +108,10 @@ def test_manifest_populated_injection():
         'vialpos': 'P1-A1',
         'operator': 'jdoe',
         'seqline': 7,                        # parsed to int
-        'injection_volume': 5.0,             # parsed to float
-        'injection_volume_unit': 'µl',
+        # {'value', 'unit'}, the shape the .D method parser produces and the
+        # shape the ASM exporter reads. A bare float here meant a .dx never
+        # carried its injection volume into an exported document.
+        'injection_volume': {'value': 5.0, 'unit': 'µl'},
     }
 
 
@@ -137,7 +139,6 @@ def test_manifest_skips_empty_and_zero():
     assert 'sample' not in metadata
     assert 'vialpos' not in metadata
     assert 'injection_volume' not in metadata
-    assert 'injection_volume_unit' not in metadata
 
 
 def test_manifest_non_numeric_sequence_line():
@@ -218,3 +219,46 @@ _TELEMETRY = 'Agilent.OpenLab.Rawdata/InstrumentTrace179'
 def test_classify(device, encoding, unit, expected):
     signal = {'device': device, 'encoding': encoding, 'unit': unit}
     assert openlab._classify(signal) == expected
+
+
+def test_a_dx_injection_volume_reaches_the_asm_document(tmp_path):
+    """ The metadata shape has to be the one the exporter reads.
+
+    The .D method parser produces {'value', 'unit'} and the ASM exporter
+    accepts only that, so a bare float meant a .dx silently exported no
+    injection document at all - and for a GC .dx, where the schema requires
+    one, an invalid document. teal.dx is a standby flush whose volume is 0,
+    so no bundled fixture exercises a real one.
+    """
+    import os
+    import zipfile
+
+    import rainbow as rb
+
+    source = zipfile.ZipFile(
+        os.path.join(os.path.dirname(__file__), "inputs", "teal.dx"))
+    target = tmp_path / "volume.dx"
+    with zipfile.ZipFile(target, "w") as out:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "injection.acmd":
+                data = data.replace(
+                    b"<InjectionVolume>0</InjectionVolume>",
+                    b"<InjectionVolume>5.0</InjectionVolume>")
+                data = data.replace(
+                    b"<InjectionVolumeUnits />",
+                    b"<InjectionVolumeUnits>ul</InjectionVolumeUnits>")
+            out.writestr(item, data)
+
+    datadir = rb.read(str(target))
+    assert datadir.metadata["injection_volume"] == {"value": 5.0, "unit": "ul"}
+
+    measurements = (datadir.to_asm()
+                    ["liquid chromatography aggregate document"]
+                    ["liquid chromatography document"][0]
+                    ["measurement aggregate document"]["measurement document"])
+    volumes = [m["injection document"]
+               ["autosampler injection volume setting (chromatography)"]
+               for m in measurements if "injection document" in m]
+    assert volumes, "no injection document reached the ASM export"
+    assert all(v["value"] == 5.0 for v in volumes)

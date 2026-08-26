@@ -205,10 +205,15 @@ def _parse_manifest(archive):
         except ValueError:
             volume = 0.0
         if volume:
-            dir_metadata['injection_volume'] = volume
+            # Shaped like the .D method parser's, {'value', 'unit'}, because
+            # that is the shape the ASM exporter reads and the shape a caller
+            # gets from every other Agilent path. A bare float here meant a
+            # .dx never carried its injection volume into the document, and
+            # left datadir.metadata['injection_volume'] a different type
+            # depending on which file it was read from.
             units = _text(info, 'InjectionVolumeUnits')
-            if units:
-                dir_metadata['injection_volume_unit'] = units
+            dir_metadata['injection_volume'] = {
+                'value': volume, 'unit': units or None}
 
     return dir_metadata, signals
 
