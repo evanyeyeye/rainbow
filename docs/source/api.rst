@@ -33,10 +33,10 @@ constants answer more cheaply, without reading anything:
    >>> rb.VENDORS
    ('agilent', 'waters')
    >>> rb.MZ_FLOORS
-   {'agilent': 0.1, 'waters': 0.03}
+   {'agilent': 0.05, 'waters': 0.03}
 
-:code:`MZ_FLOORS` is the coarsest grid each vendor's unit-resolution MS is
-known to record, in daltons, and is what :code:`read` warns against when a
+:code:`MZ_FLOORS` is the finest grid each vendor's unit-resolution MS format
+can express, in daltons, and is what :code:`read` warns against when a
 :code:`bin_width` is finer than the data supports. It is a floor for the
 vendor, not for a particular run: a high-resolution MassHunter profile resolves
 far below its entry, and a calibrated centroid has no lattice at all. Use it to
@@ -55,8 +55,9 @@ guide for an overview.
    datasequence.DataSequence
    from_asm
    sequence_from_asm
+   iso_timestamp
 
-Those interested in directly parsing specific files should also view the following: 
+Those interested in directly parsing specific files should also view the following:
 
 .. autosummary::
    :nosignatures:

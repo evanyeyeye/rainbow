@@ -153,12 +153,13 @@ The value of the first short is the result of multiplying the raw mz value by 20
 
 .. note::
 
-   So the m/z grid here is 0.1 Da (the raw short is m/z times 20). By
-   default ``rb.read`` bins this to nominal mass (1 Da); pass a finer
-   ``bin_width`` (down to 0.1 Da) to keep more resolution, and
-   ``rb.mz_resolution(path)`` reports that grid for a file. The separate
+   So the finest m/z grid this format can express is 0.05 Da (the raw short is
+   m/z times 20). In practice Chemstation writes one decimal place, an even
+   short, so a run usually steps 0.1; ``rb.mz_resolution(path)`` reports what a
+   particular file records. By default ``rb.read`` bins to nominal mass (1 Da);
+   pass a finer ``bin_width`` to keep more resolution. The separate
    ``display_precision`` only rounds the displayed m/z labels; it never merges
-   intensities. A ``bin_width`` finer than 0.1 Da only warns and inserts empty
+   intensities. A ``bin_width`` below 0.05 Da only warns and inserts empty
    bins.
 
 The value of the second short is encoded using its bits. The most significant two bits represent a :code:`power` of eight. Note that there are four possible powers: 0, 1, 2, 3 (since there are only two bits). The remaining 14 bits represent a :code:`base` value. The intensity is calculated with the formula: :code:`base * 8^power`.
