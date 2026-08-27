@@ -27,7 +27,15 @@ def decode_text(raw):
             or b"encoding='utf-16'" in raw[:120].lower():
         enc = "utf-16"
     elif b"\x00" in raw[:64]:
-        enc = "utf-16-le"
+        # No BOM, so the byte order is inferred from where the NULs fall. Text
+        # in either order is mostly ASCII, whose high byte is NUL: little
+        # endian puts it second (odd offsets), big endian first (even ones).
+        # Guessing little endian for both turned every BOM-less UTF-16BE
+        # sidecar into mojibake, which is not a decoding its docstring claims.
+        sample = raw[:64]
+        even = sample[0::2].count(0)
+        odd = sample[1::2].count(0)
+        enc = "utf-16-be" if even > odd else "utf-16-le"
     elif raw[:3] == b"\xef\xbb\xbf":
         enc = "utf-8-sig"
     else:

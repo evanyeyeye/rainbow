@@ -1057,3 +1057,77 @@ def test_tune_undecodable_does_not_raise(tmp_path):
     parsed = debug.xml.parse(str(f))  # must not raise
     assert isinstance(parsed, dict)
     assert debug.xml.canonical(parsed) == {}
+
+
+def test_files_are_walked_in_sorted_relpath_order(tmp_path):
+    # os.walk lists a directory's own files before descending into it, and
+    # hands back sibling directories in readdir order. fields() keeps the first
+    # value it sees for a scalar field, so an unsorted stream makes the answer
+    # depend on the filesystem the run sits on.
+    run = tmp_path / "run.D"
+    (run / "zebra").mkdir(parents=True)
+    (run / "alpha").mkdir()
+    for name in ("zebra/one.txt", "alpha/two.txt", "middle.txt", "acq.txt"):
+        (run / name).write_text("x")
+
+    rels = [rel for _, rel in debug._iter_files(str(run))]
+    assert rels == sorted(rels)
+    # The root file that sorts after a subdirectory must come after it.
+    assert rels.index(os.path.join("alpha", "two.txt")) < rels.index("middle.txt")
+
+
+def test_fields_resolve_the_same_way_every_run():
+    # Pins which file wins for each scalar on a real run, so a change in walk
+    # order shows up as a failure rather than as a different answer on someone
+    # else's machine.
+    out = debug.fields("tests/inputs/yellow.D")
+    acqmeth = os.path.join(
+        "AcqData", "HP-5MS_HTAchiral_da_100-300_simscan.M", "acqmeth.txt")
+    assert out["_sources"]["instrument"] == acqmeth
+    assert out["instrument"] == "5977B GCMS"
+    assert out["_sources"]["method"] == acqmeth
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16", "utf-16-le"])
+def test_method_files_classify_the_same_in_every_encoding(tmp_path, encoding):
+    # UTF-16 is about half NUL bytes, so counting non-printables in the raw
+    # bytes calls every UTF-16 file binary and skips its contents. Vendors
+    # write most of this family in UTF-16.
+    body = 'Name LASTDATA\r\n  LastFile$ = "D:\\MassHunter\\Data\\Run\\x.d"\r\n'
+    f = tmp_path / "LastData.mac"
+    f.write_bytes(body.encode(encoding))
+    out = debug.method.parse(str(f))
+    assert out["kind"] == "macro"
+    assert out["paths"] == ["D:\\MassHunter\\Data\\Run\\x.d"]
+
+
+def test_a_binary_method_database_is_still_classified_binary(tmp_path):
+    # The classification has to keep telling the two apart: a numeric .mth is
+    # not a script and its bytes are not quoted values.
+    f = tmp_path / "qdb.mth"
+    f.write_bytes(bytes(range(1, 200)) * 3)
+    assert debug.method.parse(str(f))["kind"] == "binary"
+
+
+def test_canonical_on_a_root_with_no_children(tmp_path):
+    # A root with no children of its own converts to a bare string rather than
+    # a mapping, and every handler reads fields off a mapping. fields() hides
+    # the AttributeError behind a blanket except; the documented
+    # canonical(parse(path)) call does not.
+    for body in (b"<Sample></Sample>", b"<Sample/>", b"<ACAML>text</ACAML>"):
+        f = tmp_path / "empty.xml"
+        f.write_bytes(body)
+        parsed = debug.xml.parse(str(f))
+        assert debug.xml.canonical(parsed) == {}
+
+
+def test_decode_text_reads_utf16_in_either_byte_order():
+    # Without a BOM the byte order is inferred from where the NULs fall.
+    # Guessing little endian for both turned every UTF-16BE sidecar into
+    # mojibake, which the docstring says it handles.
+    from rainbow.debug._util import decode_text
+
+    body = "Instrument: 5977B GCMS\r\nSerial: US1839D002\r\n"
+    for encoding in ("utf-8", "utf-8-sig", "utf-16", "utf-16-le", "utf-16-be"):
+        decoded = decode_text(body.encode(encoding))
+        assert decoded.lstrip("﻿") == body, encoding

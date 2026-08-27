@@ -38,9 +38,16 @@ def matches(name):
 
 
 def _kind(raw, text):
-    """Classifies the file as 'binary', 'ini', or 'macro'/'script'."""
-    sample = raw[:256]
-    nonprintable = sum(1 for c in sample if c < 9 or 13 < c < 32)
+    """Classifies the file as 'binary', 'ini', or 'macro'/'script'.
+
+    Counted over the decoded text, not the raw bytes: UTF-16 is about half NUL
+    bytes, so a raw count calls every UTF-16 file binary and stops reading it.
+    Most of the method and macro files vendors write are UTF-16, including the
+    one macro this parser exists for.
+    """
+    sample = text[:256]
+    nonprintable = sum(1 for c in sample
+                       if ord(c) < 9 or 13 < ord(c) < 32)
     if nonprintable > len(sample) // 8:
         return "binary"
     stripped = text.lstrip()

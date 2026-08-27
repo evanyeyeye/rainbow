@@ -476,6 +476,11 @@ def canonical(parsed):
     """
     tree = parsed.get("tree")
     handler = _HANDLERS.get(parsed.get("root"))
-    if tree is None or handler is None:
+    # A root with no children of its own converts to a bare string rather than
+    # a mapping (see _el_to_dict), and every handler reads its fields off a
+    # mapping. An empty <Sample/> from a truncated write is a document with no
+    # fields, not an error: fields() hides the AttributeError behind a blanket
+    # except, but the documented canonical(parse(path)) call does not.
+    if not isinstance(tree, dict) or handler is None:
         return {}
     return handler(tree)
