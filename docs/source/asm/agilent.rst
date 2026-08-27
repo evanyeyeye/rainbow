@@ -132,18 +132,26 @@ A worked example
 
    import rainbow as rb
 
+   # A measurement holds exactly one of these, chosen by what the channel is.
+   CUBE_KEYS = ("chromatogram data cube",
+                "mass chromatogram data cube",
+                "three-dimensional ultraviolet spectrum data cube")
+
    datadir = rb.read("Caffeine.D")
    document = datadir.to_asm()
 
-   aggregate = document["liquid chromatography aggregate document"]
-   lc_document = aggregate["liquid chromatography document"][0]
-   measurements = lc_document["measurement aggregate document"]["measurement document"]
+   # Which aggregate a run lands in follows its technique, so a GC run (or one
+   # exported with technique="GC") is under the gas chromatography key instead.
+   aggregate = (document.get("liquid chromatography aggregate document")
+                or document["gas chromatography aggregate document"])
+   run_document = (aggregate.get("liquid chromatography document")
+                   or aggregate["gas chromatography document"])[0]
+   measurements = run_document["measurement aggregate document"]["measurement document"]
 
    print(len(measurements), "exported channels")
    for measurement in measurements:
        sample = measurement["sample document"]["sample identifier"]
-       cube = (measurement.get("chromatogram data cube")
-               or measurement["three-dimensional ultraviolet spectrum data cube"])
+       cube = next(measurement[key] for key in CUBE_KEYS if key in measurement)
        print(measurement["measurement identifier"], sample, cube["label"])
 
 Each measurement carries its sample identifier, its detector control, and a data

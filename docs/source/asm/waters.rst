@@ -96,6 +96,11 @@ A worked example
 
    import rainbow as rb
 
+   # A measurement holds exactly one of these, chosen by what the channel is.
+   CUBE_KEYS = ("chromatogram data cube",
+                "mass chromatogram data cube",
+                "three-dimensional ultraviolet spectrum data cube")
+
    datadir = rb.read("Caffeine.raw")
    document = datadir.to_asm()
 
@@ -104,9 +109,13 @@ A worked example
    measurements = lc_document["measurement aggregate document"]["measurement document"]
 
    for measurement in measurements:
-       cube = (measurement.get("chromatogram data cube")
-               or measurement["three-dimensional ultraviolet spectrum data cube"])
+       cube = next(measurement[key] for key in CUBE_KEYS if key in measurement)
        unit = cube["cube-structure"]["measures"][0]["unit"]
-       print(measurement["measurement identifier"], "->", unit)   # always mAU
+       print(measurement["measurement identifier"], "->", unit)
+
+The unit is the channel's own, not one unit for the whole run: a UV channel
+reports :code:`mAU`, an ELSD :code:`RLU`, a CAD :code:`mV`, and an MS channel
+:code:`counts`. See :ref:`asm-detectors` for which measure each detector is
+published under.
 
 Read the document back with :code:`rb.from_asm`; see :ref:`asm-roundtrip`.

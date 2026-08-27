@@ -62,7 +62,7 @@ run-level information.
    |-- .injections : list of DataDirectory   each one == rb.read(injection)
    |     |-- .datafiles : list of DataFile     the traces and spectra
    |     |-- .metadata  : dict                 sample, operator, volume, ...
-   |     +-- .peaks     : list                 per-channel integrated peaks
+   |     +-- .peaks     : list                 only with peaks=True (below)
    |
    |-- .metadata : dict                  instrument, operator, injection_count
    +-- .to_asm() / .export_asm()         the whole run as one ASM document
@@ -98,13 +98,23 @@ by iterating:
 If the directories were renamed and you want the order the instrument ran them
 in, sort on each injection's own timestamp. rainbow does not do this for you,
 because an injection whose date is missing or unreadable has no place in such
-an ordering and silently dropping it would be worse than name order:
+an ordering and silently dropping it would be worse than name order.
+
+Sort on the parsed instant, not on the string. The vendors write wall clock in
+their own spellings (:code:`'27-Feb-18, 10:11:50'`, :code:`'3 Feb 22 11:22 am
+-0500'`), which are day-first and name the month, so comparing them as text
+returns an order that is not chronological at all:
 
 .. code-block:: python
 
    timed = sorted(
-       (i for i in sequence if i.metadata.get("date")),
-       key=lambda i: i.metadata["date"])
+       (i for i in sequence if rb.iso_timestamp(i.metadata.get("date"))),
+       key=lambda i: rb.iso_timestamp(i.metadata["date"]))
+
+:code:`rb.iso_timestamp` returns the ISO 8601 form, which does sort as text,
+and :code:`None` for a spelling rainbow cannot read (which is what the filter
+drops). It is the same conversion the ASM export uses, so an exported document
+orders the same way.
 
 Internally :code:`rb.read_sequence` just calls :code:`rb.read` on each injection
 subdirectory and layers the run-level metadata on top, so the per-injection
