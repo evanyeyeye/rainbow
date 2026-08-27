@@ -3,7 +3,7 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [1.5.0] - 2026-08-25
+## [1.5.0] - 2026-08-27
 
 ### Added
 - **`rainbow.debug` metadata-inspection subsystem.** A new opt-in module with
@@ -88,9 +88,11 @@ to [Semantic Versioning](https://semver.org/).
   `name` it already carried. `DataSequence` has had both all along.
 
 ### Changed
-- **A diode-array channel in a 179/181 `.ch` container is now read as UV, not
+- **A diode-array channel in a 179 `.ch` container is now read as UV, not
   FID. Breaking:** the container version says how the data is encoded, not what
-  measured it, and Chemstation writes both kinds into the same one. The
+  measured it, and Chemstation writes both kinds into the same one. (The 181
+  layout of the same container records no signal string, so there is nothing to
+  read a detector from and a 181 file is still always read as FID.) The
   detector now comes from the channel's own signal string, so a channel
   reporting `DAD1A,Sig=210,4 Ref=off` in mAU is ultraviolet absorbance at
   210 nm rather than a flame ionization trace in pA. `DataDirectory.detectors`
@@ -149,6 +151,13 @@ to [Semantic Versioning](https://semver.org/).
   labels are its data. Use `rb.mz_resolution(path)` to see how fine a
   `bin_width` a run can actually support. Code passing `precision=` must now
   pass `display_precision=`, or `bin_width=` to control the binning step.
+  **A positional call changes meaning silently.** `precision` sat where
+  `display_precision` now sits, so `rb.read(path, 3)` still runs and no longer
+  bins: it used to mean a 0.001 Da grid and now means nominal mass with three
+  label decimals. A keyword call gets a `TypeError` naming the replacement; a
+  positional one cannot be told apart from a deliberate `display_precision`.
+  Search for positional calls before upgrading.
+
   `display_precision` no longer applies to a per-scan channel at all: on an
   HRMS profile or a centroid, `mass_labels(i)` is the m/z axis itself rather
   than a display of it, so rounding it discarded measured precision. A
@@ -190,6 +199,38 @@ to [Semantic Versioning](https://semver.org/).
   each name the way its directory does.
 
 ### Fixed
+- **A UV channel's wavelength ylabel is a number.** It arrived as text out of
+  the signal string, so `extract_traces(254.0)` raised on a ChemStation or
+  OpenLab channel and worked on the MassHunter channel beside it, and the
+  spelling followed the vendor's own (`'210'` against `'210.0'`). A channel
+  with no wavelength (FID, CAD, ELSD, a bare analog input) has no number to
+  give and keeps the empty label it always had.
+- **ASM export no longer writes absorbance a thousand times too small.** The
+  AU-to-mAU normalization was keyed on an exact `"AU"`, while every other unit
+  table in the exporter case-folds and strips. The unit is whatever text the
+  vendor file carried, so a Waters run spelling it `au` exported unscaled into
+  a document that then passed strict validation.
+- **A relabeled RID channel says so.** The detector documentation promised that
+  CAD, ELSD and RID all warn when the values go out under a measure they are
+  not in; the absorbance path returned early and RID's `nRIU` was the one
+  relabeled detector that stayed quiet.
+- **A malformed member no longer aborts a `.dx` inspection.** `zipfile` raises
+  `NotImplementedError` for an unsupported compression method and
+  `RuntimeError` for an encrypted member, neither of which is an `OSError`, and
+  the archive walk is advanced outside `inspect`'s per-file guard, so one bad
+  member took down the whole run.
+- **`rainbow.debug` recovers Windows-codepage characters** instead of replacing
+  them. The documented latin-1 fallback was unreachable, because decoding with
+  `errors="replace"` never raises, so a cp1252 copyright sign or an accented
+  operator name became U+FFFD.
+- **`rainbow.debug.xml` reports a UTF-16 placeholder as empty,** not as a
+  malformed document: only the UTF-8 BOM was stripped before the emptiness
+  test, and these sidecars are commonly UTF-16.
+- **The first line of a ChemStation report is classified by its own
+  neighbours.** `is_banner[i - 1]` wrapped to the last line of the file when
+  `i` was 0.
+- **The mzXML reader closes the file it abandons.** It stops at the first scan,
+  which left the handle open until the iterator was collected.
 - **The instrument module inventory is read from the `acq.macaml` Agilent
   actually writes.** It looked for section headers spelled `DAD (G7117B)`;
   ChemStation names the section for the module and puts the model in the
