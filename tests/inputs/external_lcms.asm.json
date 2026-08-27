@@ -1,0 +1,57 @@
+{
+  "$asm.manifest": "http://purl.allotrope.org/manifests/lc-ms/REC/2025/03/lc-ms.tabular.manifest",
+  "liquid chromatography aggregate document": {
+    "data system document": {"software name": "Example CDS"},
+    "device system document": {
+      "device document": [
+        {"device type": "mass spectrometry detector", "product manufacturer": "Example Co"}
+      ]
+    },
+    "liquid chromatography document": [
+      {
+        "analyst": "Anonymous",
+        "measurement aggregate document": {
+          "measurement document": [
+            {
+              "measurement identifier": "trace-ms",
+              "measurement time": "2020-01-01T00:00:00+00:00",
+              "device control aggregate document": {
+                "device control document": [{"device type": "mass spectrometry detector"}]
+              },
+              "sample document": {"sample identifier": "Sample B"},
+              "mass chromatogram data cube": {
+                "label": "trace-ms",
+                "cube-structure": {
+                  "dimensions": [{"concept": "retention time", "unit": "s", "@componentDatatype": "double"}],
+                  "measures": [{"concept": "count", "unit": "Counts", "@componentDatatype": "double"}]
+                },
+                "data": {"dimensions": [[0.0, 30.0, 60.0]], "measures": [[100.0, 5000.0, 120.0]]}
+              }
+            },
+            {
+              "measurement identifier": "trace-uv",
+              "measurement time": "2020-01-01T00:00:00+00:00",
+              "device control aggregate document": {
+                "device control document": [
+                  {
+                    "device type": "diode array uv detector",
+                    "detector wavelength setting": {"value": 280.0, "unit": "nm"}
+                  }
+                ]
+              },
+              "sample document": {"sample identifier": "Sample B"},
+              "chromatogram data cube": {
+                "label": "trace-uv",
+                "cube-structure": {
+                  "dimensions": [{"concept": "retention time", "unit": "s", "@componentDatatype": "double"}],
+                  "measures": [{"concept": "absorbance", "unit": "mAU", "@componentDatatype": "double"}]
+                },
+                "data": {"dimensions": [[0.0, 30.0, 60.0]], "measures": [[0.3, 9.0, 0.4]]}
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

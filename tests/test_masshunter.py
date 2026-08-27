@@ -2,10 +2,10 @@ import os
 import shutil
 import struct
 import tempfile
+import warnings
 
 import numpy as np
 import pytest
-from lxml import etree
 
 import rainbow as rb
 from rainbow.agilent import masshunter
@@ -68,7 +68,7 @@ COPPER_D = os.path.join("tests", "inputs", "copper.D")
 # `silver` is an Agilent ICP-MS acquisition; its isotope channels form a
 # unit-resolution m/z axis (read through parse_icpmsdata). The Waters `.raw`
 # fixtures below carry unit-resolution quadrupole MS m/z axes. Both are used to
-# check that precision='auto' resolves to whole-number m/z labels for the
+# check that display_precision='auto' resolves to whole-number m/z labels for the
 # non-HRMS parsers. teal.dx is a UV-only flush with no m/z axis, so the OpenLab
 # .dx reader is not covered here (no usable fixture).
 SILVER_ACQDATA = os.path.join("tests", "inputs", "silver.D", "AcqData")
@@ -81,6 +81,10 @@ WATERS_MS_RAW = [
 
 def _msts_scan_count(acqdata):
     """ Ground-truth scan count: sum of NumOfScans in MSTS.xml. """
+    # Imported here rather than at module scope: lxml is optional, and a
+    # module-level import stops the whole file being collected without it,
+    # which took 24 unrelated tests down with it.
+    from lxml import etree
     root = etree.parse(os.path.join(acqdata, "MSTS.xml")).getroot()
     return sum(int(seg.find("NumOfScans").text)
                for seg in root.findall("TimeSegment"))
@@ -350,18 +354,20 @@ def test_per_scan_profile_is_faithful(directory):
     assert isinstance(profile, masshunter.ProfileDataFile)
     n, k = profile.data.shape           # rows are scans, columns flight-time bins
     assert profile.xlabels.size == n
-    assert profile.tof.size == k
+    assert profile.flight_times.size == k
 
     for i in range(n):
         mz, inten = profile.scan(i)
         # The per-scan m/z is the exact calibration of the shared flight-time
-        # axis (rounded to the reported precision), not a shared rounded grid.
-        truth = np.round(
-            masshunter.calibrate_mz(
-                profile.tof, calib[i],
-                flags.get(records[i].get('CalibrationID'))),
-            profile.mz_decimals)
+        # axis, not a shared rounded grid and not rounded at all: mass_labels(i)
+        # is the axis itself, so there is no display of it to round.
+        truth = masshunter.calibrate_mz(
+            profile.flight_times, calib[i],
+            flags.get(records[i].get('CalibrationID')))
+        if profile.mz_decimals is not None:
+            truth = np.round(truth, profile.mz_decimals)
         np.testing.assert_array_equal(mz, truth)
+        assert profile.mz_decimals is None
         # Intensities are the raw decoded values: the per-scan maximum matches
         # the MaxY stored independently in MSScan.bin.
         assert int(inten.max()) == int(
@@ -535,9 +541,9 @@ def test_select_centroid_block():
 
 
 def test_yellow_centroid_axis_matches_data_ms():
-    """ The GC-quadrupole MSPeak.bin m/z axis (already calibrated) matches
+    """ The GC-quadrupole MSPeak.bin m/z axis, binned to nominal mass, matches
     the independent data.ms axis for the same acquisition. """
-    centroid = masshunter.parse_mspeakdata(YELLOW_ACQDATA)
+    centroid = masshunter.parse_mspeakdata(YELLOW_ACQDATA, bin_width=1.0)
     assert centroid.name == "MSPeak.bin"
     assert centroid.detector == "MS"
     assert centroid.data.shape[0] == centroid.xlabels.size
@@ -549,12 +555,28 @@ def test_yellow_centroid_axis_matches_data_ms():
 
 
 def test_gold_centroid_is_calibrated():
-    """ A TOF centroid axis is stored as time-of-flight; parsing calibrates
-    it to real m/z (within the profile's m/z range, not raw flight time). """
+    """ A TOF centroid axis is stored as time-of-flight; parsing calibrates each
+    scan's peaks to real m/z (within the profile's m/z range, not raw flight
+    time). """
     centroid = masshunter.parse_mspeakdata(os.path.join(GOLD_D, "AcqData"))
-    assert centroid.ylabels.min() > 50
-    assert centroid.ylabels.max() < 1100
-    assert (centroid.ylabels[1:] > centroid.ylabels[:-1]).all()
+    assert isinstance(centroid, masshunter.CentroidDataFile)
+    mz, _ = centroid.scan(0)
+    assert mz.size > 0
+    assert mz.min() > 50 and mz.max() < 1100
+
+
+def test_centroid_bin_width_toggles_binning():
+    """ Centroids mirror the profile: per-scan by default, a shared-grid
+    DataFile when a bin_width is given. """
+    acqdata = os.path.join(GOLD_D, "AcqData")
+    per_scan = masshunter.parse_mspeakdata(acqdata)
+    assert isinstance(per_scan, masshunter.CentroidDataFile)
+    with pytest.raises(AttributeError):
+        per_scan.ylabels
+    grid = masshunter.parse_mspeakdata(acqdata, bin_width=0.01)
+    assert isinstance(grid, masshunter.DataFile)
+    assert not isinstance(grid, masshunter.CentroidDataFile)
+    assert grid.ylabels.size > 0
 
 
 def test_centroid_flag_end_to_end():
@@ -627,18 +649,18 @@ def test_centroid_truncation_is_graceful():
     """ A truncated MSPeak.bin segment is skipped rather than crashing. """
     centroid = masshunter.parse_mspeakdata(os.path.join(COPPER_D, "AcqData"))
     assert centroid.name == "MSPeak.bin"
-    assert centroid.data.shape[0] >= 3
+    assert centroid.xlabels.size >= 3
 
 
 # ---------------------------------------------------------------------------
-# precision='auto', bin_width, the per-scan default, and the error surface
+# display_precision='auto', bin_width, the per-scan default, and the error surface
 # (1.3). precision is a label precision (decimals), bin_width is the shared-grid
 # bin width in daltons; the two are independent. The HRMS default is per-scan.
 # ---------------------------------------------------------------------------
 
 def test_precision_auto_profile_is_four_decimals():
-    """ 'auto' precision rounds HRMS profile labels to 4 decimals (not nominal
-    mass), on the shared grid. """
+    """ 'auto' display_precision rounds HRMS profile labels to 4 decimals (not
+    nominal mass), on the shared grid. """
     prof = rb.read(MAGENTA_D, hrms=True,
                    bin_width=0.0001).get_file("MSProfile.bin")
     yl = prof.ylabels
@@ -649,18 +671,40 @@ def test_precision_auto_profile_is_four_decimals():
 def test_precision_explicit_overrides_auto():
     """ An explicit integer overrides the 'auto' default (labels only; the grid
     is the separate bin_width). """
-    prof = rb.read(MAGENTA_D, hrms=True, precision=1,
+    prof = rb.read(MAGENTA_D, hrms=True, display_precision=1,
                    bin_width=0.1).get_file("MSProfile.bin")
     assert np.allclose(prof.ylabels, np.round(prof.ylabels, 1))
 
 
-def test_precision_auto_gc_centroid_is_integer():
-    """ GC-quadrupole centroids (no calibration) auto-resolve to whole numbers,
-    matching the unit-resolution data.ms axis. """
-    dd = rb.read("tests/inputs/yellow.D", centroid=True)
-    cen = dd.get_file("MSPeak.bin")
-    assert np.array_equal(cen.ylabels, np.round(cen.ylabels))
-    assert np.array_equal(cen.ylabels, dd.get_file("data.ms").ylabels)
+def test_display_precision_does_not_round_the_per_scan_centroid():
+    """ On a centroid the m/z labels are the data, so display_precision leaves
+    them alone.
+
+    mass_labels(i) returns the scan's peak list itself; there is no separate
+    display of it to round. Rounding into that array under a control documented
+    as cosmetic discarded measured precision on read: an uncalibrated GC scan
+    records 130.99, not 131, and a calibrated TOF resolves far below the four
+    decimals 'auto' picks for it. bin_width is the lossy control here.
+    """
+    per_scan = rb.read("tests/inputs/yellow.D", centroid=True) \
+        .get_file("MSPeak.bin").mass_labels(0)
+    assert per_scan.size > 0
+    # Same peaks whatever precision is asked for, including a coarse one.
+    for display_precision in (0, 4, 8):
+        again = rb.read("tests/inputs/yellow.D", centroid=True,
+                        display_precision=display_precision) \
+            .get_file("MSPeak.bin").mass_labels(0)
+        np.testing.assert_array_equal(again, per_scan)
+    # And the file really does record more than whole numbers, so this is not
+    # vacuously true on this fixture.
+    assert not np.array_equal(per_scan, np.round(per_scan))
+
+
+def test_nominal_masses_come_from_bin_width_not_display_precision():
+    """ The lossy control is bin_width; a unit width gives nominal masses. """
+    nominal = rb.read("tests/inputs/yellow.D", centroid=True, bin_width=1.0) \
+        .get_file("MSPeak.bin")
+    assert np.array_equal(nominal.ylabels, np.round(nominal.ylabels))
 
 
 def test_bin_width_presence_toggles_binning():
@@ -678,9 +722,9 @@ def test_bin_width_presence_toggles_binning():
 def test_precision_does_not_affect_the_grid():
     """ At a fixed bin_width, precision changes only the label rounding, never
     which scans share a column: the data and (here) the labels are identical. """
-    fine = rb.read(MAGENTA_D, hrms=True, precision=4,
+    fine = rb.read(MAGENTA_D, hrms=True, display_precision=4,
                    bin_width=0.01).get_file("MSProfile.bin")
-    coarse = rb.read(MAGENTA_D, hrms=True, precision=2,
+    coarse = rb.read(MAGENTA_D, hrms=True, display_precision=2,
                      bin_width=0.01).get_file("MSProfile.bin")
     assert np.array_equal(fine.data, coarse.data)
     assert np.array_equal(fine.ylabels, coarse.ylabels)
@@ -688,27 +732,31 @@ def test_precision_does_not_affect_the_grid():
 
 def test_bin_width_decouples_from_precision():
     """ At the same label precision, a coarser bin_width yields fewer columns. """
-    fine = rb.read(MAGENTA_D, hrms=True, precision=2,
+    fine = rb.read(MAGENTA_D, hrms=True, display_precision=2,
                    bin_width=0.01).get_file("MSProfile.bin")
-    coarse = rb.read(MAGENTA_D, hrms=True, precision=2,
+    coarse = rb.read(MAGENTA_D, hrms=True, display_precision=2,
                      bin_width=0.1).get_file("MSProfile.bin")
     assert coarse.ylabels.size < fine.ylabels.size
 
 
-def test_bin_width_finer_than_labels_warns():
-    """ precision and bin_width are independent, so a bin_width finer than the
-    labels is allowed; it only WARNS (labels may collide), it does not raise, and
-    it still produces a grid. """
-    with pytest.warns(UserWarning, match="may collide"):
-        out = rb.read(MAGENTA_D, hrms=True, precision=2, bin_width=0.001)
-    assert out.get_file("MSProfile.bin").data.shape[1] > 0
+def test_bin_width_finer_than_labels_still_labels_every_bin():
+    """ display_precision and bin_width are independent, so a bin_width finer
+    than the labels is allowed. Display rounding is documented as cosmetic, so
+    it is raised to the decimals the grid needs rather than rounding
+    neighbouring bins onto one label: a label that named several columns would
+    make extract_traces return part of the signal at that m/z and to_csvstr
+    repeat a header. """
+    out = rb.read(MAGENTA_D, hrms=True, display_precision=2, bin_width=0.001)
+    labels = out.get_file("MSProfile.bin").ylabels
+    assert labels.size > 0
+    assert np.unique(labels).size == labels.size
 
 
-def test_bin_width_finer_than_labels_warns_direct():
-    """ The warning fires at the direct (non-rb.read) entry point too. """
+def test_bin_width_finer_than_labels_still_labels_every_bin_direct():
+    """ The same holds at the direct (non-rb.read) entry point. """
     acqdata = os.path.join(MAGENTA_D, "AcqData")
-    with pytest.warns(UserWarning, match="may collide"):
-        masshunter.parse_msdata(acqdata, precision=2, bin_width=0.001)
+    out = masshunter.parse_msdata(acqdata, display_precision=2, bin_width=0.001)
+    assert np.unique(out.ylabels).size == out.ylabels.size
 
 
 def test_bin_width_invalid_value_rejected():
@@ -734,17 +782,18 @@ def test_profile_shared_axis_ops_raise_with_pointer():
 
 def test_precision_rejects_bool():
     """ bool is not a valid precision even though it is an int subclass. """
-    with pytest.raises(Exception, match="Invalid precision"):
-        rb.read(MAGENTA_D, hrms=True, precision=True)
+    with pytest.raises(Exception, match="Invalid display_precision"):
+        rb.read(MAGENTA_D, hrms=True, display_precision=True)
 
 
 def test_precision_auto_tof_centroid_is_four_decimals():
     """ A TOF-calibrated centroid (gold.D) auto-resolves to 4 decimals, unlike
     the unit-resolution GC centroid that resolves to whole numbers. """
     centroid = masshunter.parse_mspeakdata(os.path.join(GOLD_D, "AcqData"))
-    yl = centroid.ylabels
-    assert np.allclose(yl, np.round(yl, 4))
-    assert not np.array_equal(yl, np.round(yl))   # genuinely sub-integer
+    mz = centroid.mass_labels(0)
+    assert mz.size > 0
+    assert np.allclose(mz, np.round(mz, 4))
+    assert not np.array_equal(mz, np.round(mz))   # genuinely sub-integer
 
 
 def test_mass_labels_are_per_scan_and_drift():
@@ -761,12 +810,12 @@ def test_mass_labels_are_per_scan_and_drift():
     assert first != last                          # the column drifts across scans
 
 
-def test_tof_axis_is_shared_and_monotonic():
+def test_flight_times_axis_is_shared_and_monotonic():
     """ tof is the one flight-time axis shared by every scan: it indexes the
     columns and is strictly increasing. """
     profile = rb.read(CYAN_D, hrms=True).get_file("MSProfile.bin")
-    assert profile.tof.size == profile.data.shape[1]
-    assert (profile.tof[1:] > profile.tof[:-1]).all()
+    assert profile.flight_times.size == profile.data.shape[1]
+    assert (profile.flight_times[1:] > profile.flight_times[:-1]).all()
 
 
 def test_amber_is_a_long_windowed_run():
@@ -798,7 +847,7 @@ def test_binned_grid_has_no_all_zero_columns(bin_width):
     assert (data.sum(axis=0) == 0).sum() == 0
 
 
-# precision='auto' resolves to 0 (whole-number m/z labels) for the
+# display_precision='auto' resolves to 0 (whole-number m/z labels) for the
 # unit-resolution, non-HRMS parsers. Each test reads with the default precision
 # and checks the per-array mass labels equal their rounded-to-integer values.
 
@@ -1283,3 +1332,484 @@ def test_dad_accepts_other_detector_stems():
         assert [df.name for df in datafiles] == [
             "MWD1A.cg", "MWD1B.cg", "MWD1C.cg", "MWD1D.cg", "MWD1E.cg",
             "MWD1.sp"]
+# mz_resolution inspects the m/z grid the binary records, independent of
+# the nominal-mass default, so a user can tell how fine a bin_width is worth it.
+
+def test_mz_resolution_agilent_quadrupole_is_tenth_dalton():
+    """ Agilent quadrupole .ms records m/z on a 0.1 Da grid. """
+    res = rb.mz_resolution("tests/inputs/orange.D")
+    assert res
+    assert all(abs(r - 0.1) < 1e-3 for r in res.values())
+
+
+def test_mz_resolution_waters_is_subnominal():
+    """ Waters MS m/z is calibrated to finer than nominal mass. """
+    res = rb.mz_resolution("tests/inputs/turquoise.raw")
+    assert res
+    assert all(0 < r < 0.2 for r in res.values())
+
+
+def test_mz_resolution_hrms_is_subnominal():
+    """ The HRMS profile resolves far finer than nominal, measured per scan. """
+    res = rb.mz_resolution(CYAN_D, hrms=True)
+    assert res
+    assert all(0 < r < 0.1 for r in res.values())
+
+
+def test_mz_resolution_sim_returns_empty():
+    """ A single-ion (SIM) channel has one m/z, so there is no spacing. """
+    assert rb.mz_resolution("tests/inputs/green.D") == {}
+
+
+# The per-vendor floor warning: a bin_width finer than the binary's grid only
+# inserts empty bins, so rainbow warns (and the HRMS message names the profile).
+
+def test_floor_warning_agilent_and_waters():
+    with pytest.warns(UserWarning, match="only inserts empty bins"):
+        rb.read("tests/inputs/orange.D", bin_width=0.01)     # below 0.1 Da
+    with pytest.warns(UserWarning, match="only inserts empty bins"):
+        rb.read("tests/inputs/turquoise.raw", bin_width=0.01)  # below the Waters floor
+
+
+def test_floor_warning_hrms_names_the_profile():
+    with pytest.warns(UserWarning, match="MSProfile.bin"):
+        rb.read(MAGENTA_D, hrms=True, bin_width=1e-8)          # below 1e-6 Da
+
+
+def test_no_floor_warning_at_the_grid():
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rb.read("tests/inputs/orange.D", bin_width=0.1)        # at the floor
+    assert not any("empty bins" in str(w.message) for w in caught)
+
+
+def test_centroid_flag_does_not_silence_other_channels():
+    """ The floor belongs to the channel parsed, not to the flags requested.
+
+    A blanket centroid carve-out silenced the warning for every channel in the
+    run, including ordinary quadrupole and Waters data that has a real floor.
+    """
+    with pytest.warns(UserWarning, match="MSD1.MS"):
+        rb.read("tests/inputs/orange.D", centroid=True, bin_width=0.001)
+    with pytest.warns(UserWarning, match="_func001.dat"):
+        # centroid is an Agilent flag; it must not reach a Waters read at all.
+        rb.read("tests/inputs/turquoise.raw", centroid=True, bin_width=0.001)
+
+
+def test_a_centroid_records_no_floor_because_a_peak_list_has_no_lattice():
+    """ A floor claims the binary stores a lattice; a peak list does not.
+
+    Each centroid peak carries its own m/z at whatever precision the file kept,
+    so there is no grid a finer bin_width would be pointless against. Asserting
+    the vendor unit-resolution floor made rainbow warn that 0.09 was too fine
+    on a run that quantizes to 0.0899963 - a width rb.mz_resolution reports and
+    rb.read then accepts. That function measures this channel; a constant
+    cannot.
+    """
+    import warnings
+    for fixture, width in (("tests/inputs/gold.D", 1e-5),
+                           ("tests/inputs/yellow.D", 0.5),
+                           ("tests/inputs/copper.D", 1e-5)):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            rb.read(fixture, centroid=True, bin_width=width)
+        offenders = [str(w.message) for w in caught
+                     if "MSPeak.bin" in str(w.message) and "empty bins" in str(w.message)]
+        assert not offenders, offenders
+
+
+def test_the_width_mz_resolution_reports_for_a_centroid_reads_back_clean():
+    """ The two APIs must agree about a channel: what one reports for it, the
+    other must accept for it.
+
+    Only about that channel. A run holds channels on different grids, so the
+    width that suits the centroid is legitimately finer than a sibling .ms
+    channel's 0.1 Da, and saying so is the warning doing its job.
+    """
+    import warnings
+    for fixture in ("tests/inputs/yellow.D", "tests/inputs/gold.D"):
+        for channel, width in rb.mz_resolution(fixture, centroid=True).items():
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                rb.read(fixture, centroid=True, bin_width=width)
+            named = [str(w.message) for w in caught
+                     if "empty bins" in str(w.message)
+                     and channel in str(w.message)]
+            assert not named, (fixture, channel, width, named)
+
+
+def test_the_floor_warning_quotes_each_grid_not_just_the_coarsest():
+    """ One number for every channel would be orders of magnitude wrong.
+
+    A run can hold channels on very different grids (an HRMS profile at 1e-6
+    beside a Chemstation .ms at 0.1). Naming them all against a single figure
+    would misreport one group by orders of magnitude. Driven directly, because
+    no single fixture carries two different floors.
+    """
+    from rainbow import _warn_bin_width_floor
+
+    class _Channel:
+        detector = 'MS'
+
+        def __init__(self, name, floor):
+            self.name, self._mz_floor = name, floor
+
+    channels = [_Channel("MSProfile.bin", 1e-6), _Channel("data.ms", 0.1),
+                _Channel("dataSim.ms", 0.1)]
+    with pytest.warns(UserWarning) as caught:
+        _warn_bin_width_floor(channels, 1e-9, 'agilent')
+    message = str(next(w.message for w in caught
+                       if "empty bins" in str(w.message)))
+    assert "MSProfile.bin (about 1e-06 Da)" in message
+    assert "data.ms, dataSim.ms (about 0.1 Da)" in message
+
+
+def test_icpms_has_no_floor_because_it_is_never_binned():
+    """ An ICP-MS run is fixed isotope channels, and ignores bin_width.
+
+    Falling back to the Agilent vendor floor would warn that a fine bin_width
+    inserts empty bins into a channel that is not binned at all.
+    """
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        datadir = rb.read("tests/inputs/silver.D", hrms=True, bin_width=0.001)
+    assert not any("empty bins" in str(w.message) for w in caught)
+    # The claim above: bin_width genuinely does nothing to this parser.
+    unbinned = rb.read("tests/inputs/silver.D", hrms=True)
+    assert (datadir.get_file("MSProfile.bin").ylabels
+            == unbinned.get_file("MSProfile.bin").ylabels).all()
+
+
+def test_mz_resolution_measures_icpms_which_hrms_gates_but_does_not_bin():
+    """ A channel behind a flag, yet on a shared axis, needs both reads.
+
+    ICP-MS is parsed only under hrms=True, but it comes back on a shared m/z
+    axis rather than per scan. Measuring only the per-scan channels of the
+    flagged read skips it, and a probe read that does not forward the flag
+    never parses it, so it fell through both and the run looked like it had
+    no MS at all.
+    """
+    assert rb.mz_resolution("tests/inputs/silver.D", hrms=True) == \
+        {"MSProfile.bin": 1.0}
+    assert rb.mz_resolution("tests/inputs/silver.D", hrms=True,
+                            centroid=True) == {"MSProfile.bin": 1.0}
+
+
+def test_read_sequence_rejects_bad_bin_width():
+    # read_sequence shares read's bin_width guard (a regression let bin_width=0
+    # through to a divide-by-zero).
+    from rainbow import _validate_bin_width
+    with pytest.raises(Exception, match="Invalid bin_width"):
+        _validate_bin_width(0)
+    with pytest.raises(Exception, match="Invalid bin_width"):
+        _validate_bin_width(-1)
+
+
+# Centroids mirror the profile: per-scan by default (ragged peak lists), a
+# shared-grid DataFile only with a bin_width. Test both TOF and GC.
+
+@pytest.mark.parametrize(
+    "acqdata",
+    [os.path.join(GOLD_D, "AcqData"), YELLOW_ACQDATA],
+    ids=["gold-tof", "yellow-gc"])
+def test_centroid_per_scan_or_binned(acqdata):
+    per_scan = masshunter.parse_mspeakdata(acqdata)
+    assert isinstance(per_scan, masshunter.CentroidDataFile)
+    grid = masshunter.parse_mspeakdata(acqdata, bin_width=1.0)
+    assert isinstance(grid, masshunter.DataFile)
+    assert not isinstance(grid, masshunter.CentroidDataFile)
+    assert grid.ylabels.size > 0
+
+
+def test_centroid_is_ragged():
+    """ A centroid's defining property: a different number of peaks per scan. """
+    centroid = masshunter.parse_mspeakdata(os.path.join(GOLD_D, "AcqData"))
+    counts = {centroid.mass_labels(i).size
+              for i in range(centroid.xlabels.size)}
+    assert len(counts) > 1                       # genuinely ragged
+    for i in range(centroid.xlabels.size):
+        mz, inten = centroid.scan(i)
+        assert mz.size == inten.size             # matched pairs
+
+
+def test_centroid_shared_axis_ops_raise():
+    """ The per-scan centroid refuses every shared-axis operation. """
+    centroid = masshunter.parse_mspeakdata(os.path.join(GOLD_D, "AcqData"))
+    for op in (lambda c: c.ylabels,
+               lambda c: c.data,
+               lambda c: c.extract_traces(),
+               lambda c: c.to_csvstr(),
+               lambda c: c.plot("x")):
+        with pytest.raises(AttributeError, match="per-scan m/z axis"):
+            op(centroid)
+
+
+# --- bin_to_grid / _scatter_sum exactness ----------------------------------
+# The grid scatter-add uses np.bincount (float64 reduction) for speed, guarded
+# to fall back to an exact uint64 np.add.at above float64's 53-bit integer
+# range. These tests pin that the fast path is bit-for-bit identical to an exact
+# reference, and that the fallback triggers and stays exact past 2**53.
+
+def _reference_scatter(idx, intensities, size):
+    """An unambiguous exact uint64 scatter-add to compare against."""
+    grid = np.zeros(size, dtype=np.uint64)
+    np.add.at(grid, idx, intensities)
+    return grid
+
+
+def test_scatter_sum_matches_exact_reference():
+    rng = np.random.default_rng(0)
+    size = 500
+    idx = rng.integers(0, size, size=20000)
+    intensities = rng.integers(0, 10_000, size=20000).astype(np.uint64)
+    got = masshunter._scatter_sum(idx, intensities, size)
+    assert got.dtype == np.uint64
+    np.testing.assert_array_equal(got, _reference_scatter(idx, intensities, size))
+
+
+def test_scatter_sum_fallback_is_exact_past_2_53():
+    # Two points whose summed intensity exceeds 2**53: the float64 bincount path
+    # would lose the low bit, so the guard must take the exact uint64 fallback.
+    big = np.uint64(2 ** 53)
+    idx = np.array([3, 3], dtype=np.int64)
+    intensities = np.array([big, np.uint64(1)], dtype=np.uint64)
+    assert int(intensities.sum()) >= masshunter._FLOAT64_EXACT_INT  # fallback path
+    got = masshunter._scatter_sum(idx, intensities, 8)
+    assert int(got[3]) == 2 ** 53 + 1  # exact, not rounded to 2**53
+
+
+def test_scatter_sum_guard_boundary_is_exact_both_sides():
+    # Exactly at the 2**53 boundary takes the exact fallback (strict <); just
+    # below stays on the fast bincount path. Both must be exact.
+    at = np.array([np.uint64(2 ** 53)], dtype=np.uint64)         # fallback
+    below = np.array([np.uint64(2 ** 53 - 1)], dtype=np.uint64)  # fast path
+    assert int(masshunter._scatter_sum(np.array([0]), at, 1)[0]) == 2 ** 53
+    assert int(masshunter._scatter_sum(np.array([0]), below, 1)[0]) == 2 ** 53 - 1
+
+
+def test_scatter_sum_is_exact_when_the_cheap_bound_fails():
+    # count * max bounds the total from above and decides the common case
+    # without forming a Python int per point. It is conservative, so an input
+    # whose bound exceeds 2**53 while its true total does not must still take
+    # the fast path and stay exact, rather than being pushed onto add.at.
+    big = np.uint64(2 ** 52)
+    intensities = np.array([big] + [np.uint64(1)] * 15, dtype=np.uint64)
+    idx = np.zeros(intensities.size, dtype=np.int64)
+    assert int(intensities.max()) * intensities.size >= \
+        masshunter._FLOAT64_EXACT_INT          # the cheap bound says no
+    assert int(intensities.sum(dtype=object)) < \
+        masshunter._FLOAT64_EXACT_INT          # the exact total says yes
+    got = masshunter._scatter_sum(idx, intensities, 1)
+    assert int(got[0]) == 2 ** 52 + 15
+    np.testing.assert_array_equal(got, _reference_scatter(idx, intensities, 1))
+
+
+def test_scatter_sum_on_empty_input():
+    got = masshunter._scatter_sum(
+        np.array([], dtype=np.int64), np.array([], dtype=np.uint64), 4)
+    assert got.dtype == np.uint64 and got.size == 4 and not got.any()
+
+
+def test_bin_to_grid_dense_matches_reference():
+    # Three scans of unit-resolution points; small m/z span -> dense path.
+    mz = np.array([100.0, 101.0, 100.0, 102.0, 101.0, 101.0])
+    intensity = np.array([5, 7, 3, 9, 4, 6], dtype=np.uint64)
+    rows = np.array([0, 0, 1, 1, 2, 2])
+    ylabels, grid = masshunter.bin_to_grid(mz, intensity, rows, 3, display_precision=0)
+    assert grid.dtype == np.uint64
+    # Expected: columns 100/101/102 summed per scan row.
+    np.testing.assert_array_equal(ylabels, [100.0, 101.0, 102.0])
+    np.testing.assert_array_equal(grid, np.array([[5, 7, 0],
+                                                  [3, 0, 9],
+                                                  [0, 10, 0]], dtype=np.uint64))
+
+
+def test_bin_to_grid_sparse_path_matches_dense(monkeypatch):
+    # Force the sparse branch (np.unique/searchsorted) by shrinking the dense
+    # threshold, and include a zero-intensity point at an m/z no other scan fills
+    # (114.0): the sparse path must drop that phantom all-zero column to match the
+    # dense path's grid.any() filter. Same input -> same expected grid.
+    monkeypatch.setattr(masshunter, "_MAX_DENSE_BINS", 4)
+    mz = np.array([100.0, 101.0, 100.0, 102.0, 101.0, 101.0, 114.0])
+    intensity = np.array([5, 7, 3, 9, 4, 6, 0], dtype=np.uint64)
+    rows = np.array([0, 0, 1, 1, 2, 2, 2])
+    ylabels, grid = masshunter.bin_to_grid(mz, intensity, rows, 3, display_precision=0)
+    assert grid.dtype == np.uint64
+    np.testing.assert_array_equal(ylabels, [100.0, 101.0, 102.0])
+    np.testing.assert_array_equal(grid, np.array([[5, 7, 0],
+                                                  [3, 0, 9],
+                                                  [0, 10, 0]], dtype=np.uint64))
+
+
+@pytest.mark.parametrize("bin_width", [0.1, None])
+def test_bin_to_grid_rounds_to_the_nearest_bin_rather_than_down(bin_width):
+    # A point belongs to the bin whose centre it is nearest, so 100.06 is in
+    # the 100.1 bin and 100.04 is in the 100.0 bin. Flooring instead would move
+    # every boundary half a bin and carry signal one column to the left, which
+    # the earlier grid tests cannot see because their m/z are whole numbers
+    # sitting exactly on bin centres. Both the explicit width and the
+    # display_precision default reach a rounding call of their own.
+    mz = np.array([100.04, 100.06, 100.14, 100.16])
+    intensity = np.array([1, 2, 4, 8], dtype=np.uint64)
+    rows = np.zeros(4, dtype=np.int64)
+
+    ylabels, grid = masshunter.bin_to_grid(
+        mz, intensity, rows, 1, display_precision=1, bin_width=bin_width)
+
+    np.testing.assert_allclose(ylabels, [100.0, 100.1, 100.2])
+    np.testing.assert_array_equal(grid, np.array([[1, 6, 8]], dtype=np.uint64))
+
+    # The labels-only shortcut computes the same labels from the keys instead
+    # of reading them off the grid, so it has to round the same way.
+    labels, empty = masshunter.bin_to_grid(
+        mz, intensity, rows, 1, display_precision=1, bin_width=bin_width,
+        labels_only=True)
+    np.testing.assert_allclose(labels, ylabels)
+    assert empty.shape == (1, 0)
+
+
+def test_bin_to_grid_sparse_path_rounds_the_same_way(monkeypatch):
+    # The sort-based fallback assigns columns from the same keys, so the
+    # boundary must land in the same place there.
+    monkeypatch.setattr(masshunter, "_MAX_DENSE_BINS", 2)
+    mz = np.array([100.04, 100.06, 100.14, 100.16])
+    intensity = np.array([1, 2, 4, 8], dtype=np.uint64)
+    rows = np.zeros(4, dtype=np.int64)
+    ylabels, grid = masshunter.bin_to_grid(
+        mz, intensity, rows, 1, display_precision=1, bin_width=0.1)
+    np.testing.assert_allclose(ylabels, [100.0, 100.1, 100.2])
+    np.testing.assert_array_equal(grid, np.array([[1, 6, 8]], dtype=np.uint64))
+
+
+def test_dad_signals_carry_their_optics():
+    """ A DAD signal surfaces the optics its description encodes. """
+    datafiles = masshunter.parse_dadfiles(BRONZE_ACQDATA)
+    by_name = {df.name: df for df in datafiles}
+    signal = by_name["DAD1A.cg"]
+    assert signal.metadata["wavelength"] == 254.0
+    assert signal.metadata["bandwidth"] == 4.0
+    assert signal.metadata["reference_wavelength"] == 360.0
+    # "Ref=off" means there is no reference band to record.
+    assert "reference_wavelength" not in by_name["DAD1D.cg"].metadata
+
+
+def test_dad_telemetry_has_no_optics():
+    """ A telemetry trace has no Sig= clause, so it gains no optics. """
+    datafiles = masshunter.parse_dadfiles(BRONZE_ACQDATA, telemetry=True)
+    telemetry = [df for df in datafiles if df.detector is None]
+    assert telemetry
+    for datafile in telemetry:
+        assert "wavelength" not in datafile.metadata
+
+
+def test_a_calibrated_centroid_reports_no_grid():
+    """ Calibrated peaks are continuous, so no spacing describes them.
+
+    gold.D is a calibrated TOF centroid. Pooling its scans finds 2.8e-05
+    between 103.0739155 and 103.0739436 - the same ion in two scans, differing
+    by the calibration drift between them, not a lattice. Reporting that as
+    "the finest m/z spacing the binary stores" is wrong, and it degrades with
+    run length: the closest of N pooled values falls as N grows, so a full-size
+    Q-TOF run rounded to 0.0, a width read() then refuses outright.
+
+    Nothing is reported instead, matching the fact that the channel records no
+    m/z floor either. Both say the same thing: a peak list has no lattice.
+    """
+    assert rb.mz_resolution(GOLD_D) == {}                    # no flag, no MS
+    assert rb.mz_resolution(GOLD_D, centroid=True) == {}
+    # And it is not fabricated from the probe read's own 1e-3 grid.
+    assert 0.001 not in rb.mz_resolution(GOLD_D, centroid=True).values()
+
+
+def test_an_uncalibrated_centroid_reports_the_quantization_it_has():
+    """ Where the peaks really are on a lattice, it is measured.
+
+    An uncalibrated quadrupole writes peak m/z near nominal mass, so pooling
+    the run shows a genuine quantization rather than drift.
+    """
+    resolved = rb.mz_resolution(
+        os.path.join("tests", "inputs", "yellow.D"), centroid=True)
+    assert resolved["MSPeak.bin"] == pytest.approx(0.09, abs=0.001)
+
+
+def test_mz_resolution_centroid_flag_leaves_binned_channels_alone():
+    """ The centroid flag must not change what a binned MS channel reports.
+
+    yellow.D holds a Chemstation data.ms beside a MassHunter MSPeak.bin. The
+    centroid read is unbinned (the peak lists are per scan), which binned
+    data.ms at the default nominal width, so it reported that default instead
+    of the 0.1 Da grid the binary records.
+    """
+    yellow = os.path.join("tests", "inputs", "yellow.D")
+    binned = rb.mz_resolution(yellow)
+    assert binned["data.ms"] == 0.1
+    with_centroid = rb.mz_resolution(yellow, centroid=True)
+    assert with_centroid["data.ms"] == binned["data.ms"]
+    # dataSim.ms is selected-ion, so neither read reports a grid for it: the
+    # gaps between monitored ions are the method's choice, not a lattice.
+    assert "dataSim.ms" not in binned
+    assert "dataSim.ms" not in with_centroid
+    # The centroid channel is still measured per scan, not on the probe grid.
+    assert with_centroid["MSPeak.bin"] > 1e-3
+
+
+def test_list_analog_handles_masshunter_telemetry(capsys):
+    """ MassHunter keys a trace's description 'signal', not 'description'. """
+    rb.read(BRONZE_D, telemetry=True).list_analog()
+    printed = capsys.readouterr().out
+    assert "Board Temperature" in printed
+    assert "UV Lamp Anode Voltage" in printed
+
+
+def test_tof_names_what_replaced_it():
+    # The attribute was renamed in 1.5.0. A property is used rather than
+    # __getattr__ because a property that raises AttributeError falls back to
+    # __getattr__, which swallowed the message and gave the generic one.
+    datadir = rb.read(os.path.join("tests", "inputs", "amber.D"), hrms=True)
+    profile = next(f for f in datadir.datafiles if hasattr(f, "mass_labels"))
+    with pytest.raises(AttributeError, match="renamed to 'flight_times'"):
+        profile.tof
+
+
+def test_the_hrms_profile_floor_is_not_the_vendor_floor():
+    # The profile resolves far below Agilent's unit-resolution floor, so the
+    # vendor constant would warn about a bin width the data supports. Setting
+    # this to the vendor floor passed the whole suite.
+    from rainbow._binning import MZ_FLOORS
+    from rainbow.agilent.masshunter import HRMS_MZ_FLOOR
+
+    assert HRMS_MZ_FLOOR < MZ_FLOORS["agilent"]
+    path = os.path.join("tests", "inputs", "amber.D")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rb.read(path, hrms=True, bin_width=1e-4)
+    assert not [w for w in caught if "only inserts empty bins" in str(w.message)]
+    # Below the profile's own floor it does warn.
+    with pytest.warns(UserWarning, match="only inserts empty bins"):
+        rb.read(path, hrms=True, bin_width=HRMS_MZ_FLOOR / 10)
+
+
+def test_bin_to_grid_refuses_a_width_that_overflows_the_bin_index():
+    # Without the guard every m/z casts to the same index and the run collapses
+    # into one column holding the total signal, silently.
+    with pytest.raises(ValueError, match="bin index overflows"):
+        masshunter.bin_to_grid(
+            np.array([1e300]), np.array([1], dtype=np.uint64),
+            np.array([0]), 1, 4, bin_width=1e-300)
+
+
+@pytest.mark.parametrize("description,expected", [
+    ("Sig=254.0,4.0  Ref=360.0,100.0", 254.0),
+    # The prefixed spelling. Reading the number after the first '=' would give
+    # the channel letter's own digits or fail; the metadata parser is used so
+    # the ylabel and metadata['wavelength'] cannot disagree.
+    ("DAD1B, Sig=280.0,4.0  Ref=off", 280.0),
+    ("DAD1 A, Sig=254,4 Ref=360,100", 254.0),
+    ("ADC1 CHANNEL A", 0.0),
+    ("", 0.0),
+])
+def test_the_signal_wavelength_reads_a_prefixed_description(description,
+                                                            expected):
+    assert masshunter._signal_wavelength(description) == expected

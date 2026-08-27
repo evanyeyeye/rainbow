@@ -1,7 +1,11 @@
 {
     "metadata": {
         "vendor": "Agilent",
-        "date": "3 Feb 22  11:22 am -0500"
+        "date": "3 Feb 22  11:22 am -0500",
+        "dilution": 1,
+        "multiplier": 1,
+        "sample_amount": 0,
+        "acq_method": "IVTT.Am.Carn.Neo.Chloro.Sorting.M"
     },
     "datafiles": {
         "DAD1.UV": {
@@ -18,32 +22,36 @@
             "detector": "MS",
             "shape": [147192, 1],
             "metadata": {
-                "date": "3 Feb 22  11:22 am -0500", 
-                "method": "IVTT.Am.Carn.Neo.Ch"
+                "date": "3 Feb 22  11:22 am -0500",
+                "method": "IVTT.Am.Carn.Neo.Ch",
+                "acquisition_mode": "SIM"
             }
         },
         "MSD2.MS": {
             "detector": "MS",
             "shape": [147217, 1],
             "metadata": {
-                "date": "3 Feb 22  11:22 am -0500", 
-                "method": "IVTT.Am.Carn.Neo.Ch"
+                "date": "3 Feb 22  11:22 am -0500",
+                "method": "IVTT.Am.Carn.Neo.Ch",
+                "acquisition_mode": "SIM"
             }
         },
         "MSD3.MS": {
             "detector": "MS",
             "shape": [147251, 1],
             "metadata": {
-                "date": "3 Feb 22  11:22 am -0500", 
-                "method": "IVTT.Am.Carn.Neo.Ch"
+                "date": "3 Feb 22  11:22 am -0500",
+                "method": "IVTT.Am.Carn.Neo.Ch",
+                "acquisition_mode": "SIM"
             }
         },
         "MSD4.MS": {
             "detector": "MS",
             "shape": [146020, 1],
             "metadata": {
-                "date": "3 Feb 22  11:22 am -0500", 
-                "method": "IVTT.Am.Carn.Neo.Ch"
+                "date": "3 Feb 22  11:22 am -0500",
+                "method": "IVTT.Am.Carn.Neo.Ch",
+                "acquisition_mode": "SIM"
             }
         }
     }

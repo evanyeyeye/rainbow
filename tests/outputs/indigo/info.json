@@ -23,7 +23,8 @@
             "detector": "MS",
             "shape": [3865, 1],
             "metadata": {
-                "polarity": "+"
+                "polarity": "+",
+                "acquisition_mode": "SIM"
             }
         }
     }

@@ -37,14 +37,25 @@ The :code:`get_info` method returns a string with detailed information about the
 
    print(datadir.get_info())
 
-The output would look something like:
+The output would look something like this (the identity-bearing values here are
+stand-ins):
 
 .. code-block::
 
    =====
-   red.D 
+   red.D
    =====
-   Directory Metadata: {'vendor': 'Agilent', 'date': '27-Feb-18, 10:11:50', 'vialpos': '23'}
+   Directory Metadata: {'vendor': 'Agilent', 'sample': 'smp',
+    'date': '27-Feb-18, 10:11:50', 'vialpos': '23', 'operator': 'LAB\\analyst',
+    'modules': [{'name': 'Quat. Pump', 'model': 'G4204A'},
+                {'name': 'DAD', 'model': 'G4212A'},
+                {'name': 'Column Comp.', 'model': 'G1316C'},
+                {'name': 'HiP Sampler', 'model': 'G4226A'}],
+    'injection_volume': {'value': 1.0, 'unit': 'µL'},
+    'flow_rate': {'value': 0.5, 'unit': 'mL/min'},
+    'run_time': {'value': 14.0, 'unit': 'min'},
+    'dilution': 1, 'multiplier': 1, 'sample_amount': 0,
+    'acq_method': 'column2_gradient14min.M'}
 
    --------
    DAD1B.ch
@@ -60,7 +71,7 @@ The output would look something like:
     [-0.93856454]
     [-0.93948841]
     [-0.94015151]]
-   Metadata: {'notebook': 'usp', 'date': '27-Feb-18, 10:11:50', 'method': 'column2_gradient14min.M', 'instrument': 'Asterix ChemStation', 'unit': 'mAU', 'signal': 'DAD1B, Sig=280.0,4.0  Ref=off'}
+   Metadata: {'notebook': 'smp', 'date': '27-Feb-18, 10:11:50', 'method': 'column2_gradient14min.M', 'instrument': 'FAKEPC1 ChemStation', 'unit': 'mAU', 'signal': 'DAD1B, Sig=280.0,4.0  Ref=off', 'wavelength': 280.0, 'bandwidth': 4.0}
 
    --------
    ADC1A.CH

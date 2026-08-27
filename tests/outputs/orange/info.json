@@ -2,7 +2,8 @@
     "metadata": {
         "vendor": "Agilent",
         "date": "14-Nov-19, 15:08:08",
-        "vialpos": "2"
+        "vialpos": "2",
+        "utc_offset": "-05:00"
     },
     "datafiles": {
         "MSD1.MS": {

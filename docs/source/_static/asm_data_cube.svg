@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 430" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <!--
+    F3: how a DAD spectrum becomes an ASM data cube. A (retention time x
+    wavelength) grid of absorbance values is flattened into one C-order array
+    (wavelength varying fastest), described by cube-structure dimensions/measures.
+  -->
+  <defs>
+    <marker id="cubearrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#444"/>
+    </marker>
+  </defs>
+
+  <text x="30" y="30" font-size="15" font-weight="700" fill="#333">A DAD spectrum is a 2D grid ...</text>
+
+  <!-- wavelength axis label (columns) -->
+  <text x="150" y="62" text-anchor="middle" font-size="13" font-style="italic" fill="#3a6ea5">wavelength (nm), fastest axis &#8594;</text>
+  <!-- retention time axis label (rows), rotated -->
+  <text x="18" y="175" font-size="13" font-style="italic" fill="#a3582a" transform="rotate(-90 18 175)">retention time (s) &#8595;</text>
+
+  <!-- grid: 4 rows (retention) x 5 cols (wavelength) -->
+  <g>
+    <!-- column headers -->
+    <text x="70"  y="80" text-anchor="middle" font-size="11" font-family="monospace" fill="#3a6ea5">210</text>
+    <text x="110" y="80" text-anchor="middle" font-size="11" font-family="monospace" fill="#3a6ea5">230</text>
+    <text x="150" y="80" text-anchor="middle" font-size="11" font-family="monospace" fill="#3a6ea5">250</text>
+    <text x="190" y="80" text-anchor="middle" font-size="11" font-family="monospace" fill="#3a6ea5">270</text>
+    <text x="230" y="80" text-anchor="middle" font-size="11" font-family="monospace" fill="#3a6ea5">290</text>
+  </g>
+
+  <!-- row 0 -->
+  <text x="46" y="104" text-anchor="end" font-size="11" font-family="monospace" fill="#a3582a">0.0</text>
+  <g fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.3">
+    <rect x="50" y="88" width="40" height="32"/><rect x="90" y="88" width="40" height="32"/><rect x="130" y="88" width="40" height="32"/><rect x="170" y="88" width="40" height="32"/><rect x="210" y="88" width="40" height="32"/>
+  </g>
+  <!-- row 1 -->
+  <text x="46" y="136" text-anchor="end" font-size="11" font-family="monospace" fill="#a3582a">1.0</text>
+  <g fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.3">
+    <rect x="50" y="120" width="40" height="32"/><rect x="90" y="120" width="40" height="32"/><rect x="130" y="120" width="40" height="32"/><rect x="170" y="120" width="40" height="32"/><rect x="210" y="120" width="40" height="32"/>
+  </g>
+  <!-- row 2 -->
+  <text x="46" y="168" text-anchor="end" font-size="11" font-family="monospace" fill="#a3582a">2.0</text>
+  <g fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.3">
+    <rect x="50" y="152" width="40" height="32"/><rect x="90" y="152" width="40" height="32"/><rect x="130" y="152" width="40" height="32"/><rect x="170" y="152" width="40" height="32"/><rect x="210" y="152" width="40" height="32"/>
+  </g>
+  <!-- row 3 -->
+  <text x="46" y="200" text-anchor="end" font-size="11" font-family="monospace" fill="#a3582a">3.0</text>
+  <g fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.3">
+    <rect x="50" y="184" width="40" height="32"/><rect x="90" y="184" width="40" height="32"/><rect x="130" y="184" width="40" height="32"/><rect x="170" y="184" width="40" height="32"/><rect x="210" y="184" width="40" height="32"/>
+  </g>
+
+  <!-- highlight first row to show flatten order -->
+  <rect x="50" y="88" width="200" height="32" fill="none" stroke="#d9534f" stroke-width="2.4"/>
+  <text x="150" y="240" text-anchor="middle" font-size="11.5" fill="#a33">first row = wavelengths at retention 0.0 s</text>
+
+  <!-- arrow to flat array -->
+  <line x1="270" y1="150" x2="345" y2="150" stroke="#444" stroke-width="2" marker-end="url(#cubearrow)"/>
+  <text x="307" y="138" text-anchor="middle" font-size="12" fill="#333">flatten</text>
+  <text x="307" y="170" text-anchor="middle" font-size="11" fill="#777">C-order</text>
+
+  <!-- flat array -->
+  <text x="370" y="80" font-size="15" font-weight="700" fill="#333">... stored as one flat measure array</text>
+  <!-- all 20 grid cells (4 retention rows x 5 wavelengths), flattened in order -->
+  <g fill="#eaf3fb" stroke="#3a78b5" stroke-width="1.2">
+    <rect x="370" y="120" width="24" height="30"/><rect x="394" y="120" width="24" height="30"/><rect x="418" y="120" width="24" height="30"/><rect x="442" y="120" width="24" height="30"/><rect x="466" y="120" width="24" height="30"/>
+    <rect x="490" y="120" width="24" height="30"/><rect x="514" y="120" width="24" height="30"/><rect x="538" y="120" width="24" height="30"/><rect x="562" y="120" width="24" height="30"/><rect x="586" y="120" width="24" height="30"/>
+    <rect x="610" y="120" width="24" height="30"/><rect x="634" y="120" width="24" height="30"/><rect x="658" y="120" width="24" height="30"/><rect x="682" y="120" width="24" height="30"/><rect x="706" y="120" width="24" height="30"/>
+    <rect x="730" y="120" width="24" height="30"/><rect x="754" y="120" width="24" height="30"/><rect x="778" y="120" width="24" height="30"/><rect x="802" y="120" width="24" height="30"/><rect x="826" y="120" width="24" height="30"/>
+  </g>
+  <!-- bracket under the first 5 (the highlighted retention-0.0 row) -->
+  <rect x="370" y="120" width="120" height="30" fill="none" stroke="#d9534f" stroke-width="2.4"/>
+  <path d="M370,158 L370,164 L490,164 L490,158" fill="none" stroke="#d9534f" stroke-width="1.6"/>
+  <text x="430" y="180" text-anchor="middle" font-size="11.5" fill="#a33">retention 0.0 s</text>
+  <path d="M490,158 L490,164 L610,164 L610,158" fill="none" stroke="#777" stroke-width="1.4"/>
+  <text x="550" y="180" text-anchor="middle" font-size="11.5" fill="#777">retention 1.0 s ...</text>
+
+  <!-- cube-structure description box -->
+  <rect x="30" y="276" width="800" height="132" rx="9" fill="#fafafa" stroke="#ccc" stroke-width="1.5"/>
+  <text x="48" y="302" font-size="13.5" font-weight="700" fill="#333" font-family="monospace">cube-structure</text>
+  <text x="48" y="328" font-size="13" font-family="monospace" fill="#3a6ea5">dimensions</text>
+  <text x="150" y="328" font-size="13" font-family="monospace" fill="#555">[ retention time (s), wavelength (nm) ]</text>
+  <text x="540" y="328" font-size="12" fill="#999">the axes, slowest to fastest</text>
+  <text x="48" y="356" font-size="13" font-family="monospace" fill="#a3582a">measures</text>
+  <text x="150" y="356" font-size="13" font-family="monospace" fill="#555">[ absorbance (mAU) ]</text>
+  <text x="540" y="356" font-size="12" fill="#999">the value at each grid point</text>
+  <text x="48" y="388" font-size="12.5" fill="#666">A single-wavelength channel is the same, with just one dimension (retention time): a 1D chromatogram cube.</text>
+</svg>

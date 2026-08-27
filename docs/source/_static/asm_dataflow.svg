@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 250" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#444"/>
+    </marker>
+  </defs>
+
+  <!-- stage captions -->
+  <text x="115" y="34" text-anchor="middle" font-size="14" font-style="italic" fill="#777">vendor binary</text>
+  <text x="430" y="34" text-anchor="middle" font-size="14" font-style="italic" fill="#777">rainbow object</text>
+  <text x="745" y="34" text-anchor="middle" font-size="14" font-style="italic" fill="#777">open standard</text>
+
+  <!-- box 1: vendor binary -->
+  <rect x="25" y="55" width="180" height="86" rx="9" fill="#fdecea" stroke="#d9534f" stroke-width="2"/>
+  <text x="115" y="92" text-anchor="middle" font-size="18" font-weight="700" fill="#333">.D / .raw</text>
+  <text x="115" y="116" text-anchor="middle" font-size="13" fill="#a33">locked</text>
+
+  <!-- box 2: rainbow object -->
+  <rect x="340" y="55" width="180" height="86" rx="9" fill="#eaf3fb" stroke="#3a78b5" stroke-width="2"/>
+  <text x="430" y="92" text-anchor="middle" font-size="18" font-weight="700" fill="#333">DataDirectory</text>
+  <text x="430" y="116" text-anchor="middle" font-size="13" fill="#3a6ea5">in memory</text>
+
+  <!-- box 3: ASM -->
+  <rect x="655" y="55" width="180" height="86" rx="9" fill="#eaf7ee" stroke="#3c9a5f" stroke-width="2"/>
+  <text x="745" y="92" text-anchor="middle" font-size="18" font-weight="700" fill="#333">ASM document</text>
+  <text x="745" y="116" text-anchor="middle" font-size="13" fill="#2f7d4d">portable JSON</text>
+
+  <!-- arrow: read -->
+  <line x1="210" y1="98" x2="333" y2="98" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="271" y="88" text-anchor="middle" font-size="13" font-family="monospace" fill="#333">rb.read</text>
+
+  <!-- arrow: to_asm -->
+  <line x1="525" y1="98" x2="648" y2="98" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="586" y="88" text-anchor="middle" font-size="13" font-family="monospace" fill="#333">to_asm</text>
+
+  <!-- return arrow: from_asm (curved, below) -->
+  <path d="M745,141 C745,200 430,200 430,144" fill="none" stroke="#888" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="588" y="195" text-anchor="middle" font-size="13" font-family="monospace" fill="#666">rb.from_asm</text>
+</svg>

@@ -16,11 +16,13 @@ class DataDirectory:
         datafiles (list): DataFile objects with a detector. 
             This does not include miscellaneous analog data.
         detectors (set): String detector names in the DataDirectory.
-            Options: UV, MS, FID, CAD, ELSD.
+            Options: UV, MS, FID, CAD, ELSD, RID.
         by_name (dict): Maps filenames to DataFile objects.
         by_detector (dict): Maps detector names to lists of DataFile objects.
-        analog (list): DataFile objects with miscellaneous analog data. 
-        metadata (dict): Depends on the vendor. 
+        analog (list): DataFile objects with miscellaneous analog data.
+        metadata (dict): Depends on the vendor.
+        path (str): Path the directory was read from.
+        name (str): Name of the directory.
 
     """  
     def __init__(self, path, datafiles, metadata):
@@ -31,6 +33,11 @@ class DataDirectory:
            not isinstance(metadata, dict):
             raise Exception("Wrong argument parameters for DataDirectory.")
 
+        # Kept alongside the name, the way DataSequence keeps both. Code that
+        # walks a sequence and then wants a file beside the run (a sidecar, an
+        # export next to the data) otherwise has to rebuild the path it was
+        # read from.
+        self.path = path
         self.name = os.path.basename(path)
         self.datafiles = []
         self.detectors = set()
@@ -99,7 +106,12 @@ class DataDirectory:
         Prints a summary of the miscellaneous analog data.
 
         """
-        print("\n".join(f"{datafile.name}: {datafile.metadata['description']}"
+        # Vendors name the field differently ('description' for a .dx trace,
+        # 'signal' for a MassHunter DAD's telemetry), and a trace may carry
+        # neither, so a listing must not depend on one key being present.
+        print("\n".join(
+            f"{datafile.name}: "
+            f"{datafile.metadata.get('description') or datafile.metadata.get('signal', '')}"
             for datafile in self.analog) + "\n")
         
     def extract_traces(self, filename, labels=None):
@@ -136,8 +148,88 @@ class DataDirectory:
         Shows a basic matplotlib plot for the specified DataFile and :code:`label`.
 
         Args:
-            filename (str): DataFile name. 
-            label (int/float): Ylabel to be plotted. 
-            **kwargs (optional): Keyword arguments for matplotlib. 
+            filename (str): DataFile name.
+            label (int/float): Ylabel to be plotted.
+            **kwargs (optional): Keyword arguments for matplotlib.
         """
         self.get_file(filename).plot(label, **kwargs)
+
+    def to_asm(self, *, export_dad_cube=True, wavelengths=None, ions=None,
+               decimal_places=None, technique=None, utc_offset=None):
+        """
+        Returns an Allotrope Simple Model (ASM) document for this directory.
+
+        ASM is an open, JSON-based standard for analytical data. See
+        :mod:`rainbow.asm` for the scope of the current mapping.
+
+        Args:
+            export_dad_cube (bool, optional): Include multi-wavelength DAD
+                spectra as 3D UV spectrum cubes. On by default; the DAD cube is
+                by far the largest part of a document, so turning it off
+                (single-wavelength channels still export) shrinks the output.
+            wavelengths (float/list, optional): Restrict the DAD spectrum cube
+                to these wavelengths (nearest available, in nm); the default
+                keeps every wavelength.
+            ions (float/list, optional): m/z value(s) to extract from full-scan
+                MS data, each exported as its own mass chromatogram. Single-ion
+                (SIM) MS is always exported regardless of this argument.
+            decimal_places (int, optional): Round emitted numeric
+                values to this many decimal places. The default keeps
+                full precision.
+            technique (str, optional): Force the export technique, ``"GC"`` or
+                ``"LC"``, overriding the method's declaration and the
+                FID-presence fallback.
+            utc_offset (str, optional): UTC offset such as
+                ``"-05:00"`` or ``"Z"``, stamped on timestamps the
+                instrument recorded without one. An offset the source
+                did record is never overridden.
+
+        Returns:
+            dict: The ASM document.
+
+        """
+        from rainbow import asm
+        return asm.to_asm(self, export_dad_cube=export_dad_cube,
+                          wavelengths=wavelengths, ions=ions,
+                          decimal_places=decimal_places, technique=technique,
+                          utc_offset=utc_offset)
+
+    def export_asm(self, filename, *, export_dad_cube=True, wavelengths=None,
+                   ions=None, decimal_places=None, technique=None,
+                   utc_offset=None, indent=2):
+        """
+        Writes an Allotrope Simple Model (ASM) JSON document for this directory.
+
+        The document is streamed to disk, so even a large spectrum cube never
+        needs to fit in memory as one string.
+
+        Args:
+            filename (str): Filename for the output JSON.
+            export_dad_cube (bool, optional): Include multi-wavelength DAD
+                spectra as 3D UV spectrum cubes. On by default; turning it off
+                shrinks the output sharply.
+            wavelengths (float/list, optional): Restrict the DAD spectrum cube
+                to these wavelengths (nearest available, in nm); the default
+                keeps every wavelength.
+            ions (float/list, optional): m/z value(s) to extract from full-scan
+                MS data, each exported as its own mass chromatogram. Single-ion
+                (SIM) MS is always exported regardless of this argument.
+            decimal_places (int, optional): Round emitted numeric
+                values to this many decimal places. The default keeps
+                full precision.
+            technique (str, optional): Force the export technique, ``"GC"`` or
+                ``"LC"``, overriding the method's declaration and the
+                FID-presence fallback.
+            utc_offset (str, optional): UTC offset such as
+                ``"-05:00"`` or ``"Z"``, stamped on timestamps the
+                instrument recorded without one. An offset the source
+                did record is never overridden.
+            indent (int, optional): Indentation for the output JSON.
+
+        """
+        from rainbow import asm
+        with open(filename, 'w', encoding="utf-8") as f:
+            asm.export_asm(self, f, export_dad_cube=export_dad_cube,
+                           wavelengths=wavelengths, ions=ions,
+                           decimal_places=decimal_places, technique=technique,
+                           utc_offset=utc_offset, indent=indent)

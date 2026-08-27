@@ -11,7 +11,7 @@ exports instead use a single :ref:`.dx archive <dx>`.
 
    Agilent .uv <agilent/uv>
    Agilent .ms <agilent/ms>
-   Agilent .ch (FID) <agilent/ch_fid>
+   Agilent .ch (179/181) <agilent/ch_fid>
    Agilent .ch (other) <agilent/ch_other>
    Agilent MSProfile.bin <agilent/hrms>
    Agilent HRMS Data Model <agilent/hrms_data_model>
@@ -38,7 +38,7 @@ It may be useful to search for a binary format by detector.
    * - MS
      - :doc:`Agilent .ms <agilent/ms>`
    * - FID 
-     - :doc:`Agilent .ch (FID) <agilent/ch_fid>`
+     - :doc:`Agilent .ch (179/181) <agilent/ch_fid>`
    * - CAD 
      - :doc:`Agilent .ch (other) <agilent/ch_other>`
    * - ELSD

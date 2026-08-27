@@ -17,7 +17,8 @@
             "detector": "MS",
             "shape": [725, 740],
             "metadata": {
-                "polarity": "+"
+                "polarity": "+",
+                "acquisition_mode": "Scan"
             }
         },
         "_FUNC002.DAT": {

@@ -31,6 +31,19 @@ def test_validation():
         DataFile("lorem", 'UV', empty_1dim, empty_1dim, empty_2dim, set())
 
 
+def test_allowed_detectors():
+    """
+    Every named detector, including RID, is accepted by the constructor.
+
+    """
+    empty_1dim = np.empty(0)
+    empty_2dim = np.empty((0, 0))
+    for detector in ('UV', 'MS', 'FID', 'CAD', 'ELSD', 'RID', None):
+        datafile = DataFile(
+            "a.ch", detector, empty_1dim, empty_1dim, empty_2dim, {})
+        assert datafile.detector == detector
+
+
 def test_attributes():
     """
     Tests correctness of class attributes.

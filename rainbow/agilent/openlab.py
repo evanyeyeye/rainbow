@@ -38,7 +38,8 @@ _ACMD_NS = {'a': 'urn:schemas-agilent-com:acmd20'}
 _DATA_EXTS = ('.uv', '.ch', '.it')
 
 
-def read(path, precision='auto', requested_files=None, telemetry=False):
+def read(path, display_precision='auto', requested_files=None, telemetry=False,
+         bin_width=None):
     """
     Reads an Agilent OpenLab CDS .dx archive.
 
@@ -49,17 +50,17 @@ def read(path, precision='auto', requested_files=None, telemetry=False):
 
     Args:
         path (str): Path of the .dx file.
-        precision (int, optional): Number of decimals to round ylabels.
+        display_precision (int, optional): Decimals for displayed ylabels.
+            Inert here: .dx archives hold only UV data, no MS.
         requested_files (list, optional): Lowercased names to parse.
         telemetry (bool, optional): Flag for parsing .IT telemetry traces.
+        bin_width (float, optional): Inert here (no MS in a .dx archive);
+            accepted so the Agilent reader can pass it uniformly.
 
     Returns:
         DataDirectory representing the .dx archive, or None if it is empty.
 
     """
-    # .dx archives hold UV / unit-resolution data, so 'auto' means whole numbers.
-    if precision == 'auto':
-        precision = 0
     with zipfile.ZipFile(path) as archive:
         dir_metadata, signals = _parse_manifest(archive)
 
@@ -164,12 +165,14 @@ def _parse_manifest(archive):
         guid = _text(sig, 'TraceId').lower()
         if not guid:
             continue
-        signals[guid] = {
+        entry = {
             'encoding': _text(sig, 'Encoding'),
             'device': _text(sig, 'DeviceName'),
             'description': _text(sig, 'Description'),
             'unit': _text(sig, 'Units'),
         }
+        entry.update(chemstation.parse_optics(entry['description']))
+        signals[guid] = entry
 
     info = root.find('.//a:InjectionInfo', _ACMD_NS)
     if info is not None:
@@ -185,6 +188,32 @@ def _parse_manifest(archive):
         vialpos = _text(info, 'Location')
         if vialpos:
             dir_metadata['vialpos'] = vialpos
+        operator = _text(info, 'RunOperator')
+        if operator:
+            dir_metadata['operator'] = operator
+        seqline = _text(info, 'SequenceLine')
+        if seqline:
+            try:
+                dir_metadata['seqline'] = int(seqline)
+            except ValueError:
+                dir_metadata['seqline'] = seqline
+        # A standby/flush injection reports a volume of 0, which carries no
+        # information; only record a real injection volume.
+        volume = _text(info, 'InjectionVolume')
+        try:
+            volume = float(volume)
+        except ValueError:
+            volume = 0.0
+        if volume:
+            # Shaped like the .D method parser's, {'value', 'unit'}, because
+            # that is the shape the ASM exporter reads and the shape a caller
+            # gets from every other Agilent path. A bare float here meant a
+            # .dx never carried its injection volume into the document, and
+            # left datadir.metadata['injection_volume'] a different type
+            # depending on which file it was read from.
+            units = _text(info, 'InjectionVolumeUnits')
+            dir_metadata['injection_volume'] = {
+                'value': volume, 'unit': units or None}
 
     return dir_metadata, signals
 
@@ -204,6 +233,8 @@ def _classify(signal):
         return 'UV'
     if device.startswith('FID'):
         return 'FID'
+    if device.startswith('RID'):
+        return 'RID'
     return None
 
 
@@ -232,6 +263,10 @@ def _file_metadata(signal):
         value = signal.get(key)
         if value:
             metadata[key] = value
+    for key in ('wavelength', 'bandwidth',
+                'reference_wavelength', 'reference_bandwidth'):
+        if key in signal:
+            metadata[key] = signal[key]
     return metadata
 
 

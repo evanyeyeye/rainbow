@@ -12,7 +12,8 @@
                 220
             ],
             "metadata": {
-                "polarity": "+"
+                "polarity": "+",
+                "acquisition_mode": "Scan"
             }
         }
     }

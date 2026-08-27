@@ -1,6 +1,8 @@
 {
     "metadata": {
         "vendor": "Agilent",
+        "sample": "GLOVEOIL",
+        "operator": "ICPQQQ",
         "vialpos": "202"
     },
     "datafiles": {

@@ -15,7 +15,10 @@ The GitHub repository can be found `here <https://github.com/evanyeyeye/rainbow>
 
    Overview <self>
    Tutorial <tutorial>
+   Sequences <sequences>
+   ASM export <asm>
    Examples <examples>
    API <api>
    Formats <formats>
    Performance <performance>
+   Sidecar formats <debug/overview>

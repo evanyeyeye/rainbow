@@ -1,0 +1,25 @@
+Data File C:\Chem32\1\Data\DEMO\DEMO_screen 2024-01-26 17-08-26\023-D3F-B11-DEMO-SAMPLE-23.D
+Sample Name: DEMO-SAMPLE-23
+1290UHPLC 1/26/2024 7:42:22 PM SYSTEM
+=====================================================================
+Acq. Operator   : Alex Sampleton                  Seq. Line :  23
+Sample Operator : Alex Sampleton
+Acq. Instrument : 1290UHPLC                         Location :   D3F-B11
+Injection Date  : 1/26/2024 7:36:13 PM                  Inj :   1
+                                                  Inj Volume : 1.000 ul
+Sequence File   : C:\Chem32\1\Data\DEMO\DEMO_screen 2024-01-26 17-08-26\DEMO_screen.S
+Method          : C:\Chem32\1\Data\DEMO\DEMO_screen 2024-01-26 17-08-26\DEMO_isocratic.M (Sequence
+                  Method)
+Last changed    : 12/6/2023 5:27:53 PM by SYSTEM
+Method Info     : Column: Generic IG-U (3.0 x 100 mm, 1.6 um); Column temp. = 25 C
+=====================================================================
+                         Area Percent Report
+=====================================================================
+Peak RetTime Sig Type    Area      Height     Area  
+  #   [min]            [mAU*s]     [mAU]        %
+----|-------|---|----|----------|----------|--------|
+   1   0.708  1  BV    178.19504   20.53072   1.0227
+   2   1.239  1  VV   1.22424e4  3375.28418  70.2641
+Totals :              1.74235e4  4279.23492
+=====================================================================
+                          *** End of Report ***

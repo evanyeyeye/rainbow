@@ -4,6 +4,9 @@ docs/_autosummary/*
 
 .DS_STORE
 
+# editor / agent tooling state (never part of the package)
+.claude/
+
 # local docs build environment
 .venv-docs/
 
@@ -17,10 +20,54 @@ rainbow/agilent/_uvdelta.c
 rainbow/agilent/_msprofile.c
 rainbow/agilent/_chdelta.c
 
-# local benchmark datasets (not part of the repo)
+# working notes, not part of the package
+/asm-notes/
+/asm-reference/
+
+# Local datasets and anything derived from them. Keep them here rather than
+# adding a new entry per dataset: a per-dataset line is a poor guard, since it
+# protects only what someone remembered to list, and the entry outlives the
+# data.
 /data/
-# exported ASM documents from real samples (never commit; real pharma data)
+/datasets/
+# exported ASM documents (never commit; these come from real samples)
 /ASMs/
-/3543_DC/
-/MK-1200_Reduction/
-/mcintosh data/
+
+# Every directory at the repository root is ignored unless it is named below,
+# so a dataset dropped there is covered whatever it is called, rather than only
+# if somebody remembered to list it. Most vendor data is a directory (a .D, a
+# .raw, a folder of them), but not all of it: a .dx is a single file, and
+# rainbow's per-file parsers read a lone .ch, .uv, .ms, or Waters .dat. Those
+# extensions are matched too, case-insensitively, because a vendor writes
+# DAD1A.CH as readily as .ch and git only folds case where core.ignorecase is
+# set, which it is not on Linux CI.
+#
+# Root *files* are otherwise left visible, deliberately. Ignoring all of them
+# would mean a new CONTRIBUTING.md or .pre-commit-config.yaml never appears in
+# `git status` and is never picked up by `git add -A`, which is a quiet way to
+# lose work. (Being ignored is not what protects a file from `git clean -fdx`:
+# that removes untracked root files either way. If anything, ignoring one
+# protects it from a plain `git clean -fd`.)
+#
+# The .json rule is the one place that trades a project file away for a data
+# file: an ASM export is JSON and need not be named .asm.json, and .json is
+# also a plausible name for project config (.zenodo.json, renovate.json). The
+# export holds sample data and the config does not, so the export wins. Add a
+# root .json that belongs in the repository with `git add -f`.
+#
+# The cost that remains: a genuinely new project *directory* at the root is
+# ignored, so add it here when you add it. Everything inside the directories
+# below behaves normally.
+/*/
+/*.[dD][xX]
+/*.[zZ][iI][pP]
+/*.[jJ][sS][oO][nN]
+/*.[cC][hH]
+/*.[uU][vV]
+/*.[mM][sS]
+/*.[dD][aA][tT]
+!/.github/
+!/docs/
+!/rainbow/
+!/scripts/
+!/tests/

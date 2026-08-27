@@ -14,11 +14,37 @@ sys.path.insert(0, os.path.abspath('../..'))
 project = 'rainbow'
 copyright = '2022, Evan Shi and Eugene Kwan'
 author = 'Evan Shi and Eugene Kwan'
-release = '1.0'
+# Read the version rather than restating it, so this cannot drift from
+# pyproject.toml. Read the Docs installs only docs/requirements.txt, not the
+# package itself, so the metadata lookup fails there and pyproject has to be
+# read directly; falling through to an empty string would put the version of
+# the published documentation at "".
+try:
+    from importlib.metadata import version as _version
+    release = _version("rainbow-api")
+except Exception:                       # not installed, e.g. on Read the Docs
+    import os
+    import re
+    release = ''
+    _pyproject = os.path.join(
+        os.path.dirname(__file__), '..', '..', 'pyproject.toml')
+    try:                                # absent when building from a wheel
+        with open(_pyproject, encoding='utf-8') as _f:
+            _found = re.search(r'''^version\s*=\s*["']([^"']+)["']''',
+                               _f.read(), re.MULTILINE)
+        # A reworded or dynamic version line should cost the version number,
+        # not the whole build.
+        release = _found.group(1) if _found else ''
+    except OSError:
+        pass
 
 language = 'en'
 master_doc = 'index'
-source_suffix = '.rst'
+# The rainbow.debug format catalogue is written in Markdown, so both are
+# parsed. myst_heading_anchors gives every heading an anchor, which is what
+# the catalogue's own section cross-links point at.
+source_suffix = {'.rst': 'restructuredtext', '.md': 'markdown'}
+myst_heading_anchors = 3
 
 # Number figures (Fig. 1, Fig. 2, ...) so the text can cross-reference them by
 # number with :numref: instead of "the figure below".
@@ -35,6 +61,7 @@ add_module_names = False
 html_show_sourcelink = False
 
 extensions = [
+    'myst_parser',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',

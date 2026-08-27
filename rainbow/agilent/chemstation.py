@@ -4,10 +4,18 @@ Methods for parsing Agilent Chemstation files.
 """
 
 import os
+import re
 import struct
 from collections import Counter
 import numpy as np
-from lxml import etree
+# lxml is a dependency, and reading is measurably faster with it, but nothing
+# this module asks of it is missing from the standard library's ElementTree.
+# The fallback is there so a stripped environment still reads correctly, not so
+# lxml can be left out on purpose. rainbow.debug does require it outright.
+try:
+    from lxml import etree
+except ImportError:
+    import xml.etree.ElementTree as etree
 from rainbow.datafile import DataFile
 from rainbow._binning import bin_datapairs
 
@@ -27,30 +35,70 @@ except ImportError:
 # head field is 0..3, so indexing this beats np.power over every pair.
 _MS_INT_POW8 = np.array([1, 8, 64, 512], dtype=np.uint32)
 
+# Single-wavelength DAD/MWD/VWD channels encode their optics in the signal
+# description, e.g. "DAD1B, Sig=280.0,4.0  Ref=off" or
+# "DAD1A,Sig=210.0,4.0  Ref=360.0,100.0": the signal wavelength and bandwidth,
+# then (optionally) the reference wavelength and bandwidth, all in nm. Spectra
+# and other detectors have no Sig= clause. Shared with the OpenLab .dx parser.
+_SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
+_REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
+
+# Not every single-wavelength channel writes a Sig= clause. A variable- or
+# multi-wavelength detector often spells the same setting out, e.g.
+# "VWD1A, Wavelength=254 nm", with no bandwidth to report.
+_WAVELENGTH_RE = re.compile(r'Wavelength\s*=\s*([\d.]+)', re.IGNORECASE)
+
+
+def parse_optics(description):
+    """
+    Extracts wavelength settings from a signal description, if present.
+
+    Returns a dict with any of ``wavelength``, ``bandwidth``,
+    ``reference_wavelength``, and ``reference_bandwidth`` (in nm), parsed from
+    the ``Sig=``/``Ref=`` clause of a single-wavelength channel. Descriptions
+    without such a clause (spectra, FID, telemetry, ``Ref=off``) yield an
+    empty or reference-free dict.
+
+    """
+    optics = {}
+    sig = _SIG_RE.search(description)
+    if sig:
+        optics['wavelength'] = float(sig.group(1))
+        optics['bandwidth'] = float(sig.group(2))
+    ref = _REF_RE.search(description)
+    if ref:
+        optics['reference_wavelength'] = float(ref.group(1))
+        optics['reference_bandwidth'] = float(ref.group(2))
+    return optics
+
 """
 MAIN PARSING METHODS
 
 """
 
 
-def parse_allfiles(path, precision='auto', requested_files=None):
+def parse_allfiles(path, display_precision='auto', bin_width=None,
+                   requested_files=None, labels_only=False):
     """
     Finds and parses Agilent Chemstation data files \
         with a .ch, .uv, or .ms extension from a .D directory.
-    
+
     Args:
         path (str): Path to the .D directory.
-        precision (int, optional): Number of decimals to round mz values.
+        display_precision (int, optional): Decimals for the displayed m/z labels.
+        bin_width (float, optional): m/z bin width for .ms binning.
         requested_files (list, optional): List of filenames to parse.
 
     Returns:
         List with a DataFile for each parsed data file.
 
     """
-    # Chemstation data (UV, GC/quadrupole .ms) is unit-resolution, so 'auto'
-    # precision means whole numbers.
-    if precision == 'auto':
-        precision = 0
+    # Chemstation .ms is unit-resolution GC/quadrupole data, so the defaults are
+    # whole-number m/z labels on a nominal-mass (1 Da) grid.
+    if display_precision == 'auto':
+        display_precision = 0
+    if bin_width is None:
+        bin_width = 1.0
     datafiles = []
     # Sort for a deterministic parse order across platforms: os.listdir returns
     # entries in filesystem order, which differs between macOS and Linux. The
@@ -60,22 +108,25 @@ def parse_allfiles(path, precision='auto', requested_files=None):
     for name in sorted(os.listdir(path)):
         if requested_files and name.lower() not in requested_files:
             continue
-        datafile = parse_file(os.path.join(path, name), precision)
+        datafile = parse_file(
+            os.path.join(path, name), display_precision, bin_width,
+            labels_only)
         if datafile:
             datafiles.append(datafile)
     return datafiles
 
 
-def parse_file(path, precision=0):
+def parse_file(path, display_precision=0, bin_width=1.0, labels_only=False):
     """
-    Parses an Agilent Chemstation data file. 
-    
-    Supported extensions are .ch, .uv, and .ms. 
+    Parses an Agilent Chemstation data file.
+
+    Supported extensions are .ch, .uv, and .ms.
 
     Args:
         path (str): Path to the data file.
-        precision (int, optional): Number of decimals to round mz values.
-    
+        display_precision (int, optional): Decimals for displayed m/z labels.
+        bin_width (float, optional): m/z bin width for .ms binning.
+
     Returns:
         DataFile representing the file, if it can be parsed. Otherwise, None.
 
@@ -86,7 +137,7 @@ def parse_file(path, precision=0):
     elif ext == '.uv':
         return parse_uv(path)
     elif ext == '.ms':
-        return parse_ms(path, precision)
+        return parse_ms(path, display_precision, bin_width, labels_only)
     return None
 
 
@@ -100,10 +151,13 @@ def parse_ch(path):
     """
     Parses an Agilent .ch file. 
 
-    These files contain data from a FID, CAD, ELSD, or UV channel. \
-    Files that contain FID data have a different format than other .ch files.
+    These files contain data from a FID, CAD, ELSD, or UV channel. The version
+    at the head of the file says how the data is encoded, not what measured it:
+    Chemstation writes a diode-array channel and a flame ionization channel
+    into the same 179/181 container, and the channel's own signal string is
+    what tells them apart.
 
-    This method calls the appropriate subroutine by file format. 
+    This method calls the appropriate subroutine by file format.
 
     Args: 
         path (str): Path to the .ch file.
@@ -122,19 +176,87 @@ def parse_ch(path):
         return None
 
 
+def _detector_from_signal(metadata, default=None, uv_only=False):
+    """
+    The detector and ylabel a channel's own ``signal`` string reports.
+
+    The container version at the head of a .ch says how the data is encoded,
+    not what measured it: Chemstation writes a diode-array channel and a flame
+    ionization channel into the same 179/181 container. Only the signal string
+    tells them apart - "DAD1A,Sig=210,4  Ref=off" against "Front Signal" - so
+    both parsers ask it, and the version byte decides nothing but the layout.
+
+    Set ``uv_only`` for a container that holds no flame ionization data, where
+    a settings clause in any spelling is an optical one.
+
+    Returns ``(detector, ylabel)``, falling back to ``default`` and an empty
+    ylabel for a signal that names no detector rainbow knows.
+    """
+    signal = metadata.get('signal') or ''
+    # The Sig= clause, not a bare "=". Where this call decides FID against UV
+    # it decides whether the whole run is exported as gas or liquid
+    # chromatography, so any "=" at all would read a gain setting ("FID1A,
+    # Front Signal (Gain=1)") as a wavelength and publish picoamps as
+    # milli-absorbance.
+    sig = _SIG_RE.search(signal)
+    if sig:
+        # Surface the wavelength settings (shared with the .dx parser).
+        metadata.update(parse_optics(signal))
+        return 'UV', sig.group(1)
+    if 'ADC' in signal:
+        return ('ELSD' if 'CHANNEL' in signal else 'CAD'), ''
+    if uv_only:
+        # The 130/30 container holds no flame ionization channel, so the
+        # ambiguity that forces the Sig= clause on 179/181 does not arise here:
+        # a variable-wavelength channel spelling its setting out, "VWD1A,
+        # Wavelength=254 nm", is a UV channel and has to stay one. Typing it as
+        # nothing drops it out of the read entirely - it lands in analog rather
+        # than datafiles, so the detector and the export never see it.
+        wavelength = _WAVELENGTH_RE.search(signal)
+        if wavelength:
+            metadata['wavelength'] = float(wavelength.group(1))
+            return 'UV', wavelength.group(1)
+        if '=' in signal:
+            return 'UV', signal.split('=')[1].split(',')[0]
+    return default, ''
+
+
+def _ylabel_array(ylabel):
+    """The channel's single y-axis label, as a number where it is one.
+
+    A wavelength read out of a signal string arrives as text, and returning it
+    as text made the label unusable for the lookups the axis exists for:
+    `extract_traces(254.0)` raised on a Chemstation channel and worked on the
+    MassHunter channel beside it, and the string's spelling followed the
+    vendor's own ("210" against "210.0"). A channel with no wavelength (FID,
+    CAD, ELSD, a bare analog input) has no number to give and keeps the empty
+    label it always had.
+    """
+    try:
+        return np.array([float(ylabel)])
+    except (TypeError, ValueError):
+        return np.array([ylabel])
+
+
 def parse_ch_fid(path, head):
     """
-    Parses an Agilent .ch file with FID channel data. 
-    
-    This method should not be called directly. Use :obj:`parse_ch` instead. 
+    Parses an Agilent .ch file in the 179/181 container.
+
+    Flame ionization data is the usual occupant, and the default for a channel
+    whose signal string names no detector rainbow knows, but a diode-array
+    channel is written into the same container: the detector comes from the
+    signal string, not from the version. Note that the 181 layout has no signal
+    offset, so a 181 file is always read as FID.
+
+    This method should not be called directly. Use :obj:`parse_ch` instead.
 
     Learn more about this file format :ref:`here <ch_fid>`.
 
     Args:
-        path (str): Path to the .ch file with FID data. 
+        path (str): Path to the .ch file.
 
     Returns:
-        DataFile with FID data, if the file can be parsed. Otherwise, None.
+        DataFile for the channel, if the file can be parsed. Otherwise, None.
 
     """
     if head == '181':
@@ -147,10 +269,14 @@ def parse_ch_fid(path, head):
             'notebook': 0x35A,
             'date': 0x957,
             'method': 0xA0E,
+            # 0xC11 holds the ChemStation workstation's name ("Mustang
+            # ChemStation"), not the acquisition instrument. The key is
+            # historical and is what every release has published, so it stays;
+            # rainbow.debug reports the same offset as `workstation` and reads
+            # the instrument itself out of the method report.
             'instrument': 0xC11,
             'unit': 0x104C,
         }
-        gap = 2
     elif head == '179':
         data_offsets = {
             'num_times': 0x116,
@@ -195,14 +321,22 @@ def parse_ch_fid(path, head):
     scaling_factor = struct.unpack('>d', f.read(8))[0]
     data *= scaling_factor
 
-    # No ylabel for FID data. 
-    ylabels = np.array([''])
-
-    # Extract metadata from file header.
-    metadata = read_header(f, metadata_offsets)
+    # Extract metadata from file header. Both containers store these strings
+    # two bytes to the character, which is read_header's default; the other
+    # parser computes its gap because its containers differ, and stating it
+    # here keeps the two from reading as though they disagreed.
+    metadata = read_header(f, metadata_offsets, gap=2)
     f.close()
 
-    return DataFile(path, 'FID', times, ylabels, data, metadata)
+    # FID only if the signal does not say otherwise. A real FID channel is
+    # "Front Signal" in pA and has no ylabel; a diode-array channel in the same
+    # container reports "DAD1A,Sig=210,4  Ref=off" in mAU and is absorbance at
+    # 210 nm. Calling the second one FID sent whole LC runs out as gas
+    # chromatography documents measuring picoamps.
+    detector, ylabel = _detector_from_signal(metadata, default='FID')
+    ylabels = _ylabel_array(ylabel)
+
+    return DataFile(path, detector, times, ylabels, data, metadata)
 
 
 def parse_ch_other(path, head):
@@ -288,16 +422,9 @@ def parse_ch_other(path, head):
     metadata = read_header(f, metadata_offsets, gap=gap)
     f.close()
 
-    # Determine the detector and ylabels using metadata. 
-    detector = None
-    ylabel = ''
-    signal = metadata['signal']
-    if '=' in signal:
-        ylabel = signal.split('=')[1].split(',')[0]
-        detector = 'UV'
-    elif 'ADC' in signal:
-        detector = 'ELSD' if 'CHANNEL' in signal else 'CAD'
-    ylabels = np.array([ylabel])
+    # Determine the detector and ylabels using metadata.
+    detector, ylabel = _detector_from_signal(metadata, uv_only=True)
+    ylabels = _ylabel_array(ylabel)
 
     return DataFile(path, detector, times, ylabels, data, metadata)
 
@@ -651,18 +778,25 @@ def parse_uv_partial(path):
 """
 
 
-def parse_ms(path, precision=0):
+def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     """
     Parses an Agilent .ms file.
 
-    These files contain MS spectra and SIM. 
+    These files contain MS spectra and SIM.
 
     Learn more about this file format :ref:`here <ms>`.
 
     Args:
         path (str): Path to Agilent .ms file.
-        precision (int, optional): Number of decimals to round mz values. 
-    
+        display_precision (int, optional): Decimals for the displayed m/z labels.
+        bin_width (float, optional): Width in daltons of each m/z bin. The lossy
+            control: pairs within one bin are summed. Defaults to 1 (nominal
+            mass). Agilent quadrupole .ms records m/z on a 0.05 Da grid.
+        labels_only (bool, optional): Return the m/z labels against an empty
+            grid, for a caller that reads nothing but the axis; see
+            :obj:`rainbow._binning.bin_datapairs`. Passed on to
+            :obj:`parse_ms_partial` when the file turns out to be a partial.
+
     Returns:
         DataFile with MS data, if the file can be parsed. Otherwise, None.
 
@@ -683,7 +817,7 @@ def parse_ms(path, precision=0):
     head = int_unpack(f.read(4))[0]
     if head != 0x01320000:
         f.close()
-        return parse_ms_partial(path, precision)
+        return parse_ms_partial(path, display_precision, bin_width, labels_only)
 
     # Determine the type of .ms file based on header.
     # Read the number of retention times from different offsets by type.
@@ -719,9 +853,8 @@ def parse_ms(path, precision=0):
     times = times / 60000
     total_paircount = np.sum(pair_counts)
 
-    # Calculate the mz values. 
-    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4)
-    mzs = np.round(mzs / 20, precision)
+    # Calculate the mz values (raw; binning happens in bin_datapairs).
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / 20
 
     # Calculate the intensity values. 
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -732,7 +865,9 @@ def parse_ms(path, precision=0):
 
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
     ylabels, data = bin_datapairs(
-        mzs, int_values, pair_counts, precision, data_dtype=np.uint32)
+        mzs, int_values, pair_counts, bin_width,
+        display_precision=display_precision, data_dtype=np.uint32,
+        labels_only=labels_only)
     del mzs, int_values, pair_counts
 
     # Read file metadata.
@@ -746,9 +881,10 @@ def parse_ms(path, precision=0):
     return DataFile(path, 'MS', times, ylabels, data, metadata)
 
 
-def parse_ms_partial(path, precision=0):
+def parse_ms_partial(path, display_precision=0, bin_width=1.0,
+                     labels_only=False):
     """
-    Parses a partial Agilent .ms file. 
+    Parses a partial Agilent .ms file.
 
     IMPORTANT: This method only supports LC .ms partials.
 
@@ -756,7 +892,11 @@ def parse_ms_partial(path, precision=0):
 
     Args:
         path (str): Path to the partial .ms file.
-        precision (int, optional): Number of decimal to round mz values.
+        display_precision (int, optional): Decimals for the displayed m/z labels.
+        bin_width (float, optional): Width in daltons of each m/z bin.
+        labels_only (bool, optional): Return the m/z labels against an empty
+            grid, for a caller that reads nothing but the axis; see
+            :obj:`rainbow._binning.bin_datapairs`.
 
     Returns:
         DataFile with MS data, if the file can be parsed. Otherwise, None.
@@ -806,9 +946,8 @@ def parse_ms_partial(path, precision=0):
     num_times = times.size
     total_paircount = np.sum(pair_counts)
 
-    # Calculate the mz values. 
-    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4)
-    mzs = np.round(mzs / 20, precision)
+    # Calculate the mz values (raw; binning happens in bin_datapairs).
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / 20
 
     # Calculate the intensity values.
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -819,7 +958,9 @@ def parse_ms_partial(path, precision=0):
 
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
     ylabels, data = bin_datapairs(
-        mzs, int_values, pair_counts, precision, data_dtype=np.uint32)
+        mzs, int_values, pair_counts, bin_width,
+        display_precision=display_precision, data_dtype=np.uint32,
+        labels_only=labels_only)
     del mzs, int_values, pair_counts
 
     # Read file metadata.
@@ -877,10 +1018,21 @@ def read_string(f, offset, gap=2):
     """
     f.seek(offset)
     str_len = struct.unpack("<B", f.read(1))[0] * gap
+    raw = f.read(str_len)
     try:
-        return f.read(str_len)[::gap].decode().strip()
+        # A gap of two is UTF-16LE, not "every other byte". Taking the stride
+        # keeps the low byte of each unit, which reads the same for ASCII and
+        # garbles anything outside it, so a header in any other script decoded
+        # to invalid UTF-8 and was swallowed as an empty string. The stride is
+        # kept as the fallback for a slot that is not valid UTF-16 at all.
+        if gap == 2:
+            return raw.decode("utf-16-le").strip()
+        return raw[::gap].decode().strip()
     except Exception:
-        return ""
+        try:
+            return raw[::gap].decode().strip()
+        except Exception:
+            return ""
 
 
 """ 
@@ -910,6 +1062,12 @@ def parse_metadata(path, datafiles):
     metadata = {}
     metadata['vendor'] = "Agilent"
 
+    dircontents = set(os.listdir(path))
+
+    # Read the sample name and operator from the directory's structured
+    # metadata files (reliable, unlike guessing header byte offsets).
+    metadata.update(read_sample_metadata(path, dircontents))
+
     # Scan each DataFile for the date and vial position.
     # These may be stored in multiple files but the values are constant.
     # In MS files, the time may be saved in a different format.
@@ -918,14 +1076,26 @@ def parse_metadata(path, datafiles):
     vialposs = Counter(datafile.metadata['vialpos'] for datafile in datafiles if 'vialpos' in datafile.metadata)
     if dates:
         metadata['date'] = dates.most_common(1)[0][0]
+        # The MS spelling of an instant carries a UTC offset where the .ch and
+        # .uv spellings of the same instant do not, and which one wins the vote
+        # comes down to how many channels the run happened to have. Keep the
+        # winner (it is usually the more precise one), but hold on to the
+        # offset if any file recorded it, so a consumer is not left inventing
+        # one the run actually knows.
+        offsets = [match.group(0) for match in
+                   (re.search(r"[+-]\d{2}:?\d{2}$", date) for date in dates)
+                   if match]
+        if offsets and not re.search(r"[+-]\d{2}:?\d{2}$", metadata['date']):
+            offset = offsets[0]
+            metadata['utc_offset'] = \
+                offset if ':' in offset else offset[:3] + ':' + offset[3:]
     if vialposs:
         metadata['vialpos'] = vialposs.most_common(1)[0][0]
 
     if 'date' in metadata and 'vialpos' in metadata:
         return metadata
 
-    # Scan certain files for the vial position. 
-    dircontents = set(os.listdir(path))
+    # Scan certain files for the vial position.
 
     # sequence.acam_
     if "sequence.acam_" in dircontents:
@@ -947,7 +1117,14 @@ def parse_metadata(path, datafiles):
         if "sample_info.xml" in os.listdir(acqdata_path):
             tree = etree.parse(os.path.join(acqdata_path, "sample_info.xml"))
             root = tree.getroot()
-            for samplefield in root.xpath('//Field[Name="Sample Position"]'):
+            for samplefield in root.iter("Field"):
+                # Any Name child whose full text (markup flattened, as XPath's
+                # string-value would) names the position, not merely the first
+                # child's direct text.
+                if not any("".join(field.itertext()).strip()
+                           == "Sample Position"
+                           for field in samplefield.findall("Name")):
+                    continue
                 vialnum = samplefield.find("Value")
                 if vialnum is not None and len(vialnum.text.split()) == 1:
                     metadata['vialpos'] = vialnum.text
@@ -993,6 +1170,60 @@ def parse_metadata(path, datafiles):
     return metadata
 
 
+def read_sample_metadata(path, dircontents):
+    """
+    Reads the sample name and operator from a .D directory's metadata files.
+
+    Classic Chemstation runs store these in ``SAMPLE.XML`` (UTF-16);
+    MassHunter runs store them as ``Field`` entries in
+    ``AcqData/sample_info.xml``. Both are optional and best-effort: a missing
+    file, an empty value, or a parse error simply yields nothing.
+
+    Args:
+        path (str): Path to the .D directory.
+        dircontents (set): Names in the directory (from ``os.listdir``).
+
+    Returns:
+        Dictionary with any of ``sample`` and ``operator``.
+
+    """
+    # Case-insensitive lookup, since filename case varies across platforms.
+    actual = {name.lower(): name for name in dircontents}
+    found = {}
+
+    # Classic Chemstation: SAMPLE.XML -> <Sample><Name>...</Name>.
+    if 'sample.xml' in actual:
+        try:
+            root = etree.parse(
+                os.path.join(path, actual['sample.xml'])).getroot()
+            name = root.findtext('Name')
+            if name and name.strip():
+                found['sample'] = name.strip()
+        except Exception:
+            pass
+
+    # MassHunter: AcqData/sample_info.xml -> <Field><Name>../<Value>../>.
+    if 'acqdata' in actual:
+        info_path = os.path.join(path, actual['acqdata'], 'sample_info.xml')
+        if os.path.exists(info_path):
+            try:
+                root = etree.parse(info_path).getroot()
+                fields = {}
+                for field in root.findall('.//Field'):
+                    name = field.findtext('Name')
+                    value = field.findtext('Value')
+                    if name and value and value.strip():
+                        fields[name.strip()] = value.strip()
+                if 'sample' not in found and fields.get('Sample Name'):
+                    found['sample'] = fields['Sample Name']
+                if fields.get('OperatorName'):
+                    found['operator'] = fields['OperatorName']
+            except Exception:
+                pass
+
+    return found
+
+
 def get_xml_vialnum(path):
     """
     Returns the VialNumber from an XML document, if it exists.
@@ -1003,10 +1234,21 @@ def get_xml_vialnum(path):
     """
     tree = etree.parse(path)
     root = tree.getroot()
-    for vialnum in root.xpath("//*[local-name()='VialNumber']"):
-        if vialnum.text:
-            return vialnum.text
+    for element in root.iter():
+        if _local_name(element.tag) == "VialNumber" and element.text:
+            return element.text
     return None
+
+
+def _local_name(tag):
+    """
+    The name of a tag without its namespace.
+
+    An element's tag is ``{namespace}name`` when the document declares one, so
+    matching on the local name finds it either way.
+
+    """
+    return tag.rpartition('}')[2] if isinstance(tag, str) else ''
 
 
 def get_nextstr(str_list, target_str):

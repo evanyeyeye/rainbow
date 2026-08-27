@@ -1,13 +1,20 @@
 .. _ch_fid:
 
-Agilent .ch File Structure (FID)
-================================
+Agilent .ch File Structure (179/181)
+====================================
 
-This file format contains FID channel data.
+This file format usually contains FID channel data, and is named something like
+FID1A.ch.
 
-Note that this is not the same as :ref:`.ch files <ch_fid>` that contain UV, CAD, or ELSD data.
+The version at the head of the file says how the data is encoded, not what
+measured it. Chemstation also writes single-wavelength diode-array channels
+into this container, named something like DAD1A.ch, and rainbow reads the
+detector from the channel's own signal string: a ``Sig=`` clause makes it an
+ultraviolet channel at that wavelength, and anything else is taken as FID. The
+181 layout has no signal offset, so a 181 file is always read as FID.
 
-Files in this format are named something like FID1A.ch.
+Note that this is not the same as the :ref:`130/30 container <ch_other>`, which
+also holds UV, CAD, and ELSD data in a different layout.
 
 These files are comprised of a file header and data body. 
 
@@ -41,10 +48,10 @@ The strings are separated by large blocks of null bytes, which are likely used t
      - GC DATA FILE
    * - 0x35A
      - Notebook name
-     - cedrol_mix_01
+     - example_mix01
    * - 0x758
      - Parent directory
-     - mcminns
+     - jdoe
    * - 0x957
      - Date
      - 17 Dec 19  10:04 am
@@ -56,10 +63,10 @@ The strings are separated by large blocks of null bytes, which are likely used t
      - GC 
    * - 0xA0E
      - Method 
-     - Rt-bDEX-SE_mcminn.M
+     - Rt-bDEX-SE_jdoe.M
    * - 0xC11
      - Instrument 
-     - Mustang ChemStation 
+     - FAKEPC2 ChemStation 
    * - 0x104C
      - Units
      - pA 

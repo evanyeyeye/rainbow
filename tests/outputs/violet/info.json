@@ -41,14 +41,16 @@
             "detector": "MS",
             "shape": [575, 1401],
             "metadata": {
-                "polarity": "-"
+                "polarity": "-",
+                "acquisition_mode": "Scan"
             }
         },
         "_FUNC002.DAT": {
             "detector": "MS",
             "shape": [574, 1401],
             "metadata": {
-                "polarity": "+"
+                "polarity": "+",
+                "acquisition_mode": "Scan"
             } 
         },
         "_FUNC003.DAT": {

@@ -1,3 +1,7 @@
+# The release notes belong in the source distribution: they are what a user
+# reads before upgrading, and the sdist is the whole project otherwise.
+include CHANGELOG.md
+
 # Ship the Cython sources for the optional accelerators so source builds (sdist)
 # can compile them. Exclude the generated C files: they are build artifacts and
 # are regenerated from the .pyx at build time (Cython is in build-system.requires).
@@ -7,3 +11,9 @@ include rainbow/agilent/_chdelta.pyx
 exclude rainbow/agilent/_uvdelta.c
 exclude rainbow/agilent/_msprofile.c
 exclude rainbow/agilent/_chdelta.c
+
+# Keep the test suite out of the source distribution. The wheel already excludes
+# it (packages.find ships only rainbow*), but setuptools otherwise sweeps the
+# tests/*.py into the sdist; they reference large binary fixtures and add nothing
+# for someone installing the package.
+prune tests

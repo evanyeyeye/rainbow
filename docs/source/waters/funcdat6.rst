@@ -55,4 +55,13 @@ If calibration is available for mz values, the calibration numbers will be store
 
 Let :code:`x` be the mz value and :code:`c_1`, :code:`c_2`, :code:`...`, :code:`c_n` be the calibration numbers. The calibration formula is :code:`c_1 * x^0 + c_2 * x^1 + ... + c_n * x^(n-1)`. 
 
-We compute an example using the mz value and 5 calibration numbers from above. The calibrated mz value is 141.7576 = -2.393e-1 + 1.000 * 141.932 + -5.302e-7 * 141.932^2 + 2.335e-10 * 141.932^3 + -4.220e-14 * 141.932^4. Note that the calibration numbers are truncated to 3 decimal places for readability, but the computation uses the full precision. 
+We compute an example using the mz value and 5 calibration numbers from above. The calibrated mz value is 141.7576 = -2.393e-1 + 1.000 * 141.932 + -5.302e-7 * 141.932^2 + 2.335e-10 * 141.932^3 + -4.220e-14 * 141.932^4. Note that the calibration numbers are truncated to 3 decimal places for readability, but the computation uses the full precision.
+
+.. note::
+
+   Because Waters m/z is calibrated rather than on a fixed lattice, its
+   spacing is not uniform (roughly 0.03 to 0.07 Da depending on the run, varying across the range). By default
+   ``rb.read`` bins it to nominal mass (1 Da); pass a finer ``bin_width`` to keep
+   more resolution, and ``rb.mz_resolution(path)`` reports the observed spacing.
+   The separate ``display_precision`` only rounds the displayed m/z labels; it
+   never merges intensities.
