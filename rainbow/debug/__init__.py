@@ -79,14 +79,23 @@ def _iter_files(path):
         else:
             yield path, os.path.basename(path)
         return
-    for dirpath, _, names in os.walk(path):
-        for name in sorted(names):
+    # Sorted by relpath across the whole tree, not per directory: os.walk lists
+    # a directory's own files before descending, and hands back sibling
+    # directories in readdir order, which is the creation order on APFS and a
+    # hash order on ext4. fields() keeps the first value it sees for a scalar,
+    # so an unsorted walk makes the reported instrument and method depend on the
+    # filesystem the run happens to sit on.
+    entries = []
+    for dirpath, dirnames, names in os.walk(path):
+        dirnames.sort()
+        for name in names:
             full = os.path.join(dirpath, name)
-            rel = os.path.relpath(full, path)
-            if name.lower().endswith(_ARCHIVE_EXTS):
-                yield from _iter_archive(full, rel)
-            else:
-                yield full, rel
+            entries.append((os.path.relpath(full, path), full, name))
+    for rel, full, name in sorted(entries):
+        if name.lower().endswith(_ARCHIVE_EXTS):
+            yield from _iter_archive(full, rel)
+        else:
+            yield full, rel
 
 
 def _iter_archive(archive_path, relbase):
