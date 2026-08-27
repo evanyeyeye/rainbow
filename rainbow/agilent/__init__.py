@@ -1,6 +1,7 @@
 import os
 
-from rainbow._arguments import reject_removed_arguments
+from rainbow._arguments import (reject_removed_arguments, validate_bin_width,
+                                validate_display_precision)
 from rainbow.agilent import chemstation
 from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
@@ -38,6 +39,11 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     """
     if removed:
         reject_removed_arguments("agilent.read", removed)
+    # Held to the same rules as rb.read: this is a documented entry point, and
+    # an unchecked m/z argument does not raise further down, it returns a grid
+    # whose labels no longer name its columns one to one.
+    validate_display_precision(display_precision)
+    validate_bin_width(bin_width)
     if os.path.splitext(path)[1].lower() == '.dx':
         from rainbow.agilent import openlab
         return openlab.read(

@@ -5,7 +5,7 @@ from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
 from rainbow import agilent, waters
 from rainbow._binning import MZ_FLOORS
-from rainbow.asm import from_asm, sequence_from_asm
+from rainbow.asm import from_asm, iso_timestamp, sequence_from_asm
 
 
 # `debug` is listed although it is not imported above: __getattr__ fetches it on
@@ -15,7 +15,7 @@ __all__ = [
     'DataFile', 'DataDirectory', 'DataSequence',
     'agilent', 'waters', 'debug',
     'read', 'read_sequence', 'read_metadata', 'mz_resolution',
-    'from_asm', 'sequence_from_asm',
+    'from_asm', 'sequence_from_asm', 'iso_timestamp',
     'VENDORS', 'MZ_FLOORS',
 ]
 
@@ -52,13 +52,11 @@ def __dir__():
 VENDORS = ('agilent', 'waters')
 
 
-def _validate_bin_width(bin_width):
-    """Rejects a ``bin_width`` that is not a positive number."""
-    if bin_width is None:
-        return
-    if (isinstance(bin_width, bool)
-            or not isinstance(bin_width, (int, float)) or bin_width <= 0):
-        raise Exception(f"Invalid bin_width: {bin_width}.")
+# The m/z argument rules live in rainbow._arguments, so rb.read, rb.read_sequence
+# and the vendor read functions hold the same values to the same standard.
+from rainbow._arguments import (validate_bin_width as _validate_bin_width,
+                                validate_display_precision
+                                as _validate_display_precision)
 
 
 def _mz_floor(datafile, vendor):
@@ -238,8 +236,9 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     MS m/z resolution is controlled by ``bin_width`` (the lossy step that sums
     intensities into a shared grid), not by ``display_precision`` (which only
     rounds the displayed labels). A finer ``bin_width`` may drastically increase
-    memory usage for larger files. The m/z grid the binary records is about
-    0.1 Da for Agilent quadrupole MS and 0.03 Da for Waters; the high-resolution
+    memory usage for larger files. The finest m/z grid the binary can record is
+    0.05 Da for Agilent quadrupole MS and about 0.03 Da for Waters, and a given
+    run is often coarser (Agilent quadrupole runs usually step 0.1); the
     Agilent HRMS profile is far finer (see :func:`mz_resolution` to inspect a
     file).
 
@@ -299,13 +298,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     elif not isinstance(path, str) or not os.path.isdir(path):
         raise Exception(f"{path} is not a directory.")
 
-    if display_precision != 'auto' and (
-            isinstance(display_precision, bool)
-            or not isinstance(display_precision, int)
-            or display_precision < 0):
-        raise Exception(
-            f"Invalid display_precision: {display_precision!r}. Use 'auto' or a "
-            f"non-negative integer.")
+    _validate_display_precision(display_precision)
 
     if not isinstance(hrms, bool):
         raise Exception(f"The hrms flag must be a boolean.")
@@ -523,8 +516,9 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
 
     Returns:
         dict: Each MS channel name mapped to its finest m/z spacing in
-            daltons. Agilent quadrupole MS resolves to about 0.1 Da, Waters to
-            between about 0.03 and 0.07 Da depending on the run.
+            daltons. Agilent quadrupole runs usually step 0.1 Da (the format
+            can express 0.05), Waters between about 0.03 and 0.07 depending
+            on the run.
 
             A channel appears only if a spacing describes it, so the dict can
             be empty, or smaller than the run's MS channel count, for a run
@@ -549,11 +543,11 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         # Labels only: _mz_spacings reads nothing but the m/z axis, and the
         # intensity grid at this width is num_times x num_ylabels, which dwarfs
         # the file it came from purely to be discarded. Every binned reader
-        # honours the flag - Chemstation .ms, the MassHunter profile and the
-        # MassHunter centroid - because the largest channels are the MassHunter
-        # ones. On the bundled fixtures the probe peaks at 25 MB against 136 for
-        # cyan.D, and 26 against 64 on yellow.D; a long high-resolution run
-        # extrapolates to gigabytes.
+        # honours the flag - Chemstation .ms whole and partial, the MassHunter
+        # profile and the MassHunter centroid - because the largest channels
+        # are the MassHunter ones. On the bundled fixtures the probe peaks at
+        # 25 MB against 136 for cyan.D, and 26 against 64 on yellow.D; a long
+        # high-resolution run extrapolates to gigabytes.
         return read(path, bin_width=1e-3, display_precision=4, hrms=hrms,
                     centroid=centroid, requested_files=requested_files,
                     _labels_only=True)
@@ -673,13 +667,7 @@ def read_sequence(path, display_precision='auto', hrms=False,
     if not isinstance(path, str) or not os.path.isdir(path):
         raise Exception(f"{path} is not a directory.")
 
-    if display_precision != 'auto' and (
-            isinstance(display_precision, bool)
-            or not isinstance(display_precision, int)
-            or display_precision < 0):
-        raise Exception(
-            f"Invalid display_precision: {display_precision!r}. Use 'auto' or a "
-            f"non-negative integer.")
+    _validate_display_precision(display_precision)
 
     if not isinstance(hrms, bool):
         raise Exception("The hrms flag must be a boolean.")
@@ -715,6 +703,13 @@ def read_sequence(path, display_precision='auto', hrms=False,
         if _detect_vendor(path) is not None:
             hint = (" It looks like a single run rather than a directory of "
                     "them: rb.read() reads that.")
+        elif _detect_sequence_vendor(path) == 'waters':
+            # It is a sequence directory and rainbow saw that. Telling it the
+            # directory holds no injections would be a plain falsehood, and the
+            # reason is which vendor's sequence, not what the directory holds.
+            hint = (" It holds .raw injections, and sequence reading is "
+                    "implemented for Agilent only; read each injection with "
+                    "rb.read().")
         elif isinstance(path, str) and os.path.isdir(path):
             hint = (" A sequence directory holds injection subdirectories "
                     "named .D or .raw; this one holds none.")

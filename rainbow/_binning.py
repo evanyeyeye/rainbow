@@ -26,7 +26,12 @@ import numpy as np
 # warning that a width is too fine when the file resolves finer would be a
 # false claim, while staying quiet about a width that is merely finer than one
 # particular run costs nothing. rainbow.mz_resolution answers per file.
-MZ_FLOORS = {'agilent': 0.1, 'waters': 0.03}
+#
+# Agilent is held to the same rule. A Chemstation .ms stores each m/z as a
+# big-endian short divided by 20, which is a 0.05 Da lattice, and every bundled
+# fixture happens to use only even shorts, so the runs here resolve 0.1. The
+# floor follows what the format can express rather than what these files do.
+MZ_FLOORS = {'agilent': 0.05, 'waters': 0.03}
 
 # Calibrated MassHunter (TOF/Q-TOF) data, profile or centroid, resolves far
 # below any vendor floor, so its parsers record this one instead.
@@ -34,9 +39,10 @@ HRMS_MZ_FLOOR = 1e-6
 
 # Where the search below stops. Beyond this many decimals a float64 m/z label
 # carries no more information, so a denormal bin_width would otherwise loop
-# forever raising a precision that cannot rise. It bounds the search, not the
-# caller's display_precision: rb.read holds that to its own limit, and this is
-# the floor under a bin_width the search is chasing.
+# forever raising a precision that cannot rise. The read entry points hold
+# display_precision to the same number, since past about 306 decimals numpy's
+# rounding overflows and every label becomes NaN, and the decimals between 17
+# and there say nothing anyway.
 _MAX_LABEL_DECIMALS = 17
 
 # Above this many bins in the span, lay the bins out by sorting rather than by

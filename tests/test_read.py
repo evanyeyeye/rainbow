@@ -173,6 +173,36 @@ def test_display_precision_and_bin_width_are_validated():
         rb.read(AGILENT_FIXTURE, bin_width=-1.0)
 
 
+@pytest.mark.parametrize("bin_width", [float("inf"), float("nan")])
+def test_a_bin_width_that_is_not_a_finite_number_is_refused(bin_width):
+    # Infinity is greater than zero and then divides every m/z to the same bin,
+    # so the whole run comes back as one column labelled NaN, which matches any
+    # ion asked for. NaN loses every comparison and reaches the parser's
+    # overflow guard instead, which reports a width that is too small.
+    with pytest.raises(Exception, match="bin_width"):
+        rb.read(AGILENT_FIXTURE, bin_width=bin_width)
+
+
+@pytest.mark.parametrize("entry,path", [
+    ("agilent", AGILENT_FIXTURE),
+    ("waters", "tests/inputs/blue.raw"),
+])
+@pytest.mark.parametrize("kwargs", [
+    {"display_precision": -1},
+    {"display_precision": "wide"},
+    {"bin_width": 0},
+    {"bin_width": -1.0},
+    {"bin_width": float("inf")},
+])
+def test_the_vendor_entry_points_validate_what_rb_read_validates(
+        entry, path, kwargs):
+    # rb.agilent.read and rb.waters.read are documented entry points too. A
+    # value rb.read refuses must not be accepted here and silently produce a
+    # grid whose labels no longer name its columns.
+    with pytest.raises(Exception, match="display_precision|bin_width"):
+        getattr(rb, entry).read(path, **kwargs)
+
+
 def test_a_sequence_directory_passed_to_read_names_read_sequence():
     # "Rainbow cannot read X." on its own is a dead end when the answer is one
     # function away.
@@ -199,3 +229,37 @@ def test_a_missing_path_says_so():
     # message already says what is wrong.
     with pytest.raises(Exception, match="is not a directory"):
         rb.read("tests/inputs/does-not-exist.D")
+
+
+def test_display_precision_is_bounded_above():
+    # numpy's rounding overflows past about 306 decimals and returns NaN for
+    # every label, which silently breaks the labels-name-the-columns rule that
+    # rb.read's own docstring states. The bound is set where a float64 label
+    # stops carrying more information instead.
+    from rainbow._arguments import MAX_DISPLAY_PRECISION
+
+    rb.read(AGILENT_FIXTURE, display_precision=MAX_DISPLAY_PRECISION)
+    with pytest.raises(Exception, match="display_precision"):
+        rb.read(AGILENT_FIXTURE, display_precision=MAX_DISPLAY_PRECISION + 1)
+    with pytest.raises(Exception, match="display_precision"):
+        rb.read(AGILENT_FIXTURE, display_precision=400)
+
+
+def test_a_waters_sequence_directory_is_told_why_not(tmp_path):
+    # _detect_sequence_vendor recognises .raw injections, so telling the caller
+    # the directory holds none is a plain falsehood. The reason is which
+    # vendor's sequence, not what the directory holds.
+    import shutil
+
+    directory = tmp_path / "stability"
+    directory.mkdir()
+    for name in ("001.raw", "002.raw"):
+        shutil.copytree(WATERS_FIXTURE, str(directory / name))
+
+    assert rb._detect_sequence_vendor(str(directory)) == "waters"
+    for kwargs in ({}, {"format": "waters"}):
+        with pytest.raises(Exception) as excinfo:
+            rb.read_sequence(str(directory), **kwargs)
+        message = str(excinfo.value)
+        assert "holds none" not in message
+        assert "Agilent" in message and "rb.read()" in message
