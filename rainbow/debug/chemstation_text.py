@@ -244,7 +244,10 @@ def _parse_report(text):
         if not s:
             continue
         m = _KV.match(line)
-        adj_banner = is_banner[i - 1] or (i + 1 < len(lines) and is_banner[i + 1])
+        # i - 1 without the guard indexes the LAST line when i is 0, so the
+        # first line of a report was classified by the file's final line.
+        adj_banner = (i and is_banner[i - 1]) \
+            or (i + 1 < len(lines) and is_banner[i + 1])
         if m:
             key, value = m.group("key"), m.group("value")
             sections.setdefault(current, {})[key] = value

@@ -62,10 +62,17 @@ def parse(path):
     parent_files = []
     instrument = {}
     software = []
+    # The handle is opened here rather than left to lxml, because the break
+    # below is the normal exit and abandoning the parse mid-stream leaves the
+    # file open until the iterator is collected: a ResourceWarning under
+    # -W error, and a descriptor held for as long as it takes on any
+    # interpreter that does not refcount. Owning it means closing it.
+    fileobj = open(path, "rb")
     try:
+        context = etree.iterparse(fileobj, events=("start",), recover=True)
         # start events expose each element's attributes before its children are
         # read, so breaking at the first <scan> avoids the peak data entirely.
-        for _, el in etree.iterparse(path, events=("start",), recover=True):
+        for _, el in context:
             tag = etree.QName(el).localname
             if tag == "scan":
                 break
@@ -85,6 +92,8 @@ def parse(path):
                                  if el.get(k)})
     except etree.XMLSyntaxError as e:
         return {"parser": NAME, "error": repr(e)}
+    finally:
+        fileobj.close()
 
     return {
         "parser": NAME,

@@ -41,9 +41,29 @@ def decode_text(raw):
     else:
         enc = "utf-8"
     try:
-        return raw.decode(enc, "replace")
-    except (LookupError, ValueError):
-        return raw.decode("latin-1", "replace")
+        return raw.decode(enc)
+    except UnicodeDecodeError:
+        pass
+
+    # The bytes are not the encoding they looked like. Decoding them with
+    # "replace" instead would destroy exactly the characters worth recovering:
+    # a Windows codepage byte becomes U+FFFD, so the copyright sign in a
+    # Chemstation version banner, and any accent in an operator or sample name,
+    # is lost rather than read. A single-byte codepage decodes one byte to one
+    # character and cannot fail the way a multi-byte one does, so it is tried
+    # first, cp1252 before latin-1 because these are Windows instrument files
+    # and cp1252 is where the quotes and dashes in 0x80-0x9F live.
+    #
+    # Only where the bytes are not UTF-16-shaped. A truncated or slightly
+    # malformed UTF-16 sidecar is still mostly readable with "replace", and
+    # reading it one byte at a time would turn all of it into mojibake.
+    if b"\x00" not in raw:
+        for codepage in ("cp1252", "latin-1"):
+            try:
+                return raw.decode(codepage)
+            except UnicodeDecodeError:
+                continue
+    return raw.decode(enc, "replace")
 
 
 def require_lxml(etree, what):

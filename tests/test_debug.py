@@ -1131,3 +1131,88 @@ def test_decode_text_reads_utf16_in_either_byte_order():
     for encoding in ("utf-8", "utf-8-sig", "utf-16", "utf-16-le", "utf-16-be"):
         decoded = decode_text(body.encode(encoding))
         assert decoded.lstrip("﻿") == body, encoding
+
+
+# The three parsers below had no behavioural test at all: each could be
+# replaced with a stub and the whole suite stayed green. ini.canonical is the
+# primary documented source for most of the canonical fields, so it is the one
+# that matters most.
+
+def test_ini_canonical_reads_the_documented_fields(tmp_path):
+    body = (
+        "[General]\r\n"
+        "AcqVersion=MassHunter GC/MS Acquisition B.07.06\r\n"
+        "Date=Tue Dec 17 10:13:33 2019\r\n"
+        "InjVolume=1.0\r\n"
+        "[Modules]\r\n"
+        "GC.SN=US18483001\r\n"
+        "SmartCard=AGILENT TECHNOLOGIES,5977,SN00000012,6.00.34\r\n"
+        "UVASIG=DAD1 A, Sig=254,4 Ref=360,100\r\n"
+        "[Method]\r\n"
+        "MethSaveWho=labuser\r\n"
+        "MethSaveTime=17-Dec-19, 10:00:00\r\n"
+    )
+    f = tmp_path / "PRE_POST.INI"
+    f.write_text(body, encoding="utf-8")
+    out = debug.ini.canonical(debug.ini.parse(str(f)))
+
+    assert out["instrument"] == "5977"
+    assert out["serials"] == ["US18483001", "SN00000012"]
+    assert out["signal_optics"] == ["DAD1 A, Sig=254,4 Ref=360,100"]
+    assert out["operator"] == "labuser"
+    assert out["method_save_time"] == "17-Dec-19, 10:00:00"
+    assert out["software_version"] == "MassHunter GC/MS Acquisition B.07.06"
+    assert out["injection_volume"] == "1.0"
+    assert out["acquired"] == "Tue Dec 17 10:13:33 2019"
+
+
+def test_ini_canonical_on_the_committed_fixtures():
+    # The synthetic file above agrees with the parser by construction; the real
+    # ones settle what the vendor actually writes.
+    pre_post = debug.ini.canonical(
+        debug.ini.parse("tests/inputs/yellow.D/PRE_POST.INI"))
+    assert pre_post["instrument"] == "5977"
+    assert pre_post["serials"] == ["US1839D002"]
+    assert pre_post["software_version"].startswith("MassHunter GC/MS")
+
+    gc = debug.ini.canonical(debug.ini.parse("tests/inputs/yellow.D/GC.ini"))
+    assert gc == {"serials": ["US18483001"]}
+
+
+def test_ini_canonical_omits_what_is_not_there(tmp_path):
+    f = tmp_path / "empty.ini"
+    f.write_text("[General]\r\nUnrelated=1\r\n", encoding="utf-8")
+    assert debug.ini.canonical(debug.ini.parse(str(f))) == {}
+
+
+def test_reg_parse_reports_the_register_inventory():
+    out = debug.reg.parse("tests/inputs/orange.D/MSACQINF.REG")
+    assert out["parser"] == "reg"
+    assert out["format"] == "mfc-carchive"
+    assert out["record_types"], "no record classes recovered"
+    assert all(isinstance(k, str) and isinstance(v, int)
+               for k, v in out["record_types"].items())
+
+
+def test_reg_parse_on_a_file_without_the_magic(tmp_path):
+    f = tmp_path / "not.REG"
+    f.write_bytes(b"nothing like a register file")
+    out = debug.reg.parse(str(f))
+    assert out["parser"] == "reg" and out["format"] is None
+
+
+def test_dotnet_canonical_promotes_the_analyzed_run():
+    out = debug.dotnet.canonical(debug.dotnet.parse(
+        "tests/inputs/yellow.D/Results/Qual/Version3/QualResult.bin"))
+    assert out["data_file"].lower().endswith(".d")
+    assert ":\\" in out["data_file"]
+    # Assembly versions stay in parse() and are deliberately not promoted:
+    # a data-analysis tool stack is not the acquisition software version.
+    assert "software_version" not in out
+
+
+def test_dotnet_canonical_without_a_run_path():
+    out = debug.dotnet.canonical(debug.dotnet.parse(
+        "tests/inputs/yellow.D/AcqData/"
+        "HP-5MS_HTAchiral_da_100-300_simscan.M/7890Method.bin"))
+    assert out == {}

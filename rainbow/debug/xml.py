@@ -145,8 +145,12 @@ def parse(path):
     # placeholder, not a corrupt document - report it distinctly so it is not
     # conflated with a real malformation. Agilent writes a 0-byte TimeStamp.xml
     # into many .D runs.
-    body = raw[3:] if raw[:3] == b"\xef\xbb\xbf" else raw
-    if not body.strip():
+    # Stripping only the UTF-8 BOM missed the case the note above describes:
+    # these sidecars are commonly UTF-16, where the BOM is two bytes and every
+    # space is two bytes with a NUL in it, so a BOM-only or whitespace-only
+    # UTF-16 placeholder failed the test, went to the parser, and came back
+    # reported as a malformed document.
+    if not decode_text(raw).lstrip("﻿").strip():
         return {"parser": NAME, "error": "empty file"}
     root = _parse_root(raw)
     if root is None:

@@ -116,10 +116,15 @@ def _iter_archive(archive_path, relbase):
     """
     try:
         archive = zipfile.ZipFile(archive_path)
-    except (zipfile.BadZipFile, OSError):
+        members = archive.namelist()
+    except Exception:
+        # An archive rainbow cannot open contributes nothing, and must not stop
+        # the walk reaching the sidecars beside it. namelist() is inside the
+        # guard because reading the central directory is where a truncated or
+        # otherwise malformed package fails.
         return
     with archive, tempfile.TemporaryDirectory() as tmp:
-        for member in archive.namelist():
+        for member in members:
             base = os.path.basename(member)
             # OPC packaging parts are pure container plumbing, no identity.
             low = member.lower()
@@ -131,7 +136,14 @@ def _iter_archive(archive_path, relbase):
             try:
                 with open(dest, "wb") as out:
                     out.write(archive.read(member))
-            except (KeyError, OSError, zipfile.BadZipFile):
+            except Exception:
+                # One member is skipped, never the archive and never the walk.
+                # zipfile.read raises more than a bad-zip error: an unsupported
+                # compression method (deflate64) is a NotImplementedError and an
+                # encrypted member a RuntimeError, neither of which is an
+                # OSError. This generator is advanced by the caller's `for`
+                # header, outside its per-file try, so anything escaping here
+                # takes down the whole inspection rather than one sidecar.
                 continue
             yield dest, "{}!{}".format(relbase, member)
 
