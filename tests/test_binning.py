@@ -296,6 +296,35 @@ def test_the_probe_reaches_a_channel_the_first_read_could_not_measure(tmp_path):
     assert together["MSProfile.bin"] != 1e-3
 
 
+def test_an_untagged_single_ion_channel_is_not_probed_for_a_grid():
+    # Every bundled fixture's MS channel carries an acquisition-mode tag, so
+    # nothing here reaches the fallback that reads an untagged one. It is
+    # reachable in the wild: the tag comes from the acquisition method, and a
+    # .D whose method is missing or unreadable has none. Such a channel would
+    # otherwise be sent to the probe, which bins at 1e-3 and would report the
+    # gaps between the chosen ions - the method's choice, not a lattice.
+    from rainbow import _has_no_measurable_grid, _is_selected_ion
+    from rainbow.datafile import DataFile
+
+    def channel(labels, **metadata):
+        return DataFile("MSD1.MS", "MS", np.arange(3.0),
+                        np.array(labels, dtype=float),
+                        np.zeros((3, len(labels)), dtype=np.uint64), metadata)
+
+    one_ion = channel([118.0])
+    assert _is_selected_ion(one_ion)
+    assert _has_no_measurable_grid(one_ion)
+
+    swept = channel([118.0, 119.0, 120.0])
+    assert not _is_selected_ion(swept)
+    assert not _has_no_measurable_grid(swept)
+
+    # The tag still wins where there is one, in both directions.
+    assert not _is_selected_ion(channel([118.0], acquisition_mode="Scan"))
+    assert _is_selected_ion(
+        channel([118.0, 119.0], acquisition_mode="SIM"))
+
+
 def test_bin_width_does_not_touch_a_waters_uv_function():
     """ bin_width is an m/z control, so a UV function's wavelengths are exempt.
 

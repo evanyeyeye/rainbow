@@ -787,6 +787,37 @@ def test_replicate_injections_survive_as_separate_injections(tmp_path):
         assert back.get_injection(injection.name) is not None
 
 
+def test_replicates_are_kept_apart_when_the_document_names_none_of_them(
+        tmp_path):
+    # The test above is satisfied by the injection identifier, which is already
+    # distinct, so it never reaches the suffixing that keeps replicates apart.
+    # Neither model requires an injection document on a liquid chromatography
+    # measurement, and rainbow omits it for a run that recorded no injection
+    # volume, so a document that names none of its injections is ordinary. Then
+    # the sample identifier is all there is, and replicates share it.
+    import shutil
+    sequence_dir = tmp_path / "Seq"
+    sequence_dir.mkdir()
+    for name in ("001-A1_01.D", "002-A2_02.D", "003-A3_03.D"):
+        shutil.copytree(os.path.join(INPUTS, "red.D"), sequence_dir / name)
+    document = rb.read_sequence(str(sequence_dir)).to_asm()
+    aggregate = document["liquid chromatography aggregate document"]
+    for lc_document in aggregate["liquid chromatography document"]:
+        for measurement in (lc_document["measurement aggregate document"]
+                            ["measurement document"]):
+            measurement.pop("injection document", None)
+
+    back = rb.sequence_from_asm(document)
+    assert len(back) == 3
+    samples = {inj.metadata.get("sample") for inj in back}
+    assert len(samples) == 1  # the collision the suffixing is for
+    sample = samples.pop()
+    assert [inj.name for inj in back] == [
+        sample, f"{sample}_2", f"{sample}_3"]
+    for injection in back:
+        assert back.get_injection(injection.name) is injection
+
+
 def test_from_asm_on_a_sequence_document_says_it_is_merging():
     # Every injection's channels land in one directory, where channels sharing
     # a name across injections collapse and get_file returns the last. The

@@ -210,6 +210,23 @@ def test_injection_volume_is_converted_to_the_unit_the_schema_wants():
                    for v in volumes), unit
 
 
+def test_an_injection_volume_with_no_unit_is_taken_as_microlitres():
+    # Every vendor path rainbow reads records microlitres, but not every one
+    # records the word: an ACAML with no <Unit> leaves the volume bare, and
+    # from_asm hands back whatever unit the document declared, which can be
+    # none. Dropping it would lose a volume the source plainly stated, and the
+    # gas chromatography schema requires the field.
+    datadir = rb.read("tests/inputs/red.D")
+    for volume in ({"value": 2.0}, {"value": 2.0, "unit": ""}):
+        datadir.metadata["injection_volume"] = volume
+        volumes = [m["injection document"]
+                   ["autosampler injection volume setting (chromatography)"]
+                   for m in _measurements(datadir.to_asm())
+                   if "injection document" in m]
+        assert volumes, volume
+        assert all(v == {"value": 2.0, "unit": "mm^3"} for v in volumes)
+
+
 def test_an_unconvertible_injection_volume_unit_is_omitted_with_a_warning():
     # Omitting the field beats publishing the number under a unit it is not in,
     # because the wrong unit still validates.
