@@ -351,11 +351,15 @@ def test_the_streamed_writer_takes_every_indent_json_takes(sequence, tmp_path,
     # the top level, and indent=0 and indent=None each differed from json's own
     # spelling. All of it stayed valid JSON and none of it was the file
     # to_asm_str would have written.
-    expected = json.dumps(sequence.to_asm(), indent=indent, ensure_ascii=False)
-    # Compared as a boolean: these documents run to tens of megabytes, and
-    # letting the assertion rewriter diff two of them takes longer than the
-    # rest of the suite put together.
-    assert (written == expected) is True, _where_they_differ(written, expected)
+    expected = json.dumps(sequence.to_asm(), indent=indent, ensure_ascii=False,
+                          allow_nan=False)
+    # Compared outside an assert statement, and reported by hand. These
+    # documents run to tens of megabytes, and anything that hands both of them
+    # to pytest on failure (the assertion rewriter, or a plain `assert a == b`)
+    # spends minutes building a diff nobody can read. A failing comparison
+    # should fail in the time the comparison takes.
+    if written != expected:
+        pytest.fail(_where_they_differ(written, expected))
 
 
 def _where_they_differ(written, expected):

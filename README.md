@@ -87,8 +87,10 @@ See [Sequences](https://rainbow-api.readthedocs.io/en/latest/sequences.html).
 Any run, or any sequence, exports to the
 [Allotrope Simple Model](https://www.allotrope.org/): an open, published JSON
 format that other tools read, so the data stops depending on *rainbow* or on the
-instrument vendor. It validates against the published Allotrope schemas, and it
-reads back.
+instrument vendor. It reads back, and it validates against the published
+Allotrope schemas once the run's UTC offset is known: most vendor formats record
+local wall clock with no offset, and *rainbow* will not invent one, so pass
+`utc_offset=` if you know where the instrument was.
 
 ```python
 datadir.export_asm("caffeine.asm.json")           # one run

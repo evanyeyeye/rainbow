@@ -1176,11 +1176,48 @@ def test_a_required_timestamp_is_written_through_rather_than_dropped():
         assert options.timestamp("no idea") is None
     with pytest.warns(UserWarning, match="schema requires the field"):
         assert options.timestamp("no idea", required=True) == "no idea"
-    # A value that reads cleanly is unaffected, and says nothing.
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    # A value that reads cleanly is unaffected, and the only thing left to say
+    # about it is that it carries no offset.
+    with pytest.warns(UserWarning, match="records no UTC offset"):
         assert options.timestamp("27-Feb-18, 10:11:50", required=True) == \
             "2018-02-27T10:11:50"
+    # An offset the source recorded leaves nothing to say at all.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert options.timestamp("3 Feb 22 11:22 am -0500") == \
+            "2022-02-03T11:22:00-05:00"
+
+
+def test_a_timestamp_with_no_offset_is_flagged_once_per_document():
+    """ The one reason a default export does not validate, said out loud.
+
+    ASM types every timestamp as RFC 3339, which requires an offset, and most
+    vendor formats record local wall clock without one. rainbow will not invent
+    an offset, so it says so instead of leaving a schema checker to find it.
+    """
+    from rainbow.asm import _Options
+
+    options = _Options()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        options.timestamp("27-Feb-18, 10:11:50")
+        options.timestamp("28-Feb-18, 11:12:51")
+    offset_warnings = [w for w in caught
+                       if "records no UTC offset" in str(w.message)]
+    assert len(offset_warnings) == 1
+    assert "utc_offset=" in str(offset_warnings[0].message)
+
+    # A new document says it again, being validated on its own.
+    options.start_document()
+    with pytest.warns(UserWarning, match="records no UTC offset"):
+        options.timestamp("27-Feb-18, 10:11:50")
+
+    # Supplying the offset settles it, so there is nothing to warn about.
+    supplied = _Options(utc_offset="-05:00")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert supplied.timestamp("27-Feb-18, 10:11:50") == \
+            "2018-02-27T10:11:50-05:00"
 
 
 def test_timezone_fills_in_a_missing_offset_but_never_overrides_one():
@@ -1404,3 +1441,69 @@ def test_an_unrecorded_technique_in_metadata_still_falls_through():
     datadir = rb.read("tests/inputs/red.D")
     datadir.metadata["technique"] = ""
     assert "liquid chromatography aggregate document" in datadir.to_asm()
+
+
+def test_export_to_a_handle_that_cannot_hold_unicode_escapes_instead(tmp_path):
+    """ A caller's handle brings its own codec, and it may be a narrow one.
+
+    export_asm takes an open text file rather than opening one, so the encoding
+    is the caller's choice. Writing non-ASCII as itself raises UnicodeEncodeError
+    partway through a cp1252 or latin-1 handle, leaving a truncated file that
+    looks like a finished export. Escaping is valid JSON, so the document is
+    still complete and still says the same thing.
+    """
+    from rainbow.asm import export_asm
+
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.metadata["sample"] = "μ-assay"      # GREEK SMALL LETTER MU
+
+    path = tmp_path / "narrow.asm.json"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with open(str(path), "w", encoding="cp1252") as fileobj:
+            export_asm(datadir, fileobj)
+
+    text = path.read_text(encoding="cp1252")
+    assert "\\u03bc" in text                          # escaped, not raw
+    document = json.loads(text)                       # and still valid JSON
+    measurements = (document["liquid chromatography aggregate document"]
+                    ["liquid chromatography document"][0]
+                    ["measurement aggregate document"]["measurement document"])
+    assert measurements[0]["sample document"]["sample identifier"] == \
+        "μ-assay"
+
+
+def test_a_utf8_handle_still_gets_the_characters_themselves():
+    import io
+
+    from rainbow.asm import export_asm
+
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.metadata["sample"] = "μ-assay"
+    buffer = io.StringIO()                            # declares no encoding
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        export_asm(datadir, buffer)
+    assert "μ-assay" in buffer.getvalue()
+
+
+def test_a_non_finite_value_is_refused_rather_than_written_as_nan():
+    """ NaN and Infinity are not JSON, whatever json.dumps does by default.
+
+    A document holding a bare NaN literal is rejected by any strict reader,
+    which is most of them outside Python. Refusing beats writing a file that
+    only round-trips through the library that wrote it.
+    """
+    import numpy as np
+
+    datadir = rb.read("tests/inputs/red.D")
+    datafile = datadir.datafiles[0]
+    datafile.data = np.asarray(datafile.data, dtype=float)
+    datafile.data[0][0] = float("nan")
+
+    from rainbow.asm import to_asm_str
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(ValueError):
+            to_asm_str(datadir)

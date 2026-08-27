@@ -444,7 +444,7 @@ def to_asm_str(datadir, *, export_dad_cube=True, wavelengths=None, ions=None,
                wavelengths=wavelengths, ions=ions,
                decimal_places=decimal_places, technique=technique,
                utc_offset=utc_offset),
-        indent=indent, ensure_ascii=False)
+        indent=indent, ensure_ascii=False, allow_nan=False)
 
 
 def sequence_to_asm_str(datasequence, *, export_dad_cube=True, wavelengths=None,
@@ -456,13 +456,29 @@ def sequence_to_asm_str(datasequence, *, export_dad_cube=True, wavelengths=None,
                         wavelengths=wavelengths, ions=ions,
                         decimal_places=decimal_places, technique=technique,
                         utc_offset=utc_offset),
-        indent=indent, ensure_ascii=False)
+        indent=indent, ensure_ascii=False, allow_nan=False)
 
 
 # A placeholder for the per-injection document array, swapped out for a streamed
 # array so the whole sequence never lives in memory at once. Chosen to never
 # collide with real envelope metadata (device system / manifest strings).
 _DOCUMENTS_PLACEHOLDER = "@@RAINBOW_INJECTION_DOCUMENTS@@"
+
+
+def _handles_unicode(fileobj):
+    """Whether ``fileobj`` can encode any character the document may hold.
+
+    A text handle carries the codec it was opened with. Only the UTF family
+    covers the whole of Unicode; a handle opened as cp1252 or latin-1 raises
+    partway through a write it cannot make, which is worse than escaping. A
+    handle that declares no encoding (io.StringIO, and anything file-like the
+    caller wrote) holds str and is not encoding anything, so it is fine.
+    """
+    encoding = getattr(fileobj, "encoding", None)
+    if not encoding:
+        return True
+    normalized = str(encoding).lower().replace("_", "-")
+    return normalized.startswith("utf") or normalized in ("u8", "utf8")
 
 
 def export_asm(datadir, fileobj, *, export_dad_cube=True, wavelengths=None,
@@ -581,9 +597,17 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
     # single warning then stood for N separate documents and named an injection
     # that was not in most of them.
     options.start_document()
+    # Non-ASCII is written as itself only where the handle can encode it. The
+    # document holds micro signs, degree signs and whatever the vendor put in
+    # the sample name, and a handle the caller opened as cp1252 or latin-1
+    # raises UnicodeEncodeError partway through, leaving a truncated file that
+    # looks like a completed export. Escaping is valid JSON in either case, so
+    # the fallback costs only legibility.
+    ensure_ascii = not _handles_unicode(fileobj)
     envelope = _aggregate_document(technique, device_system,
                                    _DOCUMENTS_PLACEHOLDER)
-    rendered = json.dumps(envelope, indent=indent, ensure_ascii=False)
+    rendered = json.dumps(envelope, indent=indent, ensure_ascii=ensure_ascii,
+                          allow_nan=False)
     # The placeholder is the injection-array slot, emitted after the device
     # system, so it is the LAST occurrence of the sentinel; splitting there
     # (rpartition) keeps a device-system field that happens to contain the
@@ -611,7 +635,8 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
     fileobj.write("[")
     for index, (datadir, metadata) in enumerate(specs):
         document = _injection_document(datadir, metadata, options, technique)
-        chunk = json.dumps(document, indent=indent, ensure_ascii=False)
+        chunk = json.dumps(document, indent=indent,
+                           ensure_ascii=ensure_ascii, allow_nan=False)
         if pretty:
             chunk = "\n".join(pad + line for line in chunk.split("\n"))
             fileobj.write((separator if index else "") + "\n" + chunk)
@@ -662,6 +687,13 @@ _VENDOR_TIMESTAMP = re.compile(r"""
 # 3 or 6 (and no trailing Z), so an ISO string is normalized before it is parsed.
 _ISO_FRACTION = re.compile(r"\.([0-9]+)")
 _UTC_OFFSET = re.compile(r"[+-][0-9]{2}:?[0-9]{2}\Z")
+
+# Whether a timestamp about to be written carries a UTC offset. Every offset
+# reaching a document is normalized to +HH:MM first (see _normalize_offset),
+# and datetime.isoformat writes an aware value the same way, so the trailing
+# +HH:MM is the whole question. A date with no time ("2018-02-27") has no
+# colon in its last six characters and does not match.
+_HAS_OFFSET = re.compile(r"[+-][0-9]{2}:[0-9]{2}\Z")
 
 
 def _offset_in_range(hours, minutes):
@@ -797,6 +829,31 @@ def _iso_timestamp(value, utc_offset=None):
     return parsed.isoformat()
 
 
+def iso_timestamp(value, utc_offset=None):
+    """
+    Converts a vendor timestamp to ISO 8601, returning None if it cannot be read.
+
+    The vendors each spell wall clock their own way (``'27-Feb-18, 10:11:50'``,
+    ``'3 Feb 22 11:22 am -0500'``, ``'10-May-2022 15:39:24'``), and rainbow
+    passes those strings through to ``metadata['date']`` unchanged. They are
+    day-first and name the month, so sorting them as text does not put runs in
+    the order they were acquired. This is the conversion the ASM export uses,
+    and what it returns does sort as text.
+
+    Args:
+        value (str): A timestamp in whatever spelling the vendor recorded.
+        utc_offset (str, optional): UTC offset such as ``'-05:00'`` or ``'Z'``
+            to stamp on a value that records none. A recorded offset is kept
+            and never overridden.
+
+    Returns:
+        The timestamp as an ISO 8601 string, or None if the spelling is one
+        rainbow cannot read.
+
+    """
+    return _iso_timestamp(value, _utc_offset(utc_offset))
+
+
 class _Options:
     """The caller's export controls, threaded through the document builders.
 
@@ -850,7 +907,24 @@ class _Options:
                 f"ignoring {recorded_offset!r}, which the run recorded as a "
                 "UTC offset but is not one.")
         stamped = _iso_timestamp(value, recorded or self.utc_offset)
-        if stamped is not None or not isinstance(value, str) or not value.strip():
+        if stamped is not None:
+            # ASM types every timestamp `format: date-time`, which is RFC 3339,
+            # which requires an offset. Emitting local wall clock without one
+            # is the deliberate choice above, but it is also the single reason
+            # a default export of most ChemStation and Waters runs does not
+            # validate, so the document says so rather than leaving it to be
+            # discovered by a schema checker. Said once however many timestamps
+            # the document holds, and never when an offset was found or given.
+            if not _HAS_OFFSET.search(stamped):
+                _warn_once_per_run(
+                    self, "naive-timestamp",
+                    "{!r} records no UTC offset and rainbow will not invent "
+                    "one, so the timestamps are written as local wall clock. "
+                    "The schema's date-time format requires an offset, so the "
+                    "document will not validate until one is supplied: pass "
+                    "utc_offset= to name the instrument's offset.".format(value))
+            return stamped
+        if not isinstance(value, str) or not value.strip():
             return stamped
         if required:
             warnings.warn(
