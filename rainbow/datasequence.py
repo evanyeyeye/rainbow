@@ -3,6 +3,18 @@ import os
 from rainbow.datadirectory import DataDirectory
 
 
+class InjectionNotFound(KeyError):
+    """
+    Raised for an injection name a sequence does not hold.
+
+    A KeyError, so ``except KeyError`` still catches it, but it prints its
+    message as written: KeyError renders its argument with repr, which wraps
+    a sentence in quotes and escapes the punctuation in a Windows path.
+    """
+    def __str__(self):
+        return self.args[0] if self.args else ""
+
+
 class DataSequence:
     """
     Class representing a multi-injection sequence.
@@ -50,29 +62,34 @@ class DataSequence:
     def __iter__(self):
         return iter(self.injections)
 
-    def __contains__(self, name):
-        """Whether an injection with that directory ``name`` is in the sequence.
+    def __contains__(self, item):
+        """Whether an injection is in the sequence, by directory ``name`` or by
+        object.
 
         Without this, ``"x.D" in sequence`` fell back to iterating and comparing
         each injection object against a string, so it answered False for a name
-        that is present. A membership test that quietly says no is worse than
-        one that raises.
+        that is present. Both operands are answered rather than trading one
+        silent False for the other: DataDirectory defines no ``__eq__``, so the
+        default iteration answered an object correctly and only by identity,
+        which is what the second test preserves.
         """
-        return name in self.by_name
+        if isinstance(item, str):
+            return item in self.by_name
+        return any(injection is item for injection in self.injections)
 
     def __getitem__(self, key):
         """An injection by position, slice, or directory name."""
         if isinstance(key, str):
             return self.get_injection(key)
-        if isinstance(key, slice):
-            return self.injections[key]
         return self.injections[key]
 
     def get_injection(self, name):
         """
         Returns an injection by its directory :code:`name`.
 
-        Raises an exception if the :code:`name` is not in the sequence.
+        Raises :class:`KeyError` if the :code:`name` is not in the sequence,
+        naming the injections that are. Use ``name in sequence`` to ask without
+        raising.
 
         Args:
             name (str): Injection directory name (e.g. ``"008-...01.D"``).
@@ -82,7 +99,7 @@ class DataSequence:
             known = ", ".join(sorted(self.by_name)[:5])
             if len(self.by_name) > 5:
                 known += ", ..."
-            raise KeyError(
+            raise InjectionNotFound(
                 f"Injection {name!r} not found in {self.name}. "
                 f"This sequence has {len(self.by_name)}: {known}")
         return self.by_name[name]

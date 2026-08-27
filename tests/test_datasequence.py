@@ -66,8 +66,35 @@ def test_get_injection_and_by_name(tmp_path):
     seq = rb.read_sequence(_make_sequence(tmp_path))
     name = sorted(INJECTION_NAMES)[0]
     assert seq.get_injection(name) is seq.by_name[name]
-    with pytest.raises(Exception):
+    with pytest.raises(KeyError) as raised:
         seq.get_injection("does-not-exist.D")
+    # And it says which injections there are, in a message that reads as one:
+    # a plain KeyError renders its argument with repr, wrapping the sentence in
+    # quotes and escaping the backslashes of a Windows path inside it.
+    message = str(raised.value)
+    assert message.startswith("Injection 'does-not-exist.D' not found")
+    assert name in message
+
+
+def test_membership_answers_for_a_name_and_for_an_injection(tmp_path):
+    # By name, because the sequence is keyed by name everywhere else, and by
+    # object, because that is what the default iteration answered before there
+    # was a __contains__ at all. Answering only the first would have traded one
+    # silent False for another: DataDirectory defines no __eq__, so an
+    # injection tested against by_name misses.
+    seq = rb.read_sequence(_make_sequence(tmp_path))
+    name = sorted(INJECTION_NAMES)[0]
+
+    assert name in seq
+    assert "does-not-exist.D" not in seq
+    assert seq.get_injection(name) in seq
+    # A second read of the same directory is a different object, and there is
+    # no __eq__ to say otherwise, so it is not the injection this sequence
+    # holds. Identity is the honest answer, not a name comparison in disguise.
+    again = tmp_path / "again"
+    again.mkdir()
+    other = rb.read_sequence(_make_sequence(again))
+    assert other.get_injection(name) not in seq
 
 
 def test_sequence_level_files_are_ignored_for_injection_list(tmp_path):
