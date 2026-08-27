@@ -1401,6 +1401,21 @@ _SOURCE_UNIT_MEASURES = {
 }
 
 
+def _warn_relabeled_unit(datafile, unit, descriptor, options):
+    """Says that a channel's values went out under a quantity they are not in.
+
+    The one message for every detector that reaches it, so no detector class is
+    quietly exempt from an explanation the others give.
+    """
+    _warn_once_per_run(
+        options, "source-unit:{}:{}".format(datafile.name, unit),
+        "{} records its signal in {!r}, which the schema does not offer "
+        "for {}; it is published as {} in {}, relabeled and not "
+        "converted.".format(
+            datafile.name, unit, descriptor["concept"],
+            descriptor["concept"], descriptor["unit"]))
+
+
 def _measure_from_source(datafile, descriptor, options):
     """The descriptor to export a channel with, preferring the source's unit.
 
@@ -1414,23 +1429,25 @@ def _measure_from_source(datafile, descriptor, options):
         return descriptor
     if descriptor["concept"] == "absorbance":
         # Absorbance has its own normalization, which scales the values to the
-        # mAU the ADM pins; see _absorbance_unit_and_scale.
+        # mAU the ADM pins; see _absorbance_unit_and_scale. That covers the
+        # absorbance spellings and nothing else, so a unit it cannot place is
+        # relabeled exactly like every other one: the values go out unscaled
+        # under mAU. The RID interim is the case that reaches here, recording
+        # nRIU, and it was the one relabeled detector that said nothing, while
+        # the detector documentation promised it warned alongside CAD and ELSD.
+        if _absorbance_unit_key(unit) in _ABSORBANCE_TO_MAU:
+            return descriptor
+        _warn_relabeled_unit(datafile, unit, descriptor, options)
         return descriptor
     key = str(unit).strip().lower().replace("µ", "u").replace("μ", "u")
     measure = _SOURCE_UNIT_MEASURES.get(key)
     if measure is None:
-        # Including the absorbance spellings. A Chemstation analog channel
-        # labeled mAU is not published as absorbance, for the reason above, but
-        # the values still go out under a quantity they are not in, and that is
-        # the same fact the ELSD's LSU gets told about. Suppressing it here
-        # made the one channel most likely to be misread the quiet one.
-        _warn_once_per_run(
-            options, "source-unit:{}:{}".format(datafile.name, unit),
-            "{} records its signal in {!r}, which the schema does not offer "
-            "for {}; it is published as {} in {}, relabeled and not "
-            "converted.".format(
-                datafile.name, unit, descriptor["concept"],
-                descriptor["concept"], descriptor["unit"]))
+        # A Chemstation analog channel labeled mAU is not published as
+        # absorbance, for the reason above, but the values still go out under a
+        # quantity they are not in, and that is the same fact the ELSD's LSU
+        # gets told about. Suppressing it here made the one channel most likely
+        # to be misread the quiet one.
+        _warn_relabeled_unit(datafile, unit, descriptor, options)
         return descriptor
     concept, asm_unit = measure
     if concept == descriptor["concept"] and asm_unit == descriptor["unit"]:
@@ -1798,12 +1815,26 @@ def _channel_key(name):
 # source unit is normalized to mAU on the way out, scaling the values to match.
 # ChemStation already reports mAU; Waters UV chromatograms report AU (1 AU =
 # 1000 mAU). An unrecognized unit is labeled mAU unscaled, as before.
-_ABSORBANCE_TO_MAU = {"AU": 1000.0, "mAU": 1.0}
+#
+# Keyed on a case-folded, stripped spelling, the way the measure table and the
+# volume table are. The unit is whatever text the vendor file carried (Waters
+# takes it verbatim from field 5 of _CHROMS.INF), so its case is the
+# instrument's choice, and matching "AU" but not "au" is the difference between
+# the right answer and one a thousand times too small, written into a document
+# that then passes strict validation.
+_ABSORBANCE_TO_MAU = {"au": 1000.0, "mau": 1.0}
+
+
+def _absorbance_unit_key(unit):
+    """An absorbance unit reduced to the spelling :data:`_ABSORBANCE_TO_MAU`
+    keys on: case-folded and unspaced."""
+    return str(unit).strip().lower().replace(" ", "")
 
 
 def _absorbance_unit_and_scale(datafile):
     """The schema absorbance unit (mAU) and the value multiplier to reach it."""
-    return "mAU", _ABSORBANCE_TO_MAU.get(datafile.metadata.get("unit"), 1.0)
+    key = _absorbance_unit_key(datafile.metadata.get("unit"))
+    return "mAU", _ABSORBANCE_TO_MAU.get(key, 1.0)
 
 
 def _detector_cube(datafile, descriptor, options):
