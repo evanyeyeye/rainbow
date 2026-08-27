@@ -123,6 +123,30 @@ def test_an_argument_that_never_existed_still_reads_as_a_typo():
         rb.agilent.read(AGILENT_FIXTURE, nonsense=1)
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: rb.agilent.read(AGILENT_FIXTURE, labels_only=True),
+        lambda: rb.waters.read(WATERS_FIXTURE, labels_only=True),
+    ],
+)
+def test_the_labels_only_shortcut_is_not_public(call):
+    # It exists for mz_resolution, which reads nothing but the m/z axis. What
+    # it returns is not a usable read: the labels are right and the data has
+    # zero columns, so extract_traces raises IndexError on a label the file
+    # plainly has. rb.read spells it _labels_only; the vendor entry points are
+    # documented in api.rst just as it is, so they spell it the same way rather
+    # than offering the sharp edge under a public name.
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        call()
+
+    datadir = rb.agilent.read(os.path.join("tests", "inputs", "orange.D"),
+                              bin_width=0.1, _labels_only=True)
+    datafile = datadir.get_file("MSD1.MS")
+    assert datafile.ylabels.size > 1
+    assert datafile.data.shape[1] == 0
+
+
 # Flag validation. Each of these was a live check that no test exercised, so
 # deleting the check passed the suite.
 @pytest.mark.parametrize(
