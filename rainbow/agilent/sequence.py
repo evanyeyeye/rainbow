@@ -298,7 +298,12 @@ def _peak(element):
     values = {}
     for child in element:
         values[_local(child.tag)] = child
-    peak = {}
+    # ChemStation names a peak's compound outside the <Peak>, in an
+    # <InjectionCompound> that refers back to it by id, and leaves it empty
+    # unless the processing method identified the peak. The key is present
+    # either way so that a peak read from a sequence and one read from an ASM
+    # document (where the name rides on the peak itself) have the same shape.
+    peak = {"name": None}
     for key, tag in _PEAK_MEASURES.items():
         child = values.get(tag)
         peak[key] = _value(child) if child is not None else None

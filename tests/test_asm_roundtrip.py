@@ -840,3 +840,178 @@ def test_a_single_injection_document_does_not_warn():
         w.simplefilter("always")
         rb.from_asm(document)
     assert not [x for x in caught if "sequence_from_asm" in str(x.message)]
+
+
+# --- Peak lists a foreign exporter writes -----------------------------------
+#
+# An Agilent OpenLab / Empower ASM export differs from rainbow's own in three
+# ways that all cost peak data: it names each peak's compound, it emits one
+# processed data document per result version rather than one per channel, and
+# it leaves the device control document without a wavelength setting, naming
+# the wavelength in the cube label instead.
+
+
+def _processed(*peak_lists):
+    """A processed data aggregate document, one document per peak list."""
+    return {"processed data aggregate document": {
+        "processed data document": list(peak_lists)}}
+
+
+def _peak_list(*peaks, **document):
+    document["peak list"] = {"peak": list(peaks)}
+    return document
+
+
+def _rt(seconds):
+    return {"retention time": {"value": seconds, "unit": "s"}}
+
+
+def test_a_peaks_compound_name_is_read():
+    """ Without the name a peak list is a set of anonymous retention times.
+
+    The compound a processing method assigned to a peak is the field that makes
+    a peak list usable across a study: it is what says which of forty peaks is
+    the product. rainbow read every quantity and dropped it.
+    """
+    document = _lc(_with_cube(**{
+        "measurement identifier": "uv",
+        **_processed(_peak_list(dict(_rt(90.0),
+                                     **{"written name": "Caffeine"}),
+                                dict(_rt(120.0))))}))
+    peaks = rb.from_asm(document).peaks[0]["peaks"]
+    assert [peak["name"] for peak in peaks] == ["Caffeine", None]
+
+
+def test_a_peaks_compound_name_survives_a_round_trip():
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    channel = next(d.name for d in datadir.datafiles
+                   if d.detector == "UV" and d.data.shape[1] == 1)
+    datadir.peaks = [{"signal": channel.split(".")[0].upper(),
+                      "wavelength": 254.0, "description": None,
+                      "channel_file": channel,
+                      "peaks": [{"name": "Caffeine", "retention_time": 1.5,
+                                 "area": 100.0}]}]
+    document = datadir.to_asm()
+    peak = (_measurements(document)[0]["processed data aggregate document"]
+            ["processed data document"][0]["peak list"]["peak"][0])
+    assert peak["written name"] == "Caffeine"
+    assert rb.from_asm(document).peaks[0]["peaks"][0]["name"] == "Caffeine"
+
+
+def _measurements(document):
+    """Every measurement carrying a peak list, in document order."""
+    return [m for m in document["liquid chromatography aggregate document"]
+            ["liquid chromatography document"][0]
+            ["measurement aggregate document"]["measurement document"]
+            if "processed data aggregate document" in m]
+
+
+def test_only_the_first_of_several_integrations_is_the_default():
+    """ A channel integrated more than once must not lose the extra results.
+
+    An Empower export writes one processed data document per result version, so
+    a single channel arrives with the same run integrated up to six times, at
+    different times and under different processing methods. rainbow read the
+    first and dropped the rest without a word, and the peak lists genuinely
+    differ: a reintegration finds or loses whole peaks.
+    """
+    document = _lc(_with_cube(**{
+        "measurement identifier": "uv",
+        **_processed(
+            _peak_list(dict(_rt(90.0), **{"written name": "first"}),
+                       **{"processed data identifier": "1",
+                          "data processing time": "2025-09-12T14:20:31-04:00"}),
+            _peak_list(dict(_rt(90.0), **{"written name": "second"}),
+                       dict(_rt(150.0)),
+                       **{"processed data identifier": "2",
+                          "data processing time": "2025-10-01T11:17:02-04:00"}))}))
+    with pytest.warns(UserWarning, match="2 processed data documents"):
+        group = rb.from_asm(document).peaks[0]
+
+    assert [peak["name"] for peak in group["peaks"]] == ["first"]
+    assert group["processing"]["identifier"] == "1"
+    # The one that was silently thrown away, kept and labelled with the
+    # integration that produced it.
+    assert len(group["alternates"]) == 1
+    alternate = group["alternates"][0]
+    assert [peak["name"] for peak in alternate["peaks"]] == ["second", None]
+    assert alternate["processing"]["time"] == "2025-10-01T11:17:02-04:00"
+
+
+def test_a_single_integration_carries_no_alternates_and_no_warning():
+    document = _lc(_with_cube(**{
+        "measurement identifier": "uv",
+        **_processed(_peak_list(_rt(90.0)))}))
+    import warnings as w
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        group = rb.from_asm(document).peaks[0]
+    assert group["alternates"] == []
+    assert not [x for x in caught if "processed data documents" in str(x.message)]
+
+
+def test_the_extra_integrations_survive_a_re_export():
+    """ Reading every result version is no use if exporting keeps only one. """
+    document = _lc(_with_cube(**{
+        "measurement identifier": "uv",
+        **_processed(
+            _peak_list(_rt(90.0), **{"processed data identifier": "1"}),
+            _peak_list(_rt(150.0), **{"processed data identifier": "2"}),
+            _peak_list(_rt(210.0), **{"processed data identifier": "3"}))}))
+    with pytest.warns(UserWarning, match="3 processed data documents"):
+        datadir = rb.from_asm(document)
+    with pytest.warns(UserWarning, match="3 processed data documents"):
+        again = rb.from_asm(datadir.to_asm())
+
+    written = (_measurements(datadir.to_asm())[0]
+               ["processed data aggregate document"]["processed data document"])
+    assert [d["processed data identifier"] for d in written] == ["1", "2", "3"]
+    assert [d["@index"] for d in written] == [1, 2, 3]
+    assert len(again.peaks[0]["alternates"]) == 2
+
+
+# The wavelength is the only thing telling one channel of a multi-signal run
+# from another, and a label names up to three of them: the signal, its
+# bandwidth, and a reference channel.
+@pytest.mark.parametrize("label,expected", [
+    ("DAD.0.0, DAD: Signal A, 246.0 nm/Bw:4.0 nm", 246.0),
+    ("DAD.0.1, DAD: Signal B, 220.0 nm/Bw:4.0 nm Ref 360.0 nm/Bw:100.0 nm",
+     220.0),
+    ("DAD1A, Sig=254,4 Ref=off", None),
+    ("no wavelength here", None),
+])
+def test_the_cube_label_supplies_a_missing_wavelength(label, expected):
+    """ A channel whose exporter records no wavelength setting still has one.
+
+    Reading only the device control document's setting left every channel of an
+    OpenLab export with an empty y-axis label, so a three-signal injection came
+    back as three indistinguishable traces.
+    """
+    measurement = _with_cube(**{"measurement identifier": "uv",
+                                **_processed(_peak_list(_rt(90.0)))})
+    measurement["chromatogram data cube"]["label"] = label
+    datadir = rb.from_asm(_lc(measurement))
+    datafile = datadir.datafiles[0]
+    if expected is None:
+        assert datafile.ylabels.tolist() == [""]
+        assert datadir.peaks[0]["wavelength"] is None
+    else:
+        assert datafile.ylabels.tolist() == [expected]
+        assert datafile.metadata["wavelength"] == expected
+        assert datadir.peaks[0]["wavelength"] == expected
+    # Either way the label itself is kept, so the channel can be identified.
+    assert datafile.metadata["description"] == label
+    assert datadir.peaks[0]["description"] == label
+
+
+def test_a_declared_wavelength_setting_still_wins_over_the_label():
+    """ The label is a fallback, not a second source of truth. """
+    measurement = _with_cube(**{
+        "measurement identifier": "uv",
+        "device control aggregate document": {"device control document": [
+            {"detector wavelength setting": {"value": 254.0, "unit": "nm"}}]},
+        **_processed(_peak_list(_rt(90.0)))})
+    measurement["chromatogram data cube"]["label"] = "DAD: Signal A, 246.0 nm"
+    datadir = rb.from_asm(_lc(measurement))
+    assert datadir.datafiles[0].ylabels.tolist() == [254.0]
+    assert datadir.peaks[0]["wavelength"] == 254.0

@@ -1761,19 +1761,65 @@ def _add_injection_document(measurement, metadata, identifier, technique,
 
 
 def _add_processed_data(measurement, group, options):
-    """Adds a processed data document carrying the channel's peak list."""
-    peaks = [_asm_peak(i + 1, peak, options)
-             for i, peak in enumerate(group["peaks"])]
+    """Adds the processed data documents carrying the channel's peak lists.
+
+    A channel read back from a document that integrated the same run more than
+    once keeps the extra integrations in ``group["alternates"]``; they are
+    written out alongside the one in ``group["peaks"]``, in the order they were
+    read, so a round trip does not quietly reduce six result versions to one.
+    """
+    documents = [(group.get("processing"), group["peaks"])]
+    for alternate in group.get("alternates") or []:
+        documents.append((alternate.get("processing"), alternate["peaks"]))
     measurement[_PROCESSED_DATA] = {
         "processed data document": [
-            {"@index": 1, "peak list": {"peak": peaks}},
+            _asm_processed_data(index + 1, processing, peaks, options)
+            for index, (processing, peaks) in enumerate(documents)
         ],
     }
+
+
+# What a processed data document records about the integration that produced
+# it, and the key each field is written under.
+_PROCESSING_FIELDS = (
+    ("identifier", "processed data identifier"),
+    ("group_identifier", "group identifier"),
+    ("time", "data processing time"),
+)
+_PROCESSING_METHOD_FIELDS = (
+    ("method_name", "method name"),
+    ("method_version", "method version"),
+    ("type", "data processing type"),
+)
+
+
+def _asm_processed_data(index, processing, peaks, options):
+    """One processed data document: a peak list and where it came from."""
+    document = {"@index": index}
+    for source, target in _PROCESSING_FIELDS:
+        value = (processing or {}).get(source)
+        if isinstance(value, str) and value:
+            document[target] = value
+    method = {}
+    for source, target in _PROCESSING_METHOD_FIELDS:
+        value = (processing or {}).get(source)
+        if isinstance(value, str) and value:
+            method[target] = value
+    if method:
+        document["data processing document"] = method
+    document["peak list"] = {
+        "peak": [_asm_peak(i + 1, peak, options)
+                 for i, peak in enumerate(peaks)],
+    }
+    return document
 
 
 def _asm_peak(index, peak, options=None):
     """One ASM peak, with retention/start/end times in seconds."""
     entry = {"@index": index}
+    name = peak.get("name")
+    if isinstance(name, str) and name:
+        entry["written name"] = name
     mapping = (
         ("retention_time", "retention time", "s", _SECONDS_PER_MINUTE),
         ("start_time", "peak start", "s", _SECONDS_PER_MINUTE),
@@ -2315,6 +2361,15 @@ def _datafile_from_measurement(measurement):
     control = _first(_first(measurement.get(
         "device control aggregate document")).get("device control document"))
     wavelength = _number(control.get("detector wavelength setting"))
+    label = _text(_first(measurement.get(_CHROMATOGRAM_CUBE)).get("label"))
+    if wavelength is None:
+        # See _wavelength_from_label: an exporter that leaves the device
+        # control document without a wavelength setting can still name the
+        # wavelength in the cube label. Read that way the channel keeps a
+        # numeric y-axis label rather than the empty one it used to get.
+        wavelength = _wavelength_from_label(label)
+    if label:
+        file_metadata["description"] = label
 
     # A cube's inlined values are declared numeric, but nothing stops another
     # writer putting text (or nulls) there. The channel is skipped the way an
@@ -2390,34 +2445,99 @@ def _is_absorbance(cube):
     return _first(measures).get("concept") == "absorbance"
 
 
+def _processing_document(processed_data):
+    """The provenance of one processed data document: which integration ran."""
+    processing = _first(processed_data.get("data processing document"))
+    return {
+        "identifier": _text(processed_data.get("processed data identifier")),
+        "group_identifier": _text(processed_data.get("group identifier")),
+        "time": _text(processed_data.get("data processing time")),
+        "method_name": _text(processing.get("method name")),
+        "method_version": _text(processing.get("method version")),
+        "type": _text(processing.get("data processing type")),
+    }
+
+
+def _peak_lists(measurement):
+    """Every non-empty ``(processing, peaks)`` a measurement carries, in order.
+
+    A measurement may hold more than one processed data document: an Empower or
+    OpenLab export writes one per result version, so a single channel arrives
+    with the same run integrated several times, under different processing
+    methods and at different times. They are not interchangeable, and they are
+    not ordered by date, so the caller has to be able to see all of them.
+    """
+    processed = _first(measurement.get(_PROCESSED_DATA))
+    lists = []
+    for document in _as_documents(processed.get("processed data document")):
+        if not isinstance(document, dict):
+            continue
+        asm_peaks = [peak for peak
+                     in _as_documents(
+                         _first(document.get("peak list")).get("peak"))
+                     if isinstance(peak, dict)]
+        if asm_peaks:
+            lists.append((_processing_document(document),
+                          [_peak_from_asm(peak) for peak in asm_peaks]))
+    return lists
+
+
 def _peaks_from_measurement(measurement):
     """Reconstructs a peak group from a measurement's processed data, or None."""
-    processed = _first(measurement.get(_PROCESSED_DATA))
-    document = _first(processed.get("processed data document"))
-    asm_peaks = [peak for peak
-                 in _as_documents(_first(document.get("peak list")).get("peak"))
-                 if isinstance(peak, dict)]
-    if not asm_peaks:
+    lists = _peak_lists(measurement)
+    if not lists:
         return None
+    processing, peaks = lists[0]
 
     channel = _text(measurement.get("measurement identifier"))
     if channel is None:
         # An unkeyed group is dropped by _peak_groups_by_channel on the way
         # back out, so these peaks are read and then silently discarded.
         warnings.warn(
-            f"a peak list of {len(asm_peaks)} peaks has no usable measurement "
+            f"a peak list of {len(peaks)} peaks has no usable measurement "
             "identifier; it cannot be joined to a channel and will be lost on "
             "re-export.")
     control = _first(_first(measurement.get(
         "device control aggregate document")).get("device control document"))
     wavelength = _number(control.get("detector wavelength setting"))
+    label = _text(_first(measurement.get(_CHROMATOGRAM_CUBE)).get("label"))
+    if wavelength is None:
+        # An exporter that records no detector wavelength setting may still
+        # name the wavelength in the cube label, which is the only thing
+        # telling one channel of a multi-signal run from another.
+        wavelength = _wavelength_from_label(label)
+    if len(lists) > 1:
+        warnings.warn(
+            f"{channel or 'a channel'} carries {len(lists)} processed data "
+            "documents (the same run integrated more than once). The first is "
+            "used; the rest are in the group's 'alternates'. Document order "
+            "is not processing order, so check 'processing' to see which "
+            "integration these peaks came from.")
     return {
         "signal": _channel_key(channel) if channel else None,
         "wavelength": wavelength,
-        "description": None,
+        "description": label,
         "channel_file": channel,
-        "peaks": [_peak_from_asm(peak) for peak in asm_peaks],
+        "peaks": peaks,
+        "processing": processing,
+        "alternates": [{"processing": other, "peaks": other_peaks}
+                       for other, other_peaks in lists[1:]],
     }
+
+
+# A cube label such as "DAD.0.0, DAD: Signal A, 246.0 nm/Bw:4.0 nm Ref 360.0
+# nm/Bw:100.0 nm" names three wavelengths: the signal, the bandwidth it was
+# collected over, and a reference channel. The signal is the one the trace is
+# measured at and the one written first, so the leftmost match is taken and the
+# rest of the label ignored. A ChemStation-style "Sig=254,4" label carries no
+# "nm" and is left to the wavelength setting, which ChemStation does record.
+_LABEL_WAVELENGTH_RE = re.compile(r"(\d+(?:\.\d+)?)\s*nm")
+
+
+def _wavelength_from_label(label):
+    """The signal wavelength a cube label names, in nm, or None."""
+    match = _LABEL_WAVELENGTH_RE.search(label) if label else None
+    return float(match.group(1)) if match else None
 
 
 def _peak_from_asm(peak):
@@ -2433,6 +2553,11 @@ def _peak_from_asm(peak):
         return seconds / _SECONDS_PER_MINUTE if seconds is not None else None
 
     return {
+        # The compound the integration assigned this peak to, when the
+        # processing method identified one. Without it a peak list is a set of
+        # anonymous retention times, and there is no way to follow one
+        # component across the injections of a study.
+        "name": _text(peak.get("written name")),
         "retention_time": minutes("retention time"),
         "start_time": minutes("peak start"),
         "end_time": minutes("peak end"),
