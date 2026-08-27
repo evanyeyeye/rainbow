@@ -3,6 +3,35 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-08-27
+
+### Fixed
+- **`rb.from_asm` dropped a peak's compound name.** A processing method that
+  identified a peak writes the compound under `written name`; rainbow read
+  every quantity on the peak and discarded the name, leaving a peak list of
+  anonymous retention times with no way to follow a component across the
+  injections of a study. It is now read as the peak's `name`, and written back
+  on export.
+- **`rb.from_asm` kept only the first of several integrations.** An Agilent
+  OpenLab or Empower export writes one processed data document per result
+  version, so a channel can arrive with the same run integrated up to six
+  times, under different processing methods and at different dates. rainbow
+  read the first and dropped the rest without a word, and the peak lists
+  genuinely differ: a reintegration finds or loses whole peaks. Every peak list
+  is now read. The first is still the group's `peaks`, so existing code is
+  unaffected; the rest are in the group's new `alternates`, each labelled with
+  the integration that produced it, and the group's new `processing` records
+  which integration the default peaks came from. Document order is not
+  processing order, so a group that carries alternates now warns. Re-export
+  writes them all back.
+- **A channel of an OpenLab export had no wavelength.** rainbow read the
+  wavelength only from the device control document's `detector wavelength
+  setting`, which that exporter does not write, so every channel came back with
+  an empty y-axis label and a three-signal injection was three
+  indistinguishable traces. The wavelength is now also read from the cube
+  label, which is where that exporter names it, and the label itself is kept as
+  the channel's and the peak group's `description`.
+
 ## [1.5.0] - 2026-08-27
 
 ### Added
