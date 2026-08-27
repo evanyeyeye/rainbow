@@ -42,9 +42,16 @@ jobs:
     # It is NOT allowed to fail. continue-on-error at the job level cannot tell
     # an outage at purl.allotrope.org or EBI from a document that stopped
     # conforming, so it forgave both, which makes a green tick on this job mean
-    # nothing. Instead the two sources are fetched in their own step, and only
-    # that step is allowed to fail: unreachable means the suite is skipped and
-    # said out loud, while a suite that runs and fails, fails the job.
+    # nothing. Instead the fetch is separated from everything around it, and
+    # only being unable to reach the server skips the suites.
+    #
+    # Two things are deliberately NOT forgiven, because neither is an outage.
+    # Reading the endpoints out of the suites is its own step that must
+    # succeed: renaming _BASE or _REVISION breaks the extraction, and forgiving
+    # that left the job green while nothing was checked. And an HTTP answer in
+    # the 4xx range is an answer: a revision bump pointing at a schema that
+    # does not exist returns 404, which means the suites cannot validate
+    # against what they claim to, not that Allotrope is down.
     name: ASM conformance (network)
     runs-on: ubuntu-latest
     steps:
@@ -64,17 +71,14 @@ jobs:
               'date-time format checker not registered'
           print('date-time format checker registered')
           "
-      - name: Check the schema and ontology sources are reachable
-        # The only step allowed to fail. Everything the suites fetch is
-        # requested here, so a network outage is separated from a conformance
-        # regression before either can be mistaken for the other.
-        id: sources
-        continue-on-error: true
+      - name: Read the schema and ontology endpoints
+        # Not forgiven. The endpoints are read out of the suites themselves so
+        # that bumping the ADM revision cannot leave this job probing the old
+        # one and reporting reachable for a schema nothing validates against -
+        # which only works if a rename that breaks the extraction fails here
+        # rather than being taken for an outage.
         run: |
-          set -e
-          # Read the endpoints from the suites themselves, so bumping the ADM
-          # revision cannot leave this check quietly probing the old one and
-          # reporting reachable for a schema nothing validates against.
+          set -euo pipefail
           python - <<'PY' > urls.txt
           import re
           schema = open("tests/test_asm_schema.py").read()
@@ -87,13 +91,39 @@ jobs:
           print(re.search(r'_OLS_BASE = "([^"]+)"',
                           ontology).group(1) + "/ontologies/afo")
           PY
+          test -s urls.txt
           cat urls.txt
+
+      - name: Check the sources are reachable
+        # Always exits 0 and reports a verdict instead, so that what happens
+        # next is decided by which of the three cases occurred rather than by
+        # one bit that cannot tell them apart.
+        id: sources
+        run: |
+          set -uo pipefail
+          verdict=ok
           while read -r url; do
-            curl -fsSL --retry 3 --retry-delay 5 --max-time 60 -o /dev/null "$url"
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' \
+                     --retry 3 --retry-delay 5 --max-time 60 "$url") || code=000
+            case "$code" in
+              2*) echo "ok       $code $url" ;;
+              000|5*)
+                echo "outage   $code $url"
+                [ "$verdict" = bad-response ] || verdict=outage ;;
+              *)
+                echo "::error::$url returned HTTP $code. That is an answer, "\
+                     "not an outage: the suites cannot validate against it."
+                verdict=bad-response ;;
+            esac
           done < urls.txt
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+
+      - name: Fail on a source that answered but not with a schema
+        if: steps.sources.outputs.verdict == 'bad-response'
+        run: exit 1
 
       - name: Report an unreachable source
-        if: steps.sources.outcome == 'failure'
+        if: steps.sources.outputs.verdict == 'outage'
         run: |
           echo "::warning::Allotrope or EBI unreachable; the ASM conformance " \
                "and ontology suites did not run. This is not a pass."
@@ -102,7 +132,7 @@ jobs:
                "fetched, so nothing was validated." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run the conformance and ontology suites
-        if: steps.sources.outcome == 'success'
+        if: steps.sources.outputs.verdict == 'ok'
         env:
           RAINBOW_TEST_ASM_SCHEMA: '1'
         run: python -m pytest -v tests/test_asm_schema.py tests/test_asm_ontology.py
