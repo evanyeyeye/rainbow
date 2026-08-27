@@ -769,7 +769,11 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
         display_precision (int, optional): Decimals for the displayed m/z labels.
         bin_width (float, optional): Width in daltons of each m/z bin. The lossy
             control: pairs within one bin are summed. Defaults to 1 (nominal
-            mass). Agilent quadrupole .ms records m/z on a 0.1 Da grid.
+            mass). Agilent quadrupole .ms records m/z on a 0.05 Da grid.
+        labels_only (bool, optional): Return the m/z labels against an empty
+            grid, for a caller that reads nothing but the axis; see
+            :obj:`rainbow._binning.bin_datapairs`. Passed on to
+            :obj:`parse_ms_partial` when the file turns out to be a partial.
 
     Returns:
         DataFile with MS data, if the file can be parsed. Otherwise, None.
@@ -791,7 +795,7 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     head = int_unpack(f.read(4))[0]
     if head != 0x01320000:
         f.close()
-        return parse_ms_partial(path, display_precision, bin_width)
+        return parse_ms_partial(path, display_precision, bin_width, labels_only)
 
     # Determine the type of .ms file based on header.
     # Read the number of retention times from different offsets by type.
@@ -855,7 +859,8 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     return DataFile(path, 'MS', times, ylabels, data, metadata)
 
 
-def parse_ms_partial(path, display_precision=0, bin_width=1.0):
+def parse_ms_partial(path, display_precision=0, bin_width=1.0,
+                     labels_only=False):
     """
     Parses a partial Agilent .ms file.
 
@@ -867,6 +872,9 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0):
         path (str): Path to the partial .ms file.
         display_precision (int, optional): Decimals for the displayed m/z labels.
         bin_width (float, optional): Width in daltons of each m/z bin.
+        labels_only (bool, optional): Return the m/z labels against an empty
+            grid, for a caller that reads nothing but the axis; see
+            :obj:`rainbow._binning.bin_datapairs`.
 
     Returns:
         DataFile with MS data, if the file can be parsed. Otherwise, None.
@@ -929,7 +937,8 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0):
     # Bin the mz-intensity pairs into a (retention time x mz) matrix.
     ylabels, data = bin_datapairs(
         mzs, int_values, pair_counts, bin_width,
-        display_precision=display_precision, data_dtype=np.uint32)
+        display_precision=display_precision, data_dtype=np.uint32,
+        labels_only=labels_only)
     del mzs, int_values, pair_counts
 
     # Read file metadata.

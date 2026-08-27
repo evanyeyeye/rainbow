@@ -121,7 +121,7 @@ def test_no_floor_warning_for_tof_centroids():
 
 
 def test_unit_resolution_data_still_warns():
-    """ The floor still applies where it is true: quadrupole .ms is 0.1 Da. """
+    """ The floor still applies where it is true: quadrupole .ms is 0.05 Da. """
     import warnings
     import rainbow as rb
     with pytest.warns(UserWarning, match="finer than"):
@@ -378,7 +378,8 @@ def test_a_selected_ion_channel_reports_no_grid():
     resolve. yellow.D watches 131 and 202, and reporting 71 Da as "the finest
     m/z spacing the binary actually stores" sent a caller to a bin_width 700
     times too coarse - while rb.read warned, correctly, that anything below
-    0.1 Da on that run was too fine. The two APIs contradicted each other.
+    the Agilent lattice on that run was too fine. The two APIs contradicted
+    each other.
     """
     import rainbow as rb
     sim = rb.read("tests/inputs/yellow.D").get_file("dataSim.ms")
@@ -464,6 +465,25 @@ def test_every_binned_reader_can_return_the_labels_alone(path, flags, name):
     assert full.data.shape == (full.data.shape[0], full.ylabels.size)
 
 
+def test_a_partial_ms_file_can_return_the_labels_alone():
+    # parse_ms hands a file it cannot validate to parse_ms_partial, which is a
+    # second binning call site and was the one the flag did not reach. green.D
+    # holds four partials, so a run of them is what a caller measuring the m/z
+    # grid meets in practice.
+    import numpy as np
+
+    kwargs = dict(bin_width=1e-3, display_precision=4)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        full = rb.read("tests/inputs/green.D", **kwargs).get_file("MSD1.MS")
+        lean = rb.read("tests/inputs/green.D", _labels_only=True,
+                       **kwargs).get_file("MSD1.MS")
+
+    assert np.array_equal(full.ylabels, lean.ylabels)
+    assert lean.data.shape == (full.data.shape[0], 0)
+    assert full.data.shape == (full.data.shape[0], full.ylabels.size)
+
+
 def test_the_probe_does_not_build_the_grid_it_never_reads():
     # The measurement the flag exists for. mz_resolution reads nothing but the
     # m/z axis, and yellow.D holds a MassHunter centroid beside a Chemstation
@@ -482,3 +502,26 @@ def test_the_probe_does_not_build_the_grid_it_never_reads():
     # Building both grids costs about 64 MB here against 26. The bound is
     # generous: it is meant to catch a grid coming back, not to pin a number.
     assert peak < 45e6
+
+
+def test_the_agilent_floor_matches_the_lattice_the_format_stores():
+    # A Chemstation .ms stores m/z as a big-endian short divided by 20, so the
+    # format can express 0.05 Da. Every bundled fixture happens to use only
+    # even shorts, which is why 0.1 looked right; a file with odd shorts
+    # resolves 0.05, and warning that 0.05 is too fine would be a false claim
+    # about a run that plainly resolves it.
+    import struct
+    import numpy as np
+    from rainbow._binning import MZ_FLOORS
+
+    assert MZ_FLOORS["agilent"] == 0.05
+
+    # Raw shorts one apart are one lattice step apart, and 0.05 keeps them in
+    # separate bins where the old floor's width merged them.
+    keys = np.array([struct.unpack(">H", struct.pack(">H", s))[0] / 20
+                     for s in (19795, 19796)])
+    values = np.array([3, 4], dtype=np.int64)
+    labels, data = bin_datapairs(keys, values, np.array([2]), 0.05,
+                                 display_precision=2)
+    assert labels.size == 2
+    np.testing.assert_allclose(labels, [989.75, 989.8])
