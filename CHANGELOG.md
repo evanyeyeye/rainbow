@@ -78,6 +78,14 @@ to [Semantic Versioning](https://semver.org/).
   the wavelength grid, both honouring `export_dad_cube` and `wavelengths`. A
   DAD's telemetry stays analog data and is never exported as a detector
   channel.
+- **`rb.iso_timestamp(value)`** converts a vendor timestamp to ISO 8601, or
+  returns `None` for a spelling rainbow cannot read. The vendors write
+  day-first wall clock and name the month, so `metadata['date']` does not sort
+  chronologically as text; this is the conversion the ASM export uses, and what
+  it returns does sort. The "Sequences" guide uses it to recover acquisition
+  order.
+- **`DataDirectory.path`**, the path the run was read from, alongside the
+  `name` it already carried. `DataSequence` has had both all along.
 
 ### Changed
 - **A diode-array channel in a 179/181 `.ch` container is now read as UV, not
@@ -157,8 +165,83 @@ to [Semantic Versioning](https://semver.org/).
 - **`ProfileDataFile.tof` is renamed `flight_times`. Breaking:** the attribute
   holds the shared flight-time axis, and the old name read as though it were the
   instrument rather than the quantity.
+- **`display_precision` is bounded above as well as below.** Past about 306
+  decimals numpy's rounding overflows and every m/z label becomes NaN, which
+  breaks the rule that the labels name their columns one to one. The read entry
+  points now refuse a `display_precision` above 17, the point at which a float64
+  label stops carrying more information.
+- **A `bin_width` of infinity or NaN is refused.** Infinity is greater than
+  zero, and then divides every m/z into one bin, so a run came back as a single
+  column labelled NaN that matched any ion asked for. NaN lost every comparison
+  and reached the parser's overflow guard, which reported a width that was too
+  small.
+- **`rb.agilent.read` and `rb.waters.read` validate their arguments.** They are
+  documented entry points, but only `rb.read` checked `display_precision` and
+  `bin_width`, so a negative width silently produced duplicate m/z labels there
+  and a non-integer precision raised a `TypeError` from inside the parser.
+- **`MZ_FLOORS['agilent']` is 0.05, not 0.1.** A Chemstation `.ms` stores each
+  m/z as a big-endian short over 20, a 0.05 Da lattice. Chemstation usually
+  writes one decimal place, so a run resolves 0.1 and every bundled fixture
+  does, but warning that 0.05 is too fine would be false of a file that
+  resolves it. `rb.mz_resolution` still answers per file.
+- **Injections are looked up without regard to case**, the way
+  `DataDirectory.get_file` already matched a channel: `sequence["RUN.D"]`,
+  `"run.d" in sequence` and `get_injection` all agree. `by_name` still spells
+  each name the way its directory does.
 
 ### Fixed
+- **The instrument module inventory is read from the `acq.macaml` Agilent
+  actually writes.** It looked for section headers spelled `DAD (G7117B)`;
+  ChemStation names the section for the module and puts the model in the
+  section ID, so the inventory was empty for every real acquisition method and
+  `metadata['modules']` was absent. The ASM device system fell back to the bare
+  chromatograph entry as a result.
+- **`rainbow.debug.fields` returns the same answer on every filesystem.** The
+  walk sorted names within a directory but took sibling directories in
+  `readdir` order, which is creation order on APFS and a hash order on ext4.
+  Since a scalar field keeps the first value seen, the reported instrument and
+  method depended on the machine. The whole stream is now sorted by relpath,
+  which is what the walk already claimed.
+- **UTF-16 method and macro files are parsed rather than called binary.** The
+  text-or-binary test counted non-printable bytes in the raw file, and UTF-16
+  is about half NUL, so every UTF-16 member of that family was classified
+  binary and skipped. Seven of the nine committed `.MTH`/`.MAC` fixtures are
+  UTF-16.
+- **`rainbow.debug` decodes BOM-less UTF-16BE.** The byte order is now inferred
+  from where the NULs fall rather than assumed little endian, which turned
+  every big-endian sidecar into mojibake.
+- **`rainbow.debug.xml.canonical` no longer raises on an empty root.** A
+  document like `<Sample/>` converts to a bare string rather than a mapping,
+  and the handlers read fields off a mapping. `fields` hid the `AttributeError`
+  behind a blanket except; the documented `canonical(parse(path))` call did not.
+- **The lxml sequence parser no longer drops peaks from a nested document.** It
+  pruned earlier siblings unconditionally after each matched element, so a
+  `Signal` inside a `SignalResult` destroyed the `Signal_ID` and `Peak`
+  siblings that `SignalResult` had not been read for yet. Agilent's own exports
+  do not nest that way, but the reader is pointed at documents rainbow did not
+  write, and the two backends are documented to agree.
+- **The m/z probe reaches partial `.ms` files.** `_labels_only` was not passed
+  to the partial reader, so `rb.mz_resolution` built the full intensity grid for
+  those channels to read nothing but the axis off it.
+- **ASM export refuses a non-finite value instead of writing `NaN`.** Bare
+  `NaN` and `Infinity` are not JSON, and a document holding one is rejected by
+  any strict reader outside Python.
+- **`export_asm` no longer truncates a file on a handle that cannot hold
+  Unicode.** It forced characters through as themselves, so a handle the caller
+  opened as cp1252 or latin-1 raised `UnicodeEncodeError` partway through and
+  left a file that looked complete. Such a handle now gets escaped JSON, which
+  says the same thing; a UTF handle is unchanged.
+- **ASM export says when it emits a timestamp with no UTC offset.** That is the
+  single reason a default export of most ChemStation and Waters runs does not
+  validate, and only the changelog and the concepts page said so. Warned once
+  per document, and not at all when the source recorded an offset or
+  `utc_offset=` supplied one.
+- **A Waters sequence directory is told why it cannot be read.** It was told it
+  holds no injection subdirectories, which was untrue of a directory full of
+  `.raw` injections; the reason is that sequence reading is implemented for
+  Agilent.
+- **`pip install rainbow-api[test]` installs `python-lzf`,** so CI runs the two
+  LZF `MSProfile.bin` decode tests instead of skipping them.
 - **ASM timestamps are ISO 8601.** `measurement time` and `injection time`
   passed the vendor's own spelling straight through, so an exported document
   carried values like `27-Feb-18, 10:11:50` where the Allotrope core schema
