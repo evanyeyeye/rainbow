@@ -19,8 +19,10 @@ class DataDirectory:
             Options: UV, MS, FID, CAD, ELSD, RID.
         by_name (dict): Maps filenames to DataFile objects.
         by_detector (dict): Maps detector names to lists of DataFile objects.
-        analog (list): DataFile objects with miscellaneous analog data. 
-        metadata (dict): Depends on the vendor. 
+        analog (list): DataFile objects with miscellaneous analog data.
+        metadata (dict): Depends on the vendor.
+        path (str): Path the directory was read from.
+        name (str): Name of the directory.
 
     """  
     def __init__(self, path, datafiles, metadata):
@@ -31,6 +33,11 @@ class DataDirectory:
            not isinstance(metadata, dict):
             raise Exception("Wrong argument parameters for DataDirectory.")
 
+        # Kept alongside the name, the way DataSequence keeps both. Code that
+        # walks a sequence and then wants a file beside the run (a sidecar, an
+        # export next to the data) otherwise has to rebuild the path it was
+        # read from.
+        self.path = path
         self.name = os.path.basename(path)
         self.datafiles = []
         self.detectors = set()

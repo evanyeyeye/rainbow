@@ -35,7 +35,9 @@ class DataSequence:
         path (str): Path of the sequence directory.
         injections (list): The DataDirectory objects, in acquisition order.
         by_name (dict): Maps each injection's directory name to its
-            DataDirectory.
+            DataDirectory. Lookups through ``get_injection``, ``in`` and
+            ``sequence[name]`` ignore case; this mapping keeps the names as
+            the directories spell them.
         metadata (dict): Sequence-level metadata. Depends on the vendor.
 
     """
@@ -52,6 +54,12 @@ class DataSequence:
         self.injections = injections
         self.metadata = metadata
         self.by_name = {inj.name: inj for inj in injections}
+        # Looked up case-insensitively, the way DataDirectory.get_file matches
+        # a channel: the names are Windows directory names, where case is not
+        # part of identity, and a sequence and the run inside it answering the
+        # same question differently is not a distinction anyone wants.
+        # by_name itself keeps the names as recorded.
+        self._by_upper = {inj.name.upper(): inj for inj in injections}
 
     def __repr__(self):
         return f"{self.name}: {len(self.injections)} injections"
@@ -74,7 +82,7 @@ class DataSequence:
         which is what the second test preserves.
         """
         if isinstance(item, str):
-            return item in self.by_name
+            return item.upper() in self._by_upper
         return any(injection is item for injection in self.injections)
 
     def __getitem__(self, key):
@@ -95,14 +103,14 @@ class DataSequence:
             name (str): Injection directory name (e.g. ``"008-...01.D"``).
 
         """
-        if name not in self.by_name:
+        if not isinstance(name, str) or name.upper() not in self._by_upper:
             known = ", ".join(sorted(self.by_name)[:5])
             if len(self.by_name) > 5:
                 known += ", ..."
             raise InjectionNotFound(
                 f"Injection {name!r} not found in {self.name}. "
                 f"This sequence has {len(self.by_name)}: {known}")
-        return self.by_name[name]
+        return self._by_upper[name.upper()]
 
     def get_info(self):
         """

@@ -305,3 +305,37 @@ def test_per_injection_acam_adopted_despite_name_mismatch(tmp_path):
     seq = rb.read_sequence(seq_dir, peaks=True)
     assert all(inj.peaks for inj in seq)
     assert seq.injections[0].peaks[0]["peaks"][0]["area"] == 50.0
+
+
+def test_injection_lookup_ignores_case_the_way_get_file_does(tmp_path):
+    # The names are Windows directory names, where case is not part of
+    # identity, and DataDirectory.get_file already matches without it. A
+    # sequence and the run inside it must not answer the same question
+    # differently.
+    sequence = rb.read_sequence("tests/inputs")
+    name = sequence.injections[0].name
+
+    assert name.upper() in sequence
+    assert name.lower() in sequence
+    assert sequence.get_injection(name.upper()) is sequence[name]
+    assert sequence[name.lower()] is sequence[name]
+    # by_name still spells them the way the directories do.
+    assert name in sequence.by_name
+
+
+def test_get_injection_rejects_a_non_string_without_raising_typeerror():
+    sequence = rb.read_sequence("tests/inputs")
+    with pytest.raises(KeyError):
+        sequence.get_injection(3.5)
+
+
+def test_a_datadirectory_knows_the_path_it_was_read_from():
+    # DataSequence has carried .path all along; walking a sequence and then
+    # wanting a sidecar beside one run meant rebuilding the path by hand.
+    datadir = rb.read("tests/inputs/red.D")
+    assert datadir.path == "tests/inputs/red.D"
+    assert datadir.name == "red.D"
+
+    sequence = rb.read_sequence("tests/inputs")
+    for injection in sequence:
+        assert os.path.basename(injection.path) == injection.name
