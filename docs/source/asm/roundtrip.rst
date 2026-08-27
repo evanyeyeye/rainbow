@@ -25,6 +25,26 @@ device system document becomes the instrument metadata, and any processed-data
 peak list becomes the channel's peaks. A measurement from some other tool that
 rainbow's exporter would not have written is skipped rather than guessed at.
 
+Documents from other tools are read a little more generously than rainbow's own
+need. Two habits of an Agilent OpenLab or Empower export are worth knowing
+about:
+
+* **A channel can carry more than one integration.** Those exporters write one
+  processed data document per result version, so the same run arrives
+  integrated several times, under different processing methods and at different
+  dates, and the peak lists differ: a reintegration finds or loses whole peaks.
+  The first is the group's :code:`peaks` and the rest are in its
+  :code:`alternates`; :code:`group["processing"]` says which integration the
+  default peaks came from. Document order is not processing order, so reading
+  such a channel warns. Pick a different one by its
+  :code:`processing["identifier"]`, :code:`["group_identifier"]`, or
+  :code:`["time"]`.
+* **The wavelength may only be in the cube label.** rainbow reads the device
+  control document's :code:`detector wavelength setting` first, then falls back
+  to the wavelength named in the cube label (:code:`"DAD.0.0, DAD: Signal A,
+  246.0 nm/Bw:4.0 nm"`). The label is kept whole as the channel's and the peak
+  group's :code:`description`.
+
 Import is narrower than export: only the absorbance (UV) cubes are reconstructed,
 both the single-wavelength chromatogram and the DAD spectrum, as a ``DataFile``
 (RID too, since it rides the absorbance cube). Everything else is export-only and

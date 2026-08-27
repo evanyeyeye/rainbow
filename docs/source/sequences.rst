@@ -186,7 +186,8 @@ injection.
 Each injection's :code:`peaks` is a list of per-channel groups. A group records
 the signal name and wavelength and a list of peaks; each peak carries its
 retention time (in minutes), area, area percent, height, height percent, start
-and end times, and symmetry.
+and end times, symmetry, and the :code:`name` of the compound the processing
+method identified it as, which is :code:`None` when it identified none.
 
 Peaks come from the run's :code:`sequence.acaml`, or, for any injection that
 file does not cover, that injection's own :code:`sequence.acam_`. They are off
