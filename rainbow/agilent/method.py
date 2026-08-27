@@ -27,6 +27,17 @@ from rainbow.agilent import acaml
 # followed by its model number in parentheses.
 _MODULE_RE = re.compile(r"^\s*(.+?)\s*\(([^()]+)\)\s*$")
 
+# ChemStation does not write that spelling. It names the section for the module
+# ("Quat. Pump", "DAD", "HiP Sampler") and puts the model in the section's ID:
+#
+#     <Section><Name>Quat. Pump</Name><ID>G4204A</ID>
+#
+# Every other section under the acquisition method carries a settings-group ID
+# instead ("StopTime", "Timetable", "SolventComposition_Channel"), so the model
+# is what tells a module apart from a settings group. Agilent module numbers
+# are four digits, usually with a letter on each side: G4204A, G1316C, 5977B.
+_MODEL_ID_RE = re.compile(r"^[A-Z]{0,2}\d{4}[A-Z]{0,2}$")
+
 # The ChemStation instrument-control report, which names the MS acquisition
 # mode ("Scan", "SIM", or "SIM/Scan") in its MS Information section.
 _METHOD_REPORT = "acqmeth.txt"
@@ -164,11 +175,16 @@ def _modules(sections):
     container = acquisition["sections"] if acquisition else sections
     modules = []
     for section in container:
-        match = _MODULE_RE.match(section.get("name") or "")
+        name = (section.get("name") or "").strip()
+        match = _MODULE_RE.match(name)
         if match:
             modules.append(
                 {"name": match.group(1).strip(),
                  "model": match.group(2).strip()})
+            continue
+        model = (section.get("id") or "").strip()
+        if name and model and model != name and _MODEL_ID_RE.match(model):
+            modules.append({"name": name, "model": model})
     return modules
 
 

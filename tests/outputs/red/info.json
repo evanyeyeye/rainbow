@@ -5,6 +5,28 @@
         "date": "27-Feb-18, 10:11:50",
         "vialpos": "23",
         "operator": "LAB\\analyst",
+        "modules": [
+            {
+                "name": "Quat. Pump",
+                "model": "G4204A"
+            },
+            {
+                "name": "Valve",
+                "model": "G1160A"
+            },
+            {
+                "name": "DAD",
+                "model": "G4212A"
+            },
+            {
+                "name": "Column Comp.",
+                "model": "G1316C"
+            },
+            {
+                "name": "HiP Sampler",
+                "model": "G4226A"
+            }
+        ],
         "injection_volume": {
             "value": 1.0,
             "unit": "µL"

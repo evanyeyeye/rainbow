@@ -11,8 +11,10 @@ import os
 from rainbow.agilent import method
 
 
-# A synthetic acquisition method: instrument-module section headers (name +
-# model), plus the specific settings the reader distills.
+# A synthetic acquisition method, laid out the way ChemStation writes one: each
+# instrument module is a section named for the module with its model number in
+# the section ID, and every other section carries a settings-group ID instead.
+# Plus the specific settings the reader distills.
 ACQ_MACAML = """<?xml version="1.0" encoding="utf-8"?>
 <ACAML xmlns="urn:schemas-agilent-com:acaml15">
   <Doc>
@@ -22,10 +24,10 @@ ACQ_MACAML = """<?xml version="1.0" encoding="utf-8"?>
         <Name>Acquisition Method</Name>
         <ID>Acquisition_Method</ID>
         <Section>
-          <Name>DAD (G7117B)</Name><ID>G7117B</ID>
+          <Name>DAD</Name><ID>G7117B</ID>
         </Section>
         <Section>
-          <Name>Column Comp. (G7116B)</Name><ID>G7116B</ID>
+          <Name>Column Comp.</Name><ID>G7116B</ID>
           <Section>
             <Name>Left Temperature Control</Name><ID>LeftTemp</ID>
             <Parameter>
@@ -42,7 +44,7 @@ ACQ_MACAML = """<?xml version="1.0" encoding="utf-8"?>
           </Section>
         </Section>
         <Section>
-          <Name>Multisampler (G7167B)</Name><ID>G7167B</ID>
+          <Name>Multisampler</Name><ID>G7167B</ID>
           <Section>
             <Name>Injection</Name><ID>Injection</ID>
             <Parameter>
@@ -52,7 +54,7 @@ ACQ_MACAML = """<?xml version="1.0" encoding="utf-8"?>
           </Section>
         </Section>
         <Section>
-          <Name>Quat. Pump (G7104A)</Name><ID>G7104A</ID>
+          <Name>Quat. Pump</Name><ID>G7104A</ID>
           <Parameter>
             <Name>Flow</Name><ID>Flow</ID>
             <Unit>mL/min</Unit><Value>0.700</Value>
@@ -117,6 +119,49 @@ def test_modules_read_from_section_headers():
         "Multisampler": "G7167B",
         "Quat. Pump": "G7104A",
     }
+
+
+def test_modules_read_from_a_real_acq_macaml():
+    # The synthetic fixture above is written to match the vendor layout, so it
+    # can agree with the reader and still both be wrong. red.D is a real
+    # ChemStation acquisition method and settles which spelling is the real one.
+    md = method.parse_injection_metadata("tests/inputs/red.D")
+    models = {m["name"]: m["model"] for m in md["modules"]}
+    assert models == {
+        "Quat. Pump": "G4204A",
+        "Valve": "G1160A",
+        "DAD": "G4212A",
+        "Column Comp.": "G1316C",
+        "HiP Sampler": "G4226A",
+    }
+
+
+def test_a_settings_group_is_not_mistaken_for_a_module(tmp_path):
+    # Sections under the acquisition method are not all modules. A settings
+    # group carries a name-like ID, not a model number, and taking every
+    # section would report "Sample Preparation" as an instrument.
+    acq = ACQ_MACAML.replace(
+        "        <Section>\n          <Name>DAD</Name><ID>G7117B</ID>\n"
+        "        </Section>\n",
+        "        <Section>\n          <Name>DAD</Name><ID>G7117B</ID>\n"
+        "        </Section>\n"
+        "        <Section>\n"
+        "          <Name>Sample Preparation</Name><ID>SamplePrep</ID>\n"
+        "        </Section>\n")
+    assert "SamplePrep" in acq
+    md = method.parse_injection_metadata(_make_d(tmp_path, acq=acq))
+    assert [m["name"] for m in md["modules"]] == [
+        "DAD", "Column Comp.", "Multisampler", "Quat. Pump"]
+
+
+def test_modules_still_read_the_parenthesised_spelling(tmp_path):
+    # Some exports title the section "DAD (G7117B)" instead. Both spellings
+    # name the same thing, so both are read.
+    acq = ACQ_MACAML.replace("<Name>DAD</Name><ID>G7117B</ID>",
+                             "<Name>DAD (G7117B)</Name><ID>DAD_Module</ID>")
+    md = method.parse_injection_metadata(_make_d(tmp_path, acq=acq))
+    models = {m["name"]: m["model"] for m in md["modules"]}
+    assert models["DAD"] == "G7117B"
 
 
 def test_column_temperature_picks_setpoint_not_equilibration_tolerance():
