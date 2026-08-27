@@ -221,6 +221,23 @@ def _detector_from_signal(metadata, default=None, uv_only=False):
     return default, ''
 
 
+def _ylabel_array(ylabel):
+    """The channel's single y-axis label, as a number where it is one.
+
+    A wavelength read out of a signal string arrives as text, and returning it
+    as text made the label unusable for the lookups the axis exists for:
+    `extract_traces(254.0)` raised on a Chemstation channel and worked on the
+    MassHunter channel beside it, and the string's spelling followed the
+    vendor's own ("210" against "210.0"). A channel with no wavelength (FID,
+    CAD, ELSD, a bare analog input) has no number to give and keeps the empty
+    label it always had.
+    """
+    try:
+        return np.array([float(ylabel)])
+    except (TypeError, ValueError):
+        return np.array([ylabel])
+
+
 def parse_ch_fid(path, head):
     """
     Parses an Agilent .ch file in the 179/181 container.
@@ -252,6 +269,11 @@ def parse_ch_fid(path, head):
             'notebook': 0x35A,
             'date': 0x957,
             'method': 0xA0E,
+            # 0xC11 holds the ChemStation workstation's name ("Mustang
+            # ChemStation"), not the acquisition instrument. The key is
+            # historical and is what every release has published, so it stays;
+            # rainbow.debug reports the same offset as `workstation` and reads
+            # the instrument itself out of the method report.
             'instrument': 0xC11,
             'unit': 0x104C,
         }
@@ -312,7 +334,7 @@ def parse_ch_fid(path, head):
     # 210 nm. Calling the second one FID sent whole LC runs out as gas
     # chromatography documents measuring picoamps.
     detector, ylabel = _detector_from_signal(metadata, default='FID')
-    ylabels = np.array([ylabel])
+    ylabels = _ylabel_array(ylabel)
 
     return DataFile(path, detector, times, ylabels, data, metadata)
 
@@ -402,7 +424,7 @@ def parse_ch_other(path, head):
 
     # Determine the detector and ylabels using metadata.
     detector, ylabel = _detector_from_signal(metadata, uv_only=True)
-    ylabels = np.array([ylabel])
+    ylabels = _ylabel_array(ylabel)
 
     return DataFile(path, detector, times, ylabels, data, metadata)
 

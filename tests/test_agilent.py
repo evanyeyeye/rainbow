@@ -161,3 +161,47 @@ def test_an_undecodable_header_slot_still_returns_a_string():
 
     buf = b"\x00" * 8 + bytes([2]) + b"\xff\xdc\xff\xdc"
     assert isinstance(read_string(io.BytesIO(buf), offset=8, gap=2), str)
+
+
+@pytest.mark.parametrize("path,name", [
+    ("tests/inputs/pink.D", "DAD1A.ch"),      # Chemstation 130/30
+    ("tests/inputs/red.D", "DAD1B.ch"),       # Chemstation, one decimal
+    ("tests/inputs/teal.dx", "DAD1H.CH"),     # OpenLab .dx
+    ("tests/inputs/bronze.D", "DAD1A.cg"),    # MassHunter, float all along
+])
+def test_a_single_wavelength_ylabel_is_a_number(path, name):
+    # The label is the axis, and an axis is looked up by value. It arrived as
+    # text out of the signal string, so extract_traces(254.0) raised on a
+    # Chemstation channel and worked on the MassHunter channel beside it, and
+    # the spelling followed the vendor's own ("210" against "210.0").
+    import warnings
+
+    import numpy as np
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        datafile = rb.read(path).get_file(name)
+
+    assert datafile.ylabels.dtype.kind == "f"
+    wavelength = float(datafile.ylabels[0])
+    assert wavelength == datafile.metadata["wavelength"]
+    # The lookup the axis exists for.
+    traces = datafile.extract_traces(wavelength)
+    assert np.asarray(traces).shape[-1] == datafile.data.shape[0]
+
+
+@pytest.mark.parametrize("path,name", [
+    ("tests/inputs/yellow.D", "FID1A.ch"),
+    ("tests/inputs/red.D", "ADC1A.CH"),
+    ("tests/inputs/orange.D", "ADC1A.CH"),
+])
+def test_a_channel_with_no_wavelength_keeps_its_empty_label(path, name):
+    # FID, CAD and a bare analog input have no wavelength to report, so there
+    # is no number to give and the label stays as it always was.
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        datafile = rb.read(path).get_file(name)
+
+    assert list(datafile.ylabels) == [""]
