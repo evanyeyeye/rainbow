@@ -1640,6 +1640,46 @@ def test_bin_to_grid_sparse_path_matches_dense(monkeypatch):
                                                   [0, 10, 0]], dtype=np.uint64))
 
 
+@pytest.mark.parametrize("bin_width", [0.1, None])
+def test_bin_to_grid_rounds_to_the_nearest_bin_rather_than_down(bin_width):
+    # A point belongs to the bin whose centre it is nearest, so 100.06 is in
+    # the 100.1 bin and 100.04 is in the 100.0 bin. Flooring instead would move
+    # every boundary half a bin and carry signal one column to the left, which
+    # the earlier grid tests cannot see because their m/z are whole numbers
+    # sitting exactly on bin centres. Both the explicit width and the
+    # display_precision default reach a rounding call of their own.
+    mz = np.array([100.04, 100.06, 100.14, 100.16])
+    intensity = np.array([1, 2, 4, 8], dtype=np.uint64)
+    rows = np.zeros(4, dtype=np.int64)
+
+    ylabels, grid = masshunter.bin_to_grid(
+        mz, intensity, rows, 1, display_precision=1, bin_width=bin_width)
+
+    np.testing.assert_allclose(ylabels, [100.0, 100.1, 100.2])
+    np.testing.assert_array_equal(grid, np.array([[1, 6, 8]], dtype=np.uint64))
+
+    # The labels-only shortcut computes the same labels from the keys instead
+    # of reading them off the grid, so it has to round the same way.
+    labels, empty = masshunter.bin_to_grid(
+        mz, intensity, rows, 1, display_precision=1, bin_width=bin_width,
+        labels_only=True)
+    np.testing.assert_allclose(labels, ylabels)
+    assert empty.shape == (1, 0)
+
+
+def test_bin_to_grid_sparse_path_rounds_the_same_way(monkeypatch):
+    # The sort-based fallback assigns columns from the same keys, so the
+    # boundary must land in the same place there.
+    monkeypatch.setattr(masshunter, "_MAX_DENSE_BINS", 2)
+    mz = np.array([100.04, 100.06, 100.14, 100.16])
+    intensity = np.array([1, 2, 4, 8], dtype=np.uint64)
+    rows = np.zeros(4, dtype=np.int64)
+    ylabels, grid = masshunter.bin_to_grid(
+        mz, intensity, rows, 1, display_precision=1, bin_width=0.1)
+    np.testing.assert_allclose(ylabels, [100.0, 100.1, 100.2])
+    np.testing.assert_array_equal(grid, np.array([[1, 6, 8]], dtype=np.uint64))
+
+
 def test_dad_signals_carry_their_optics():
     """ A DAD signal surfaces the optics its description encodes. """
     datafiles = masshunter.parse_dadfiles(BRONZE_ACQDATA)

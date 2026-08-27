@@ -1398,7 +1398,8 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision,
         # run's signal. rb.read promises to refuse that, and this is the branch
         # it reaches. The default-width branch above is not guarded, because
         # reaching it needs a display_precision past _MAX_LABEL_DECIMALS, which
-        # rb.read refuses first and no caller inside rainbow passes.
+        # every read entry point refuses first (see _arguments) and no caller
+        # inside rainbow passes.
         scaled = mz_arr / bin_width
         if not np.isfinite(scaled).all() or np.abs(scaled).max() >= 2.0 ** 62:
             raise ValueError(
