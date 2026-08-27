@@ -1,3 +1,7 @@
+# The release notes belong in the source distribution: they are what a user
+# reads before upgrading, and the sdist is the whole project otherwise.
+include CHANGELOG.md
+
 # Ship the Cython sources for the optional accelerators so source builds (sdist)
 # can compile them. Exclude the generated C files: they are build artifacts and
 # are regenerated from the .pyx at build time (Cython is in build-system.requires).

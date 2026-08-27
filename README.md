@@ -129,7 +129,7 @@ the considerations for adding a new format.
 
 ## Contents
 * `rainbow/` contains the code of the Python library.
-* `docs/` contains code for generating documentation. To build documentation locally, you will need to install the `sphinx` and `sphinx-rtd-theme` packages. Then, move to the `docs/` directory and run `make html`. The docpages will be generated under `docs/_build`. 
+* `docs/` contains code for generating documentation. To build documentation locally, you will need the packages in `docs/requirements.txt` (`pip install -r docs/requirements.txt`); `myst-parser` is required as well as `sphinx` and `sphinx-rtd-theme`, since part of the documentation is Markdown. Then, move to the `docs/` directory and run `make html`. The docpages will be generated under `docs/_build`. 
 * `tests/` contains unit tests for the library. These can be run with `pytest` from the repository root (install the test dependency with `pip install -e .[test]`). 
 
 For development, an editable install (`pip install -e .`) compiles the optional

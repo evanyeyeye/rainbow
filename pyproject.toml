@@ -7,7 +7,7 @@ name = "rainbow-api"
 version = "1.5.0"
 description = "Read chromatography and mass spectrometry binary files"
 readme = "README.md"
-license = {text = "COPYING.LESSER"}
+license = {text = "LGPL-3.0-or-later"}
 authors = [
     {name = "Evan Shi and Eugene Kwan"},
     {email = "evanyshi@cmu.edu"}
