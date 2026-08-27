@@ -62,8 +62,12 @@ class ProfileDataFile(DataFile):
     # (The calibration drifts between scans, so pooling scans is not: it would
     # measure the drift instead of the grid.)
     _per_scan_axis_is_a_grid = True
+    # Unrounded by default: the per-scan m/z axis is the measurement, not a
+    # display of it, so rounding it discards precision the instrument recorded.
+    # Every caller inside rainbow passes None; the default is here so a
+    # hand-built ProfileDataFile behaves the same way a parsed one does.
     def __init__(self, path, xlabels, flight_times, data, calib, use_flags,
-                 metadata, mz_decimals=4):
+                 metadata, mz_decimals=None):
         self.name = os.path.basename(path)
         self.detector = 'MS'
         self.xlabels = xlabels
@@ -1114,7 +1118,7 @@ def parse_msdata(path, display_precision='auto', bin_width=None,
 
 
 def _build_per_scan_profiles(times, inten_arrs, grid_keys, calib_vals,
-                             scan_calib_ids, calib_flags, mz_decimals=4):
+                             scan_calib_ids, calib_flags, mz_decimals=None):
     """
     Builds the per-scan profile representation (see :obj:`parse_msdata` with no
     ``bin_width``).

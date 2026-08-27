@@ -557,13 +557,14 @@ def mz_resolution(path, hrms=False, requested_files=None, centroid=False):
         if not (hrms or centroid):
             return _mz_spacings(_probe())
 
-        # The HRMS profile and the centroid peak list are per scan and already
-        # at the instrument's own resolution, so they are read as they are
-        # rather than binned, and measured from one scan's own axis. Display
-        # that axis finely, or the default 4-decimal rounding would hide a true
-        # sub-mDa spacing (or collapse it to 0).
+        # The HRMS profile and the centroid peak list are per scan and
+        # already at the instrument's own resolution, so they are read as they
+        # are rather than binned, and measured from one scan's own axis.
+        # display_precision does not reach that axis at all (a per-scan m/z is
+        # the measurement, not a display of it), so this read takes the
+        # default: passing 8 here asked for something the read no longer does.
         datadir = read(path, hrms=hrms, centroid=centroid,
-                       display_precision=8, requested_files=requested_files)
+                       requested_files=requested_files)
         resolutions = _mz_spacings(datadir, only=True)
 
         # A channel on a shared axis can sit in the same directory (a

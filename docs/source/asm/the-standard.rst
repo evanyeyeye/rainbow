@@ -101,7 +101,7 @@ checked against the published schema with the same tooling:
 .. code-block:: python
 
    import json, urllib.request
-   from jsonschema import Draft202012Validator
+   from jsonschema import Draft202012Validator, FormatChecker
 
    import rainbow as rb
 
@@ -111,8 +111,17 @@ checked against the published schema with the same tooling:
           "REC/2026/06/liquid-chromatography.tabular.embed.schema.json")
    schema = json.load(urllib.request.urlopen(url))
 
-   errors = list(Draft202012Validator(schema).iter_errors(document))
+   validator = Draft202012Validator(schema, format_checker=FormatChecker())
+   errors = list(validator.iter_errors(document))
    assert not errors, errors
+
+The ``format_checker`` is not optional here. Without one, jsonschema treats
+``format`` as an annotation and checks nothing, so a document whose timestamps
+are not RFC 3339 passes with zero errors: `pip install rfc3339-validator` (or
+``rainbow-api[validate]``) to make the ``date-time`` check real. Since a run
+that records no UTC offset is the one known non-conformance in rainbow's
+output, a validator without it reports success on precisely the thing that is
+wrong. See :ref:`asm-timestamps`.
 
 The ``.tabular.embed`` schema is self-contained (it resolves its own internal
 references), so it is the simplest validation target: no registry of supporting

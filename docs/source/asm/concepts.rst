@@ -49,8 +49,9 @@ Reading from the top down:
      vial ``location identifier``.
    - **device control document** naming the detector (``ultraviolet detector``)
      and its ``detector wavelength setting``.
-   - the **data cube** itself (see below), keyed either ``chromatogram data
-     cube`` or ``three-dimensional ultraviolet spectrum data cube``.
+   - the **data cube** itself (see below), keyed ``chromatogram data cube``,
+     ``mass chromatogram data cube`` or ``three-dimensional ultraviolet
+     spectrum data cube`` according to what the channel is.
    - **injection document** with the ``autosampler injection volume setting
      (chromatography)`` and injection time, when the volume is known.
    - **processed data aggregate document** carrying the **peak list**, when the

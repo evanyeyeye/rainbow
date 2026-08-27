@@ -12,7 +12,11 @@ peaks in a third.
 This guide shows how rainbow reads a whole sequence into one object, what that
 object gives you that a single read cannot, and how to move the whole run into
 (and back out of) the open Allotrope Simple Model. Sequence reading is
-currently implemented for Agilent ChemStation and OpenLab.
+currently implemented for Agilent: a directory of ``.D`` injection
+subdirectories, whether ChemStation or OpenLab wrote them. A directory of
+OpenLab ``.dx`` archives is not a sequence directory to rainbow, since the
+injections are files rather than subdirectories; read those one at a time with
+:code:`rb.read`.
 
 A run is more than a single injection
 -------------------------------------

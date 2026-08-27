@@ -56,9 +56,9 @@ scalar, a list of relpaths for a list field (synthetic values shown):
     'serials': ['DEAA900001', 'DEAA900002'],
     'signal_optics': ['DAD1 A, Sig=254,4 Ref=360,100'],
     '_sources': {
-        'operator': 'acq.txt',
-        'method': 'SAMPLE.XML',
-        'acquired': 'SAMPLE.XML',
+        'operator': 'RUN.LOG',
+        'method': 'acq.txt',
+        'acquired': 'acq.txt',
         'serials': ['RUN.LOG', 'RUN.LOG'],
         'signal_optics': ['DAD1.UV'],
     },
