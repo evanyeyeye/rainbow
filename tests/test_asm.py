@@ -310,6 +310,17 @@ def test_a_string_selection_is_rejected_rather_than_read_per_character():
         datadir.to_asm(wavelengths="254")
 
 
+@pytest.mark.parametrize("selection", [True, False, object()])
+def test_a_selection_that_is_not_a_number_says_so_itself(selection):
+    # bool is an int, so ions=True fell past the scalar shortcut into the loop
+    # and failed there with "'bool' object is not iterable", which names
+    # neither the argument nor what it should have been. So did anything else
+    # that is neither a number nor iterable.
+    datadir = rb.read("tests/inputs/red.D")
+    with pytest.raises(TypeError, match="wavelengths must be a number"):
+        datadir.to_asm(wavelengths=selection)
+
+
 def test_select_wavelengths_tolerance_boundary():
     import numpy as np
     from rainbow import asm

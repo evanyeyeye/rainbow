@@ -334,7 +334,7 @@ def test_an_unknown_injection_name_says_what_is_there(sequence):
     assert sequence.injections[0].name in str(excinfo.value)
 
 
-@pytest.mark.parametrize("indent", [2, 0, None, 4, "  ", "\t"])
+@pytest.mark.parametrize("indent", [2, 0, None, 4, "  ", "\t", ""])
 def test_the_streamed_writer_takes_every_indent_json_takes(sequence, tmp_path,
                                                            indent):
     # json.dumps accepts a string indent as well as a number, and to_asm_str
@@ -342,4 +342,28 @@ def test_the_streamed_writer_takes_every_indent_json_takes(sequence, tmp_path,
     # used to raise "unsupported operand type(s) for +: 'int' and 'str'".
     out = tmp_path / "seq.asm.json"
     sequence.export_asm(str(out), indent=indent)
-    assert json.loads(out.read_text()) == sequence.to_asm()
+    written = out.read_text()
+    assert json.loads(written) == sequence.to_asm()
+
+    # And it is laid out the way json.dumps lays it out. Parsing back does not
+    # catch a layout bug: the injection documents were indented by a count of
+    # leading spaces, so a tab indent counted zero and every injection sat at
+    # the top level, and indent=0 and indent=None each differed from json's own
+    # spelling. All of it stayed valid JSON and none of it was the file
+    # to_asm_str would have written.
+    expected = json.dumps(sequence.to_asm(), indent=indent, ensure_ascii=False)
+    # Compared as a boolean: these documents run to tens of megabytes, and
+    # letting the assertion rewriter diff two of them takes longer than the
+    # rest of the suite put together.
+    assert (written == expected) is True, _where_they_differ(written, expected)
+
+
+def _where_they_differ(written, expected):
+    """A short report of the first difference between two long strings."""
+    for index, (a, b) in enumerate(zip(written, expected)):
+        if a != b:
+            window = slice(max(0, index - 60), index + 60)
+            return "at {}: wrote {!r}, json.dumps writes {!r}".format(
+                index, written[window], expected[window])
+    return "identical for {} characters, then lengths differ: {} and {}".format(
+        min(len(written), len(expected)), len(written), len(expected))

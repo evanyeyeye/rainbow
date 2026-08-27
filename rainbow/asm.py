@@ -591,14 +591,22 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
     head, _, tail = rendered.rpartition(json.dumps(_DOCUMENTS_PLACEHOLDER))
     # Indent each streamed injection document to sit where the placeholder did,
     # so the pretty-printed array nests correctly under the aggregate document.
-    pretty = bool(indent)
+    # Every indent json.dumps treats as multi-line, which is every one but
+    # None: indent=0 and indent="" still put each element on its own line, at
+    # no depth. Only None renders an array on one line.
+    pretty = indent is not None
     key_line = head.rsplit("\n", 1)[-1]
-    base = len(key_line) - len(key_line.lstrip(" ")) if pretty else 0
-    # json.dumps takes a string indent as well as a number, and to_asm_str
-    # accepts one, so the streamed writers have to as well rather than failing
-    # on int + str. One level of a string indent is the string itself.
+    # The line's own leading whitespace, taken as written rather than counted
+    # in spaces: json.dumps takes a string indent as well as a number, and
+    # to_asm_str accepts one, so with indent="\t" there are no spaces to count
+    # and every streamed injection nested at the top level regardless of depth.
+    base = key_line[:len(key_line) - len(key_line.lstrip())] if pretty else ""
+    # One level of a string indent is the string itself.
     one_level = indent if isinstance(indent, str) else " " * (indent or 0)
-    pad = " " * base + one_level if pretty else ""
+    pad = base + one_level if pretty else ""
+    # json.dumps separates compactly rendered items with ", ", so the streamed
+    # array has to as well or the file is not the one to_asm_str would write.
+    separator = "," if pretty else ", "
     fileobj.write(head)
     fileobj.write("[")
     for index, (datadir, metadata) in enumerate(specs):
@@ -606,12 +614,12 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
         chunk = json.dumps(document, indent=indent, ensure_ascii=False)
         if pretty:
             chunk = "\n".join(pad + line for line in chunk.split("\n"))
-            fileobj.write(("," if index else "") + "\n" + chunk)
+            fileobj.write((separator if index else "") + "\n" + chunk)
         else:
-            fileobj.write(("," if index else "") + chunk)
+            fileobj.write((separator if index else "") + chunk)
         del document, chunk
     if specs and pretty:
-        fileobj.write("\n" + " " * base)
+        fileobj.write("\n" + base)
     fileobj.write("]")
     fileobj.write(tail)
 
@@ -882,10 +890,24 @@ def _finite_number_list(values, name):
             "{0} must be a number or a list of numbers, not a string: "
             "{1!r} would be read one character at a time. Use "
             "{0}=[{1}] instead.".format(name, values))
-    if isinstance(values, (int, float)) and not isinstance(values, bool):
+    if isinstance(values, bool):
+        # bool is an int, and True would otherwise fall through to the loop
+        # below and fail there with "'bool' object is not iterable", which
+        # names neither the argument nor what it should have been.
+        raise TypeError(
+            "{0} must be a number or a list of numbers, not a boolean. "
+            "There is no {0}={1} to select; omit it, or name the values "
+            "you want.".format(name, values))
+    if isinstance(values, (int, float)):
         values = [values]
     numbers = []
-    for value in values:
+    try:
+        iterator = iter(values)
+    except TypeError:
+        raise TypeError(
+            "{} must be a number or a list of numbers; {!r} is neither.".format(
+                name, values))
+    for value in iterator:
         try:
             number = float(value)
         except (TypeError, ValueError):

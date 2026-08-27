@@ -255,7 +255,6 @@ def parse_ch_fid(path, head):
             'instrument': 0xC11,
             'unit': 0x104C,
         }
-        gap = 2
     elif head == '179':
         data_offsets = {
             'num_times': 0x116,
@@ -300,8 +299,11 @@ def parse_ch_fid(path, head):
     scaling_factor = struct.unpack('>d', f.read(8))[0]
     data *= scaling_factor
 
-    # Extract metadata from file header.
-    metadata = read_header(f, metadata_offsets)
+    # Extract metadata from file header. Both containers store these strings
+    # two bytes to the character, which is read_header's default; the other
+    # parser computes its gap because its containers differ, and stating it
+    # here keeps the two from reading as though they disagreed.
+    metadata = read_header(f, metadata_offsets, gap=2)
     f.close()
 
     # FID only if the signal does not say otherwise. A real FID channel is

@@ -36,8 +36,6 @@ _ACQ_MODE_RE = re.compile(
     r"^\s*Acquisition Mode\s*:\s*(?P<mode>.+?)\s*$",
     re.MULTILINE | re.IGNORECASE)
 
-# The "Sample Inlet : GC" / "Sample Inlet : LC" line names the separation
-# technique (gas vs liquid chromatography), the instrument's own record of it.
 # The banner a Chemstation method report opens with. The instrument names
 # itself on this line and nowhere else ("INSTRUMENT CONTROL PARAMETERS:
 # 5977B GCMS"), so the window is that one line: the rule, the blank, and the
@@ -49,6 +47,8 @@ _ACQ_MODE_RE = re.compile(
 _INSTRUMENT_BANNER_RE = re.compile(
     r"INSTRUMENT\s+CONTROL\s+PARAMETERS\s*:[^\r\n]*", re.IGNORECASE)
 
+# The "Sample Inlet : GC" / "Sample Inlet : LC" line names the separation
+# technique (gas vs liquid chromatography), the instrument's own record of it.
 _SAMPLE_INLET_RE = re.compile(
     r"^\s*Sample Inlet\s*:\s*(?P<inlet>\S+)", re.MULTILINE | re.IGNORECASE)
 
@@ -246,9 +246,11 @@ def acquisition_technique(path):
 
     Reads the "Sample Inlet" field of ``acqmeth.txt`` ("GC" or "LC"), the
     instrument's authoritative record of whether the run is gas- or
-    liquid-chromatography (an instrument descriptor naming GC/MS is taken as a
-    secondary GC signal). This is read rather than inferred from the detectors,
-    so a run is routed by what the method says, not by a detector tag.
+    liquid-chromatography. Failing that, the report's opening banner is read,
+    and an instrument that names itself GC there ("7890A GC / 5975C MS", and
+    the bare word is enough) is taken as a secondary GC signal. This is read
+    rather than inferred from the detectors, so a run is routed by what the
+    method says, not by a detector tag.
 
     Args:
         path (str): Path of the .D directory.

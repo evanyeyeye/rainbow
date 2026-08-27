@@ -340,6 +340,9 @@ def parse_funcdat2(path, pair_counts, display_precision=0, bin_width=1.0,
         display_precision (int, optional): Decimals to round the displayed
             ylabels to. Cosmetic; bin_width is the lossy control.
         calib (list, optional): Float calibration values of the spectrum.
+        labels_only (bool, optional): Accepted for one call signature across
+            the four formats, and ignored here: this format takes its ylabels
+            from _FUNCTNS.INF and builds no binned grid to skip.
     
     Returns: 
         1D numpy array with ylabels. 2D numpy array with \
@@ -389,6 +392,9 @@ def parse_funcdat4(path, pair_counts, display_precision=0, bin_width=1.0,
         display_precision (int, optional): Decimals to round the displayed
             ylabels to. Cosmetic; bin_width is the lossy control.
         calib (list, optional): Float calibration values of the spectrum.
+        labels_only (bool, optional): Accepted for one call signature across
+            the four formats, and ignored here: this format takes its ylabels
+            from _FUNCTNS.INF and builds no binned grid to skip.
 
     Returns:
         1D numpy array with ylabels. 2D numpy array with data values \

@@ -1395,8 +1395,10 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision,
         # Same guard as bin_datapairs: a width small enough to push a key past
         # the float64 range, or past what an int64 bin index holds, wraps every
         # key onto one index and returns a single column carrying the whole
-        # run's signal. rb.read promises to refuse that, so both binning paths
-        # have to.
+        # run's signal. rb.read promises to refuse that, and this is the branch
+        # it reaches. The default-width branch above is not guarded, because
+        # reaching it needs a display_precision past _MAX_LABEL_DECIMALS, which
+        # rb.read refuses first and no caller inside rainbow passes.
         scaled = mz_arr / bin_width
         if not np.isfinite(scaled).all() or np.abs(scaled).max() >= 2.0 ** 62:
             raise ValueError(

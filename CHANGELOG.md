@@ -92,10 +92,13 @@ to [Semantic Versioning](https://semver.org/).
   their optics in metadata. Reading the detector from the version byte was also
   what sent whole liquid chromatography runs out as gas chromatography
   documents measuring picoamps.
-- **Waters ylabels are `float64` rather than `float32`.** The values are
-  unchanged; the array they are handed back in is now the same dtype every
-  other vendor returns, so code that compares or concatenates axes across
-  vendors no longer has to widen one of them.
+- **A binned Waters function's ylabels are `float64` rather than `float32`.**
+  The values are unchanged; the array they are handed back in is wider. This
+  is the binning change above reaching the axis, so it applies to the formats
+  that bin: a function whose labels come from `_FUNCTNS.INF` rather than from
+  the data (the 2- and 4-byte formats, which include every single-wavelength
+  UV function) is still `float32`. Code that concatenates axes across vendors
+  should keep widening rather than assume one dtype.
 - **Chemstation header strings are decoded as UTF-16 rather than by taking
   every other byte.** The two agree while the text is ASCII; for anything else
   the mangled bytes were not valid UTF-8, so the field was dropped and came

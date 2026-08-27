@@ -32,8 +32,11 @@ MZ_FLOORS = {'agilent': 0.1, 'waters': 0.03}
 # below any vendor floor, so its parsers record this one instead.
 HRMS_MZ_FLOOR = 1e-6
 
-# Beyond this many decimals a float64 m/z label carries no more information, so
-# the search below stops rather than looping forever on a denormal bin_width.
+# Where the search below stops. Beyond this many decimals a float64 m/z label
+# carries no more information, so a denormal bin_width would otherwise loop
+# forever raising a precision that cannot rise. It bounds the search, not the
+# caller's display_precision: rb.read holds that to its own limit, and this is
+# the floor under a bin_width the search is chasing.
 _MAX_LABEL_DECIMALS = 17
 
 # Above this many bins in the span, lay the bins out by sorting rather than by
