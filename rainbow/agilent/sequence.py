@@ -60,6 +60,20 @@ def _child_text(element, name):
     return None
 
 
+def _enclosed_by_wanted(element, wanted):
+    """Whether any ancestor of ``element`` is itself a wanted tag (lxml only).
+
+    Such an ancestor has not been handed to the consumer yet, so its subtree is
+    still needed whole.
+    """
+    parent = element.getparent()
+    while parent is not None:
+        if _local(parent.tag) in wanted:
+            return True
+        parent = parent.getparent()
+    return False
+
+
 def _stream(path, names):
     """
     Yields ``(local_name, element)`` for elements whose local name is in
@@ -69,6 +83,13 @@ def _stream(path, names):
     With lxml, a tag filter limits the parse to just those elements; without
     it, every element is visited and filtered in Python. Either way the
     consumer sees the same sequence of elements.
+
+    Neither the clearing nor lxml's sibling pruning touches a subtree that is
+    still being built. One wanted tag can sit inside another's subtree, and the
+    outer one is not handed over until its own end event, by which time pruning
+    would have deleted the siblings it is about to be read for. rainbow's own
+    sequence.acaml files do not nest that way, but the reader is pointed at
+    documents rainbow did not write.
     """
     wanted = set(names)
     # The consumer stops as soon as it has what it needs, which abandons this
@@ -81,15 +102,28 @@ def _stream(path, names):
             context = _lxml.iterparse(fileobj, events=("end",), tag=tags)
             for _, element in context:
                 yield _local(element.tag), element
+                if _enclosed_by_wanted(element, wanted):
+                    continue
                 element.clear()
                 # Drop already-seen siblings so lxml does not retain the tree.
                 while element.getprevious() is not None:
                     del element.getparent()[0]
         else:
-            for _, element in ET.iterparse(fileobj, events=("end",)):
+            # Start events too, only to count the wanted tags open above the
+            # element being handed over: an ElementTree element cannot be asked
+            # for its parent, and the guard has to be the same one lxml uses.
+            open_wanted = 0
+            for event, element in ET.iterparse(fileobj,
+                                               events=("start", "end")):
                 name = _local(element.tag)
-                if name in wanted:
-                    yield name, element
+                if name not in wanted:
+                    continue
+                if event == "start":
+                    open_wanted += 1
+                    continue
+                open_wanted -= 1
+                yield name, element
+                if not open_wanted:
                     element.clear()
     finally:
         fileobj.close()

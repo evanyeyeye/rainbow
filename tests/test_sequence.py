@@ -229,3 +229,52 @@ def test_etree_fallback_matches_lxml_for_header(tmp_path, monkeypatch):
     expected = sequence.parse_header(path)
     monkeypatch.setattr(sequence, "_lxml", None)
     assert sequence.parse_header(path) == expected
+
+
+# A document that puts the Signal inside the SignalResult that references it,
+# after the children that SignalResult is read for. Agilent's own exports keep
+# signals in Resources, but the reader is pointed at documents rainbow did not
+# write, and the streaming parser must not destroy a subtree it is still
+# building.
+NESTED_SIGNAL_ACAML = f"""<?xml version="1.0" encoding="utf-8"?>
+<ACAML xmlns="urn:schemas-agilent-com:acaml15"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Doc><Content>
+    <Injections>
+      <Result xsi:type="InjectionResultType" id="r">
+        <SignalResult id="sr">
+          <Signal_ID id="s" />
+          <Peak id="p">
+            <RetentionTime val="1.5" />
+            <Area val="5.0" />
+          </Peak>
+          {_signal("s", "008-D1F-A1-sample_01.D", "DAD1A.CH", "Sig=254,4")}
+        </SignalResult>
+      </Result>
+    </Injections>
+  </Content></Doc>
+</ACAML>
+"""
+
+
+def test_a_signal_nested_in_its_own_result_keeps_the_peaks(tmp_path):
+    # The pruning that keeps the tree from accumulating deletes earlier
+    # siblings. Here those siblings are the Signal_ID and Peak the enclosing
+    # SignalResult has not been read for yet, so pruning at the inner Signal
+    # loses the peaks entirely and the injection disappears.
+    by_injection = sequence.parse_peaks(
+        _write(tmp_path, NESTED_SIGNAL_ACAML))
+    groups = by_injection["008-D1F-A1-sample_01.D"]
+    assert len(groups) == 1
+    assert groups[0]["signal"] == "DAD1A"
+    assert [p["area"] for p in groups[0]["peaks"]] == [5.0]
+
+
+def test_etree_fallback_matches_lxml_on_a_nested_signal(tmp_path, monkeypatch):
+    # The two backends are documented to yield the same elements, which is a
+    # claim about the awkward shapes rather than the easy ones.
+    path = _write(tmp_path, NESTED_SIGNAL_ACAML)
+    expected = sequence.parse_peaks(path)
+    monkeypatch.setattr(sequence, "_lxml", None)
+    assert sequence.parse_peaks(path) == expected
+    assert expected  # both empty would satisfy the equality above
