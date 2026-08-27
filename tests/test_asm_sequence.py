@@ -371,3 +371,35 @@ def _where_they_differ(written, expected):
                 index, written[window], expected[window])
     return "identical for {} characters, then lengths differ: {} and {}".format(
         min(len(written), len(expected)), len(written), len(expected))
+
+
+def test_the_streamer_splits_at_the_last_placeholder(sequence, tmp_path):
+    """ The sentinel can occur twice, and only the last one is the array slot.
+
+    The envelope is rendered with a placeholder where the injection documents
+    go, then split there. A device-system field carrying the same text (a
+    vendor wrote it into an instrument name, or a converter did) makes an
+    earlier occurrence, and splitting at the first would put the injection
+    array inside the device system and truncate the document.
+    """
+    from rainbow.asm import (_DOCUMENTS_PLACEHOLDER, _LC, _Options,
+                             _stream_aggregate)
+
+    device_system = {"asset management identifier": _DOCUMENTS_PLACEHOLDER,
+                     "device document": []}
+    specs = [(injection, injection.metadata)
+             for injection in sequence.injections]
+
+    out = tmp_path / "seq.asm.json"
+    with open(str(out), "w", encoding="utf-8") as fileobj:
+        _stream_aggregate(fileobj, _LC, device_system, specs,
+                          _Options(), 2)
+
+    written = out.read_text(encoding="utf-8")
+    # The sentinel really is in the envelope, or this proves nothing.
+    assert written.count(_DOCUMENTS_PLACEHOLDER) == 1
+    document = json.loads(written)          # would raise if split at the first
+    aggregate = document["liquid chromatography aggregate document"]
+    assert (aggregate["device system document"]
+            ["asset management identifier"] == _DOCUMENTS_PLACEHOLDER)
+    assert len(aggregate["liquid chromatography document"]) == len(specs)

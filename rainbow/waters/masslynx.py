@@ -269,20 +269,34 @@ def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
     # to a column), and nothing warns about it: the too-fine-bin_width check
     # only looks at MS files.
     #
-    # The recorded function type decides it where there is one, because the
-    # polarity that names `detector` above comes from separate metadata that
-    # can be missing: white.raw records six MRM functions with m/z axes and no
-    # polarity for any of them, and exempting those would silently discard the
-    # caller's bin_width. Only a function the file calls a diode array is
-    # treated as wavelength; without a type, fall back to the polarity.
-    is_wavelength = (func_type == _FUNC_TYPE_DIODE_ARRAY if func_type is not None
-                     else detector == 'UV')
+    is_wavelength = _is_wavelength_axis(func_type, detector)
     ylabels, data = parse_funcdat(
         path, pair_counts, display_precision,
         _UV_WAVELENGTH_STEP if is_wavelength else bin_width, calib,
         labels_only)
 
     return DataFile(path, detector, times, ylabels, data, metadata)
+
+
+def _is_wavelength_axis(func_type, detector):
+    """Whether a function's y-axis is wavelength rather than m/z.
+
+    The recorded function type decides it where there is one, because the
+    polarity that names the detector comes from separate metadata that can be
+    missing: white.raw records six MRM functions with m/z axes and no polarity
+    for any of them, so the polarity alone calls an m/z axis a wavelength axis
+    and would exempt it from the caller's bin_width. Only a function the file
+    calls a diode array is treated as wavelength; without a type, fall back to
+    the polarity.
+
+    No bundled fixture shows the difference in the output: white.raw's six
+    functions all store their labels in the INF (the 2/4-byte formats) and are
+    never binned whichever way this answers, so the rule is pinned by its own
+    tests rather than by an expected-output file.
+    """
+    if func_type is not None:
+        return func_type == _FUNC_TYPE_DIODE_ARRAY
+    return detector == 'UV'
 
 
 def parse_funcidx(path):

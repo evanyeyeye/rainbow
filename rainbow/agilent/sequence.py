@@ -111,7 +111,17 @@ def _stream(path, names):
         else:
             # Start events too, only to count the wanted tags open above the
             # element being handed over: an ElementTree element cannot be asked
-            # for its parent, and the guard has to be the same one lxml uses.
+            # for its parent, and the rule has to be the same one lxml applies.
+            #
+            # Defensive on this side rather than load-bearing. Clearing an
+            # inner element empties that element alone, and no consumer here
+            # reads a nested wanted element's own content (parse_peaks reads a
+            # SignalResult's Signal_ID and Peak children, not a Signal nested
+            # among them), so removing the counter changes nothing today. It is
+            # the lxml pruning next door that destroys siblings, and the two
+            # backends are documented to see the same elements, which is a
+            # claim about the rule and not about what one consumer happens to
+            # look at.
             open_wanted = 0
             for event, element in ET.iterparse(fileobj,
                                                events=("start", "end")):

@@ -6,7 +6,6 @@ import warnings
 
 import numpy as np
 import pytest
-from lxml import etree
 
 import rainbow as rb
 from rainbow.agilent import masshunter
@@ -82,6 +81,10 @@ WATERS_MS_RAW = [
 
 def _msts_scan_count(acqdata):
     """ Ground-truth scan count: sum of NumOfScans in MSTS.xml. """
+    # Imported here rather than at module scope: lxml is optional, and a
+    # module-level import stops the whole file being collected without it,
+    # which took 24 unrelated tests down with it.
+    from lxml import etree
     root = etree.parse(os.path.join(acqdata, "MSTS.xml")).getroot()
     return sum(int(seg.find("NumOfScans").text)
                for seg in root.findall("TimeSegment"))
@@ -1795,3 +1798,18 @@ def test_bin_to_grid_refuses_a_width_that_overflows_the_bin_index():
         masshunter.bin_to_grid(
             np.array([1e300]), np.array([1], dtype=np.uint64),
             np.array([0]), 1, 4, bin_width=1e-300)
+
+
+@pytest.mark.parametrize("description,expected", [
+    ("Sig=254.0,4.0  Ref=360.0,100.0", 254.0),
+    # The prefixed spelling. Reading the number after the first '=' would give
+    # the channel letter's own digits or fail; the metadata parser is used so
+    # the ylabel and metadata['wavelength'] cannot disagree.
+    ("DAD1B, Sig=280.0,4.0  Ref=off", 280.0),
+    ("DAD1 A, Sig=254,4 Ref=360,100", 254.0),
+    ("ADC1 CHANNEL A", 0.0),
+    ("", 0.0),
+])
+def test_the_signal_wavelength_reads_a_prefixed_description(description,
+                                                            expected):
+    assert masshunter._signal_wavelength(description) == expected

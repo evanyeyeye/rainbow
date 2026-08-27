@@ -278,3 +278,21 @@ def test_etree_fallback_matches_lxml_on_a_nested_signal(tmp_path, monkeypatch):
     monkeypatch.setattr(sequence, "_lxml", None)
     assert sequence.parse_peaks(path) == expected
     assert expected  # both empty would satisfy the equality above
+
+
+def test_the_etree_fallback_reads_a_nested_signal(tmp_path, monkeypatch):
+    """ The fallback must handle the nesting the lxml path was fixed for.
+
+    Its own nesting counter is defensive rather than load-bearing (see
+    _stream): clearing an element empties that element alone, and no consumer
+    reads a nested wanted element's content. What this pins is the outcome,
+    which is what the two backends promise to agree on.
+    """
+    path = _write(tmp_path, NESTED_SIGNAL_ACAML)
+    monkeypatch.setattr(sequence, "_lxml", None)
+
+    groups = sequence.parse_peaks(path)["008-D1F-A1-sample_01.D"]
+    assert len(groups) == 1
+    assert groups[0]["signal"] == "DAD1A"
+    assert groups[0]["wavelength"] == 254.0
+    assert [p["area"] for p in groups[0]["peaks"]] == [5.0]

@@ -84,3 +84,43 @@ def test_the_uv_wavelength_step_is_not_the_ms_bin_width():
 # than taking its labels from _FUNCTNS.INF. white.raw is (a) and (b) but is in
 # the 2/4 format, so reverting the change leaves every bundled fixture
 # byte-identical. Covering it needs a fixture that does not exist yet.
+
+
+@pytest.mark.parametrize("func_type,detector,expected", [
+    # A function the file calls a diode array is a wavelength axis whatever the
+    # polarity metadata says.
+    (12, 'UV', True),
+    (12, 'MS', True),
+    # Any other recorded type is m/z, and must stay subject to bin_width. This
+    # is the MRM-without-polarity case: the polarity alone would call it UV and
+    # silently exempt an m/z axis from the caller's binning.
+    (0, 'UV', False),
+    (6, 'UV', False),
+    (6, 'MS', False),
+    # With no recorded type there is nothing better than the polarity.
+    (None, 'UV', True),
+    (None, 'MS', False),
+])
+def test_the_wavelength_axis_rule(func_type, detector, expected):
+    from rainbow.waters.masslynx import _is_wavelength_axis
+
+    assert _is_wavelength_axis(func_type, detector) is expected
+
+
+def test_a_diode_array_function_ignores_bin_width():
+    # The rule's whole point: an m/z bin width must not merge DAD channels.
+    # blue.raw's UV function is a real diode array, so a coarse bin_width must
+    # leave its wavelength axis alone.
+    import numpy as np
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        plain = rb.read("tests/inputs/blue.raw")
+        coarse = rb.read("tests/inputs/blue.raw", bin_width=5.0)
+
+    for a, b in zip(plain.datafiles, coarse.datafiles):
+        if a.detector != 'UV':
+            continue
+        np.testing.assert_array_equal(np.asarray(a.ylabels, dtype=float),
+                                      np.asarray(b.ylabels, dtype=float))
