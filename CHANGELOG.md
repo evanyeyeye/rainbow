@@ -3,6 +3,23 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] - 2026-09-09
+
+### Fixed
+- **A ChemStation `.ms` file with busy scans failed to read at all.** Reading
+  an Agilent `.D` whose MS scans hold more than 16383 mz-intensity pairs raised
+  `ValueError: strides is incompatible with shape of requested array and size
+  of buffer`, and nothing in the run could be read. `parse_ms` held each scan's
+  pair count in a numpy `uint16` array, so the multiply that turns a pair count
+  into a byte count was `uint16` arithmetic and wrapped at 65536: a busy scan
+  asked for a fraction of its own bytes, and the reader carried on from inside
+  it. numpy 1 widened that multiply and hid the wrap, so this reaches anyone
+  who has moved to numpy 2. How busy a scan is tracks how many ions it
+  detected, which is why it presented as large or intense files failing while
+  smaller ones from the same batch read: in the reported case a run whose
+  busiest scan held 12705 pairs read, and one holding 25201 did not. Reported
+  with both files in [#75](https://github.com/evanyeyeye/rainbow/issues/75).
+
 ## [1.5.1] - 2026-08-27
 
 ### Fixed
