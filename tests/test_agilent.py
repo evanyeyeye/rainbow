@@ -2,6 +2,8 @@
 Unit tests for parsing Agilent .D directories.
 
 """
+import struct
+
 import pytest
 
 import rainbow as rb
@@ -205,3 +207,79 @@ def test_a_channel_with_no_wavelength_keeps_its_empty_label(path, name):
         datafile = rb.read(path).get_file(name)
 
     assert list(datafile.ylabels) == [""]
+
+
+# --- Scan sizes across the uint16 multiply (issue #75) ---------------------
+#
+# parse_ms held each scan's pair count in a numpy uint16 array. Read back out,
+# pair_count * 4 was uint16 arithmetic and wrapped at 65536, so a scan of more
+# than 16383 pairs read a fraction of its own bytes and the reader resumed
+# inside it. The collected bytes then stopped matching the counts describing
+# them, which surfaced as numpy refusing the short buffer: "strides is
+# incompatible with shape of requested array". numpy 1 widened the multiply to
+# int64 and hid it; numpy 2 keeps the uint16.
+
+
+def _synthesize_ms(raw, pair_counts):
+    """Build an LC .ms file with scans of the given sizes, reusing a real
+    file's header so everything outside the scan records stays valid.
+
+    A record is 18 bytes of header, then the mz-intensity pairs, then a 10 byte
+    trailer, and it opens with its own length in 16-bit words.
+
+    Args:
+        raw (bytes): Contents of a "MSD Spectral File" .ms file, for its header.
+        pair_counts (list): Number of pairs to write for each scan.
+
+    """
+    start = struct.unpack_from('>H', raw, 0x10A)[0] * 2 - 2
+    out = bytearray(raw[:start])
+    struct.pack_into('>I', out, 0x116, len(pair_counts))
+    for i, count in enumerate(pair_counts):
+        record = bytearray(18 + count * 4 + 10)
+        struct.pack_into('>H', record, 0, len(record) // 2)
+        struct.pack_into('>I', record, 2, (i + 1) * 60000)   # one minute apart
+        struct.pack_into('>H', record, 12, count)
+        for j in range(count):
+            # m/z is stored twentyfold in a uint16, so it has to stay under
+            # 3276 Da. Cycling keeps a big scan inside that without changing
+            # what the row sums to. Every intensity is an unscaled 1.
+            struct.pack_into('>H', record, 18 + j * 4, (100 + j % 2000) * 20)
+            struct.pack_into('>H', record, 20 + j * 4, 1)
+        out += record
+    return bytes(out)
+
+
+@pytest.mark.parametrize("count", [
+    16383,   # the largest scan the uint16 multiply survived
+    16384,   # the first it did not
+    25201,   # the largest scan in the file reported in issue #75
+])
+def test_a_scan_larger_than_a_uint16_multiply_reads_whole(tmp_path, count):
+    raw = open("tests/inputs/orange.D/MSD1.MS", "rb").read()
+    path = tmp_path / "MSD1.MS"
+    path.write_bytes(_synthesize_ms(raw, [count, count]))
+
+    from rainbow.agilent.chemstation import parse_ms
+    parsed = parse_ms(str(path))
+
+    assert parsed.data.shape[0] == 2
+    # Every pair carries an intensity of 1, so a scan has to total its own pair
+    # count. A short read leaves the row summing to less.
+    assert parsed.data.sum(axis=1).tolist() == [count, count]
+
+
+def test_scan_sizes_either_side_of_the_wrap_read_the_same_way(tmp_path):
+    # The wrap was harmless for small scans and fatal for large ones in the
+    # same file, which is why it read as large files being the problem. Sizes
+    # spanning the wrap have to behave alike.
+    raw = open("tests/inputs/orange.D/MSD1.MS", "rb").read()
+    counts = [3, 16383, 7, 16384, 20000, 11]
+    path = tmp_path / "MSD1.MS"
+    path.write_bytes(_synthesize_ms(raw, counts))
+
+    from rainbow.agilent.chemstation import parse_ms
+    parsed = parse_ms(str(path))
+
+    assert parsed.data.shape[0] == len(counts)
+    assert parsed.data.sum(axis=1).tolist() == counts

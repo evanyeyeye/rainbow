@@ -842,9 +842,15 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
         f.read(2)
         times[i] = int_unpack(f.read(4))[0]
         f.read(6)
-        pair_counts[i] = short_unpack(f.read(2))[0]
+        # The multiply below has to happen on a Python int. Read back out of
+        # pair_counts it would be a numpy uint16, which wraps at 65536 under
+        # NEP 50, so a scan of more than 16383 pairs would ask for its byte
+        # count modulo 65536 and the reader would resume inside that scan.
+        # numpy 1 widened the multiply to int64, which hid this.
+        pair_count = short_unpack(f.read(2))[0]
+        pair_counts[i] = pair_count
         f.read(4)
-        pair_bytes = f.read(pair_counts[i] * 4)
+        pair_bytes = f.read(pair_count * 4)
         pair_bytearr.extend(pair_bytes)
         f.read(10)
 
