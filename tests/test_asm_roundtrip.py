@@ -1015,3 +1015,809 @@ def test_a_declared_wavelength_setting_still_wins_over_the_label():
     datadir = rb.from_asm(_lc(measurement))
     assert datadir.datafiles[0].ylabels.tolist() == [254.0]
     assert datadir.peaks[0]["wavelength"] == 254.0
+
+
+def _sample(**fields):
+    """A measurement whose sample document carries ``fields``."""
+    return _with_cube(**{"measurement identifier": "uv",
+                         "sample document": dict(fields)})
+
+
+def _custom(*entries):
+    """A custom information aggregate document from raw ``entries``."""
+    return {"custom information aggregate document": {
+        "custom information document": list(entries)}}
+
+
+def _datum(label, key, value, index=None, **extra):
+    entry = {"datum label": label, key: value, **extra}
+    if index is not None:
+        entry["@index"] = index
+    return entry
+
+
+def _read_custom(*entries):
+    return rb.from_asm(_lc(_sample(**{"sample identifier": "s",
+                                      **_custom(*entries)})))
+
+
+def test_a_samples_written_name_is_read_beside_its_identifier():
+    """ The identifier keys the sample; the written name is what a human reads.
+
+    rainbow's own writer puts both in the identifier, so reading only that round
+    tripped its output. An Empower export names the injection in `written name`
+    and keys it in `sample identifier`, and the name was dropped.
+    """
+    datadir = rb.from_asm(_lc(_sample(**{
+        "sample identifier": "133872", "written name": "NB5-P1A11"})))
+    assert datadir.metadata["sample"] == "133872"
+    assert datadir.metadata["sample_name"] == "NB5-P1A11"
+
+
+def test_a_sample_with_no_custom_fields_carries_no_key():
+    """ Absent is absent: a caller checks the key, not for an empty dict. """
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    assert "sample_custom" not in datadir.metadata
+    assert "sample_name" not in datadir.metadata
+
+
+# --- the four datum types the schema admits ---
+
+@pytest.mark.parametrize("key, written, expected", [
+    ("scalar string datum", "Vax-033898", "Vax-033898"),
+    ("scalar double datum", 1.5, 1.5),
+    ("scalar boolean datum", True, True),
+    ("scalar boolean datum", False, False),
+])
+def test_each_scalar_datum_type_reads_as_its_python_type(key, written,
+                                                        expected):
+    fields = _read_custom(_datum("f", key, written)).metadata["sample_custom"]
+    assert fields == {"f": expected}
+    assert type(fields["f"]) is type(expected)
+
+
+def test_a_timestamp_datum_reads_as_a_datetime_not_a_string():
+    """ The datum type is what tells a timestamp from the string it is spelled
+    as; losing it means a round trip cannot put it back as a timestamp. """
+    import datetime
+
+    fields = _read_custom(
+        _datum("When", "scalar timestamp datum",
+               "2026-04-28T13:19:56-04:00")).metadata["sample_custom"]
+    assert fields["When"] == datetime.datetime(
+        2026, 4, 28, 13, 19, 56,
+        tzinfo=datetime.timezone(datetime.timedelta(hours=-4)))
+
+
+def test_an_integer_stays_an_integer_through_a_round_trip():
+    """ 3 is not 3.0: the same reason a wavelength of 254 stays 254. """
+    datadir = _read_custom(_datum("n", "scalar double datum", 3))
+    assert datadir.metadata["sample_custom"] == {"n": 3}
+    entry = _custom_entries(datadir.to_asm())[0]
+    assert entry["scalar double datum"] == 3
+    assert isinstance(entry["scalar double datum"], int)
+
+
+def test_a_doubles_unit_is_kept_beside_its_value():
+    """ The schema lets a double carry a unit, and dropping it changes the
+    number's meaning. Read as the {value, unit} shape injection_volume uses. """
+    datadir = _read_custom(
+        _datum("Weight", "scalar double datum", 1.5, unit="mg"))
+    assert datadir.metadata["sample_custom"] == {
+        "Weight": {"value": 1.5, "unit": "mg"}}
+    entry = _custom_entries(datadir.to_asm())[0]
+    assert entry["scalar double datum"] == 1.5 and entry["unit"] == "mg"
+
+
+def _custom_entries(document):
+    """The custom information documents of a built document's first sample."""
+    return (document["liquid chromatography aggregate document"]
+            ["liquid chromatography document"][0]
+            ["measurement aggregate document"]["measurement document"][0]
+            ["sample document"]["custom information aggregate document"]
+            ["custom information document"])
+
+
+# --- values rainbow will not guess at ---
+
+def test_a_value_datum_written_as_an_object_is_unwrapped():
+    """ tDoubleValue and tStringValue both admit {"@type", "value"}. Reading the
+    object itself handed user code a dict where a scalar was promised, and then
+    refused to write back a value it had been given correctly. """
+    datadir = _read_custom(
+        _datum("Weight", "scalar double datum",
+               {"@type": "x#Number", "value": 1.5}),
+        _datum("Id", "scalar string datum",
+               {"@type": "x#String", "value": "Vax-1"}))
+    assert datadir.metadata["sample_custom"] == {"Weight": 1.5, "Id": "Vax-1"}
+
+
+def test_an_integer_too_large_for_a_float_is_dropped_on_read():
+    """ JSON integers are unbounded and Python floats are not. Keeping it read
+    fine and then raised OverflowError out of the middle of the re-export. """
+    entry = json.loads('{"datum label": "Big", "scalar double datum": 1'
+                       + "0" * 400 + "}")
+    with pytest.warns(UserWarning, match="Big.*cannot read"):
+        datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s",
+                                             **_custom(entry)})))
+    assert "sample_custom" not in datadir.metadata
+
+
+def test_a_datum_type_rainbow_does_not_read_warns_rather_than_guesses():
+    document = _lc(_sample(**{"sample identifier": "s", **_custom(
+        _datum("Odd", "scalar integer datum", 3))}))
+    with pytest.warns(UserWarning, match="Odd.*does not read"):
+        datadir = rb.from_asm(document)
+    assert "sample_custom" not in datadir.metadata
+
+
+def test_an_entry_declaring_two_datum_types_is_dropped_not_picked_from():
+    """ The schema makes the datum types a oneOf, so two is malformed. Choosing
+    between two conflicting values would publish rainbow's own preference. """
+    with pytest.warns(UserWarning, match="declares 2 datum types"):
+        datadir = _read_custom({"datum label": "x",
+                                "scalar string datum": "s",
+                                "scalar double datum": 2.0})
+    assert "sample_custom" not in datadir.metadata
+
+
+def test_a_duplicate_label_keeps_the_first_and_says_so():
+    """ Legal in the document, impossible in a mapping. """
+    with pytest.warns(UserWarning, match="more than once"):
+        datadir = _read_custom(_datum("x", "scalar string datum", "one"),
+                               _datum("x", "scalar string datum", "two"))
+    assert datadir.metadata["sample_custom"] == {"x": "one"}
+
+
+def test_a_non_finite_custom_value_is_dropped_before_json_sees_it():
+    """ json.dumps writes NaN as a bare literal no conforming reader accepts,
+    so to_asm looked fine and to_asm_str raised. """
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {"ok": 1.0, "bad": float("nan")}
+    with pytest.warns(UserWarning, match="bad.*JSON can carry"):
+        document = datadir.to_asm()
+    assert [e["datum label"] for e in _custom_entries(document)] == ["ok"]
+    with pytest.warns(UserWarning, match="bad"):
+        # to_asm_str passes allow_nan=False, so a NaN that reached it would
+        # raise rather than emit a literal no conforming reader accepts.
+        assert "nan" not in asm.to_asm_str(datadir).lower()
+
+
+def test_an_unusable_label_is_dropped_with_a_warning():
+    """ Every other drop in this reader is announced; this one was silent. """
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {"": "x", "ok": "y"}
+    with pytest.warns(UserWarning, match="not a usable datum label"):
+        document = datadir.to_asm()
+    assert [e["datum label"] for e in _custom_entries(document)] == ["ok"]
+
+
+def test_a_custom_value_rainbow_cannot_write_is_dropped_not_coerced():
+    """ str() on a list would publish it as text and change what it is. """
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {"Kept": "yes", "Odd": [1, 2]}
+    with pytest.warns(UserWarning, match="Odd.*cannot write"):
+        document = datadir.to_asm()
+    assert [e["datum label"] for e in _custom_entries(document)] == ["Kept"]
+
+
+# --- ordering ---
+
+def test_custom_fields_out_of_index_order_are_sorted_by_index():
+    """ @index orders the fields, not their position in the list. """
+    datadir = _read_custom(_datum("second", "scalar string datum", "b", index=2),
+                           _datum("first", "scalar string datum", "a", index=1))
+    assert list(datadir.metadata["sample_custom"]) == ["first", "second"]
+
+
+def test_a_partly_indexed_document_keeps_its_own_order():
+    """ @index is 1-based and sparse; position is 0-based and dense. Sorting a
+    mix of the two put the unindexed entry first: 5, 6, (none) came back as
+    (none), 5, 6. The schema does not require @index, so rather than mix the
+    two namespaces, a document that does not order every entry keeps its own.
+    """
+    datadir = _read_custom(_datum("a", "scalar string datum", "A", index=5),
+                           _datum("b", "scalar string datum", "B", index=6),
+                           _datum("c", "scalar string datum", "C"))
+    assert list(datadir.metadata["sample_custom"]) == ["a", "b", "c"]
+
+
+def test_index_is_renumbered_from_one_on_export():
+    datadir = _read_custom(_datum("a", "scalar string datum", "A", index=7),
+                           _datum("b", "scalar string datum", "B", index=9))
+    assert [e["@index"] for e in _custom_entries(datadir.to_asm())] == [1, 2]
+
+
+# --- the sample document is read as a unit ---
+
+def test_an_identified_sample_document_is_read_without_an_earlier_name():
+    """ from_asm merges every injection into one directory. Taking the three
+    sample fields one at a time let an identifier from the first injection sit
+    beside a name and a MaterialIdentifier from the second -- a join key
+    silently attached to the wrong sample, which is worse than none.
+    """
+    first = _with_cube(**{"measurement identifier": "uv1",
+                          "sample document": {"sample identifier": "AAA"}})
+    second = _with_cube(**{"measurement identifier": "uv2",
+                           "sample document": {
+                               "sample identifier": "BBB",
+                               "written name": "B-name",
+                               **_custom(_datum("MaterialIdentifier",
+                                                "scalar string datum",
+                                                "Vax-B"))}})
+    metadata = rb.from_asm(_lc(first, second)).metadata
+    assert metadata["sample"] == "AAA"
+    assert "sample_name" not in metadata
+    assert "sample_custom" not in metadata
+
+
+def test_a_later_channel_supplies_the_sample_when_the_first_has_none():
+    """ First readable wins, not first measurement. """
+    bare = _with_cube(**{"measurement identifier": "uv1",
+                         "sample document": {"sample identifier": "unknown"}})
+    named = _with_cube(**{"measurement identifier": "uv2",
+                          "sample document": {
+                              "sample identifier": "BBB",
+                              "written name": "B-name"}})
+    metadata = rb.from_asm(_lc(bare, named)).metadata
+    assert metadata["sample"] == "BBB"
+    assert metadata["sample_name"] == "B-name"
+
+
+def test_each_injection_in_a_sequence_keeps_its_own_sample():
+    """ sequence_from_asm builds a directory per injection, so the fields must
+    not travel between them. """
+    def injection(identifier, name, material):
+        return {"measurement aggregate document": {"measurement document": [
+            _with_cube(**{"measurement identifier": "uv-" + identifier,
+                          "sample document": {
+                              "sample identifier": identifier,
+                              "written name": name,
+                              **_custom(_datum("MaterialIdentifier",
+                                               "scalar string datum",
+                                               material))}})]}}
+
+    document = {"liquid chromatography aggregate document": {
+        "liquid chromatography document": [injection("1", "one", "Vax-1"),
+                                           injection("2", "two", "Vax-2")]}}
+    sequence = rb.sequence_from_asm(document)
+    got = [(inj.metadata["sample_name"],
+            inj.metadata["sample_custom"]["MaterialIdentifier"])
+           for inj in sequence.injections]
+    assert got == [("one", "Vax-1"), ("two", "Vax-2")]
+
+
+# --- the whole lap ---
+
+def test_the_sample_name_and_custom_fields_survive_a_round_trip():
+    """ The lap an Empower document actually makes: read, then re-export. """
+    source = _lc(_sample(**{
+        "sample identifier": "133872", "written name": "NB5-P1A11",
+        **_custom(_datum("Notebook", "scalar string datum", "NB-23737-0005",
+                         index=1),
+                  _datum("MaterialIdentifier", "scalar string datum",
+                         "Vax-033898", index=2),
+                  _datum("SampleWeight", "scalar double datum", 1.0,
+                         index=3))}))
+    document = rb.from_asm(source).to_asm()
+    sample = (document["liquid chromatography aggregate document"]
+              ["liquid chromatography document"][0]
+              ["measurement aggregate document"]["measurement document"][0]
+              ["sample document"])
+    assert sample["written name"] == "NB5-P1A11"
+    assert sample["custom information aggregate document"] == (
+        source["liquid chromatography aggregate document"]
+        ["liquid chromatography document"][0]
+        ["measurement aggregate document"]["measurement document"][0]
+        ["sample document"]["custom information aggregate document"])
+    # And a second lap reads back what the first wrote.
+    assert rb.from_asm(document).metadata["sample_custom"] == {
+        "Notebook": "NB-23737-0005", "MaterialIdentifier": "Vax-033898",
+        "SampleWeight": 1.0}
+
+
+@pytest.mark.parametrize("key, value", [
+    ("scalar string datum", "s"),
+    ("scalar double datum", 2.5),
+    ("scalar boolean datum", False),
+    ("scalar timestamp datum", "2026-04-28T13:19:56+00:00"),
+])
+def test_every_datum_type_returns_the_entry_it_came_from(key, value):
+    """ Read then write reproduces the entry, for each of the four types. """
+    source = _datum("f", key, value, index=1)
+    document = _read_custom(source).to_asm()
+    assert _custom_entries(document) == [source]
+
+
+def test_a_naive_timestamp_takes_the_callers_offset_like_any_other():
+    """ The schema's date-time is RFC 3339 and requires an offset. Writing a
+    naive datetime's isoformat() direct emitted a value the document then failed
+    to validate on; it goes through the same gate as `measurement time`. """
+    import datetime
+
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {
+        "When": datetime.datetime(2026, 4, 28, 13, 19, 56)}
+    stamped = _custom_entries(datadir.to_asm(utc_offset="+00:00"))[0]
+    assert stamped["scalar timestamp datum"] == "2026-04-28T13:19:56+00:00"
+
+
+def test_a_naive_timestamp_with_no_offset_warns_rather_than_inventing_one():
+    import datetime
+
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {
+        "When": datetime.datetime(2026, 4, 28, 13, 19, 56)}
+    with pytest.warns(UserWarning, match="records no UTC offset"):
+        stamped = _custom_entries(datadir.to_asm())[0]
+    assert stamped["scalar timestamp datum"] == "2026-04-28T13:19:56"
+
+
+def test_a_plain_date_is_dropped_because_it_is_not_a_date_time():
+    """ `date.isoformat()` is a date, and midnight in an invented zone is the
+    guess this reader refuses everywhere else. """
+    import datetime
+
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {"On": datetime.date(2026, 4, 28)}
+    with pytest.warns(UserWarning, match="holds date"):
+        document = datadir.to_asm()
+    sample = (document["liquid chromatography aggregate document"]
+              ["liquid chromatography document"][0]
+              ["measurement aggregate document"]["measurement document"][0]
+              ["sample document"])
+    assert "custom information aggregate document" not in sample
+
+
+def _two_channel_document():
+    """A document with two measurements, so a per-measurement warning repeats."""
+    return _lc(
+        _with_cube(**{"measurement identifier": "uv1",
+                      "sample document": {"sample identifier": "s"}}),
+        _with_cube(**{"measurement identifier": "uv2",
+                      "sample document": {"sample identifier": "s"}}))
+
+
+def test_an_integer_too_large_for_a_float_is_dropped_on_write():
+    """The read path drops it, so only a caller can put one in -- and
+    math.isfinite raises OverflowError on it before the finite check can
+    report anything, out of the middle of the export."""
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {"ok": 1.0, "Big": 10 ** 400}
+    with pytest.warns(UserWarning, match="Big.*too large"):
+        document = datadir.to_asm()       # not OverflowError
+    assert [e["datum label"] for e in _custom_entries(document)] == ["ok"]
+
+
+def test_a_non_bool_under_a_boolean_datum_is_dropped_not_coerced():
+    """bool("false") is True, which is the opposite of what was recorded."""
+    with pytest.warns(UserWarning, match="Flag.*cannot read"):
+        datadir = _read_custom(_datum("Flag", "scalar boolean datum", "false"))
+    assert "sample_custom" not in datadir.metadata
+
+
+def test_an_unindexed_entry_first_still_keeps_document_order():
+    """Distinguishes "document order" from "unindexed sorted last": with the
+    unindexed entry first, the two disagree."""
+    datadir = _read_custom(_datum("c", "scalar string datum", "C"),
+                           _datum("a", "scalar string datum", "A", index=5))
+    assert list(datadir.metadata["sample_custom"]) == ["c", "a"]
+
+
+def test_an_index_that_is_not_a_number_does_not_break_the_sort():
+    """A string @index beside a real one made sorted() raise TypeError
+    comparing int to str."""
+    datadir = _read_custom(_datum("a", "scalar string datum", "A", index="2"),
+                           _datum("b", "scalar string datum", "B", index=1))
+    assert list(datadir.metadata["sample_custom"]) == ["a", "b"]
+
+
+def test_a_unit_beside_a_non_double_is_reported_on_read():
+    """No subschema forbids it, so a conforming document may carry one; only a
+    double has anywhere to keep it."""
+    with pytest.warns(UserWarning, match="only a double may do"):
+        datadir = _read_custom(
+            _datum("a", "scalar string datum", "x", unit="mg"))
+    assert datadir.metadata["sample_custom"] == {"a": "x"}
+
+
+def test_a_unit_beside_a_non_double_is_reported_on_write():
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {"a": {"value": "x", "unit": "mg"}}
+    with pytest.warns(UserWarning, match="only a double may do"):
+        entry = _custom_entries(datadir.to_asm())[0]
+    assert entry["scalar string datum"] == "x" and "unit" not in entry
+
+
+def test_an_entry_with_no_usable_datum_label_is_reported_on_read():
+    """`datum label` is required, and a mapping has nowhere to put an
+    unlabelled value. The write side already said so for its mirror case."""
+    with pytest.warns(UserWarning, match="as its datum label"):
+        datadir = _read_custom({"scalar string datum": "x"})
+    assert "sample_custom" not in datadir.metadata
+
+
+def test_a_mapping_with_no_value_member_says_it_was_a_mapping():
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = {"L": {"units": "mg"}, "ok": "y"}
+    with pytest.warns(UserWarning, match="no usable 'value' member"):
+        document = datadir.to_asm()
+    assert [e["datum label"] for e in _custom_entries(document)] == ["ok"]
+
+
+def test_sample_custom_that_is_not_a_mapping_is_reported():
+    """Every other unusable input here warns; this one returned quietly."""
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_custom"] = [("a", 1)]
+    with pytest.warns(UserWarning, match="not a mapping"):
+        document = datadir.to_asm()
+    sample = (document["liquid chromatography aggregate document"]
+              ["liquid chromatography document"][0]
+              ["measurement aggregate document"]["measurement document"][0]
+              ["sample document"])
+    assert "custom information aggregate document" not in sample
+
+
+def test_a_write_side_warning_is_said_once_per_document_not_per_channel():
+    """One sample_custom mapping is written into every measurement, so warning
+    as each was built said the same thing once per channel."""
+    datadir = rb.from_asm(_two_channel_document())
+    assert len(datadir.datafiles) == 2
+    import warnings as w
+
+    datadir.metadata["sample_custom"] = {"bad": [1, 2]}
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        datadir.to_asm()
+    assert len([w for w in caught if "custom field" in str(w.message)]) == 1
+
+
+def test_the_sample_is_taken_from_the_first_measurement_that_identifies_one():
+    """Not merely the first that carries anything: a run whose opening channel
+    records a name against an "unknown" identifier otherwise lost the
+    identifier a later channel had."""
+    named = _with_cube(**{"measurement identifier": "uv1",
+                          "sample document": {"sample identifier": "unknown",
+                                              "written name": "X"}})
+    identified = _with_cube(**{"measurement identifier": "uv2",
+                               "sample document": {
+                                   "sample identifier": "133872"}})
+    metadata = rb.from_asm(_lc(named, identified)).metadata
+    assert metadata["sample"] == "133872"
+    # And still as a unit: the other document's name does not come along.
+    assert "sample_name" not in metadata
+
+
+def test_sample_fields_are_not_composed_across_channels():
+    """The claim the one-pass read exists for, with no identifier anywhere to
+    short-circuit it: reading the three fields as each measurement went past put
+    one channel's name beside another's MaterialIdentifier -- a join key
+    silently attached to the wrong sample, which is worse than none."""
+    named = _with_cube(**{"measurement identifier": "uv1",
+                          "sample document": {"written name": "X"}})
+    with_custom = _with_cube(**{"measurement identifier": "uv2",
+                                "sample document": _custom(
+                                    _datum("MaterialIdentifier",
+                                           "scalar string datum", "Vax-B"))})
+    metadata = rb.from_asm(_lc(named, with_custom)).metadata
+    assert metadata["sample_name"] == "X"
+    assert "sample_custom" not in metadata
+    assert "sample" not in metadata
+
+
+def test_an_unidentified_document_still_supplies_the_sample_fields():
+    """The fallback: no measurement names an identifier, so the first that says
+    anything at all is read rather than nothing being read."""
+    metadata = rb.from_asm(_lc(
+        _with_cube(**{"measurement identifier": "uv1",
+                      "sample document": {"sample identifier": "unknown"}}),
+        _with_cube(**{"measurement identifier": "uv2",
+                      "sample document": {"written name": "X"}}))).metadata
+    assert metadata["sample_name"] == "X"
+
+
+@pytest.mark.parametrize("key, written, expected", [
+    ("scalar string datum", {"@type": "x#String", "value": "s"}, "s"),
+    ("scalar double datum", {"@type": "x#Number", "value": 1.5}, 1.5),
+    ("scalar boolean datum", {"@type": "x#Boolean", "value": True}, True),
+])
+def test_the_object_form_is_unwrapped_for_every_datum_type(key, written,
+                                                           expected):
+    """tStringValue and tDoubleValue both admit {"@type", "value"}, and the
+    object form is a property of the value, not of one datum type."""
+    fields = _read_custom(_datum("f", key, written)).metadata["sample_custom"]
+    assert fields == {"f": expected}
+    assert type(fields["f"]) is type(expected)
+
+
+def test_the_object_form_is_unwrapped_for_a_timestamp():
+    import datetime
+
+    fields = _read_custom(_datum(
+        "When", "scalar timestamp datum",
+        {"@type": "x#DateTime",
+         "value": "2026-04-28T13:19:56+00:00"})).metadata["sample_custom"]
+    assert fields["When"] == datetime.datetime(
+        2026, 4, 28, 13, 19, 56, tzinfo=datetime.timezone.utc)
+
+
+def test_a_boolean_is_written_as_a_boolean_not_as_a_number():
+    """False == 0 in Python, so comparing the emitted entry by equality cannot
+    tell a boolean datum from a double. Only the schema or the type can."""
+    entry = _custom_entries(
+        _read_custom(_datum("f", "scalar boolean datum", False)).to_asm())[0]
+    assert entry["scalar boolean datum"] is False
+
+
+def test_two_unwritable_fields_are_both_reported():
+    """The once-per-document key carries the label and the complaint, so a
+    second bad field is not swallowed by the first one's dedupe."""
+    import warnings as w
+
+    datadir = rb.from_asm(_two_channel_document())
+    datadir.metadata["sample_custom"] = {"one": [1], "two": object()}
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        datadir.to_asm()
+    said = [str(c.message) for c in caught if "custom field" in str(c.message)]
+    assert len(said) == 2
+    assert {"'one'" in m for m in said} == {"'two'" in m for m in said} == {
+        True, False}
+
+
+def test_a_sample_name_that_is_not_a_string_is_not_written():
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_name"] = None
+    sample = (datadir.to_asm()["liquid chromatography aggregate document"]
+              ["liquid chromatography document"][0]
+              ["measurement aggregate document"]["measurement document"][0]
+              ["sample document"])
+    assert "written name" not in sample
+
+
+def test_a_clean_document_round_trips_without_complaint():
+    """Nothing above pins SILENCE on the ordinary path, so a reader that warned
+    about every well-formed field passed the whole suite. One concrete case: a
+    double's unit is consumed where it is used, and failing to consume it made
+    every legitimate unit emit the 'only a double may do' complaint.
+    """
+    import datetime
+    import warnings as w
+
+    source = _lc(_sample(**{
+        "sample identifier": "133872", "written name": "NB5-P1A11",
+        **_custom(_datum("Id", "scalar string datum", "Vax-033898", index=1),
+                  _datum("Weight", "scalar double datum", 1.5, index=2,
+                         unit="mg"),
+                  _datum("Count", "scalar double datum", 3, index=3),
+                  _datum("Passed", "scalar boolean datum", True, index=4),
+                  _datum("When", "scalar timestamp datum",
+                         "2026-04-28T13:19:56+00:00", index=5))}))
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        datadir = rb.from_asm(source)
+        datadir.to_asm()
+    assert [str(c.message) for c in caught
+            if "custom field" in str(c.message)
+            or "datum label" in str(c.message)] == []
+    assert datadir.metadata["sample_custom"] == {
+        "Id": "Vax-033898", "Weight": {"value": 1.5, "unit": "mg"},
+        "Count": 3, "Passed": True,
+        "When": datetime.datetime(2026, 4, 28, 13, 19, 56,
+                                  tzinfo=datetime.timezone.utc)}
+
+
+def _injection(*measurements):
+    """One liquid chromatography document, i.e. one injection."""
+    return {"measurement aggregate document": {
+        "measurement document": list(measurements)}}
+
+
+def _merged(*injections):
+    return {"liquid chromatography aggregate document": {
+        "liquid chromatography document": list(injections)}}
+
+
+def test_a_merged_read_reports_the_first_injections_sample():
+    """from_asm merges every injection into one directory, so the selection runs
+    across all of them. Assigning per injection and keeping whichever came last
+    made a merged read report the LAST injection's sample while its vialpos and
+    operator still came from the first.
+    """
+    document = _merged(
+        _injection(_with_cube(**{
+            "measurement identifier": "uv1",
+            "sample document": {"sample identifier": "AAA",
+                                "written name": "A-name",
+                                "location identifier": "1:A,1"}})),
+        _injection(_with_cube(**{
+            "measurement identifier": "uv2",
+            "sample document": {"sample identifier": "BBB",
+                                "written name": "B-name",
+                                "location identifier": "9:Z,9"}})))
+    metadata = rb.from_asm(document).metadata
+    assert metadata["sample"] == "AAA"
+    assert metadata["sample_name"] == "A-name"
+    # The vial position is part of the same sample document, so it comes from
+    # the same one rather than from whichever injection recorded one first.
+    assert metadata["vialpos"] == "1:A,1"
+
+
+def test_an_empty_sample_document_does_not_count_as_the_winner():
+    """An injection that supplies nothing is skipped, so an opening injection
+    with no readable sample document does not leave the merged read without
+    one."""
+    document = _merged(
+        _injection(_with_cube(**{"measurement identifier": "uv1",
+                                 "sample document": {}})),
+        _injection(_with_cube(**{
+            "measurement identifier": "uv2",
+            "sample document": {"sample identifier": "BBB"}})))
+    assert rb.from_asm(document).metadata["sample"] == "BBB"
+
+
+def test_an_identifier_in_a_later_injection_is_not_lost_to_an_earlier_name():
+    """The selection runs over every injection the directory will hold, not one
+    at a time. Choosing per injection and keeping the first answer lost the
+    identifier whenever an earlier injection supplied only a name -- the same
+    loss the within-injection rule exists to prevent, one level up."""
+    document = _merged(
+        _injection(_with_cube(**{
+            "measurement identifier": "uv1",
+            "sample document": {"sample identifier": "unknown",
+                                "written name": "NB5-P1A11"}})),
+        _injection(_with_cube(**{
+            "measurement identifier": "uv2",
+            "sample document": {"sample identifier": "133872",
+                                "written name": "NB5-P1A11"}})))
+    metadata = rb.from_asm(document).metadata
+    assert metadata["sample"] == "133872"
+    assert metadata["sample_name"] == "NB5-P1A11"
+
+
+def test_custom_fields_in_a_later_injection_are_not_lost_either():
+    document = _merged(
+        _injection(_with_cube(**{
+            "measurement identifier": "uv1",
+            "sample document": {"written name": "NAME-1"}})),
+        _injection(_with_cube(**{
+            "measurement identifier": "uv2",
+            "sample document": dict(
+                {"sample identifier": "133872"},
+                **_custom(_datum("MaterialIdentifier", "scalar string datum",
+                                 "Vax-B")))})))
+    metadata = rb.from_asm(document).metadata
+    assert metadata["sample"] == "133872"
+    assert metadata["sample_custom"] == {"MaterialIdentifier": "Vax-B"}
+    # Still one document's worth: the other injection's name does not come along.
+    assert "sample_name" not in metadata
+
+
+def test_a_date_with_no_time_of_day_is_not_promoted_to_midnight():
+    """ASM types every timestamp as a full date-time. Parsing a bare date gave
+    midnight -- a value the document never carried -- and re-exporting it
+    published that invention. The write side refuses a Python `date` for the
+    same reason, so reading one in was the two directions contradicting."""
+    with pytest.warns(UserWarning, match="On.*cannot read"):
+        datadir = _read_custom(_datum("On", "scalar timestamp datum",
+                                      "2026-04-28"))
+    assert "sample_custom" not in datadir.metadata
+
+
+@pytest.mark.parametrize("text", ["20260428", "2026-W18-2"])
+def test_other_date_only_spellings_are_refused_too(text):
+    with pytest.warns(UserWarning, match="cannot read"):
+        datadir = _read_custom(_datum("On", "scalar timestamp datum", text))
+    assert "sample_custom" not in datadir.metadata
+
+
+def test_decimal_places_reaches_a_custom_double():
+    """Every other emitted number honours the option; this one wrote raw, so a
+    cube rounded to two places sat beside a custom field that was not."""
+    datadir = _read_custom(_datum("w", "scalar double datum", 1.23456789))
+    entry = _custom_entries(datadir.to_asm(decimal_places=2))[0]
+    assert entry["scalar double datum"] == 1.23
+
+
+def test_a_read_side_complaint_is_said_once_for_one_sample_document():
+    """The same sample document is repeated in every measurement, so a complaint
+    about it was made once per candidate channel."""
+    import warnings as w
+
+    bad = _custom(_datum("Odd", "scalar integer datum", 3))
+    document = _lc(*[_with_cube(**{"measurement identifier": "uv%d" % n,
+                                   "sample document": dict(bad)})
+                     for n in range(4)])
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        rb.from_asm(document)
+    assert len([c for c in caught if "custom field" in str(c.message)]) == 1
+
+
+@pytest.mark.parametrize("name", [None, "", 5])
+def test_an_unusable_sample_name_is_not_written(name):
+    """An empty `written name` validates but says nothing, and a reader would
+    take it for a sample called the empty string."""
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_name"] = name
+    sample = (datadir.to_asm()["liquid chromatography aggregate document"]
+              ["liquid chromatography document"][0]
+              ["measurement aggregate document"]["measurement document"][0]
+              ["sample document"])
+    assert "written name" not in sample
+
+
+@pytest.mark.parametrize("text, expected_hour", [
+    ("2026-04-28T13:19:56+00:00", 13),
+    # RFC 3339 permits a lowercase separator, the suite's own format checker
+    # accepts one, and _parse_iso already tolerates a lowercase `z`. Refusing it
+    # dropped a conforming date-time and said rainbow could not read it.
+    ("2026-04-28t13:19:56+00:00", 13),
+    # No offset, but still a date-time: read, and warned about on export.
+    ("2026-04-28T00:30:00", 0),
+    # A space is not the schema's separator, but _parse_iso reads it and the
+    # re-export writes it back as `T`, so taking it in normalizes it.
+    ("2026-04-28 13:19:56+00:00", 13),
+])
+def test_every_date_time_separator_is_read(text, expected_hour):
+    fields = _read_custom(
+        _datum("When", "scalar timestamp datum", text)).metadata["sample_custom"]
+    assert fields["When"].hour == expected_hour
+
+
+@pytest.mark.parametrize("text", [
+    "2026", "2026-04", "2026-04-28",
+    # Padded. These are why the pattern anchors on the digits either side: a
+    # separator can be present without a time of day following it, and
+    # _parse_iso strips before parsing, so both would come back as midnight.
+    "2026-04-28 ", " 2026-04-28",
+])
+def test_a_date_without_a_time_is_refused_whatever_its_precision(text):
+    """A pattern matching the separator alone would admit the padded ones."""
+    with pytest.warns(UserWarning, match="cannot read"):
+        datadir = _read_custom(_datum("On", "scalar timestamp datum", text))
+    assert "sample_custom" not in datadir.metadata
+
+
+def test_the_vial_position_comes_from_the_chosen_sample_document():
+    """It is a field of the sample document like any other, and it is what a
+    plate map is looked up by, so taking it first-wins per measurement put the
+    wrong well against the right sample."""
+    metadata = rb.from_asm(_lc(
+        _with_cube(**{"measurement identifier": "uv1",
+                      "sample document": {"sample identifier": "unknown",
+                                          "written name": "WRONG-A",
+                                          "location identifier": "1:A,1"}}),
+        _with_cube(**{"measurement identifier": "uv2",
+                      "sample document": {"sample identifier": "133872",
+                                          "written name": "RIGHT-B",
+                                          "location identifier": "9:Z,9"}}),
+    )).metadata
+    assert metadata["sample"] == "133872"
+    assert metadata["sample_name"] == "RIGHT-B"
+    assert metadata["vialpos"] == "9:Z,9"
+
+
+def test_a_vial_position_survives_when_nothing_identifies_the_sample():
+    """No document supplies an identity, so none is chosen -- but the position is
+    still worth having."""
+    metadata = rb.from_asm(_lc(_with_cube(**{
+        "measurement identifier": "uv",
+        "sample document": {"location identifier": "3:C,7"}}))).metadata
+    assert metadata["vialpos"] == "3:C,7"
+    assert "sample" not in metadata
+
+
+def test_each_unlabelled_custom_field_is_reported_separately():
+    """The message cannot carry a label, so without the position the dedupe
+    reported one warning however many fields were dropped."""
+    import warnings as w
+
+    document = _lc(_sample(**{"sample identifier": "s", **_custom(
+        {"scalar string datum": "a"},
+        {"scalar string datum": "b"},
+        {"scalar string datum": "c"})}))
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        rb.from_asm(document)
+    assert len([c for c in caught if "datum label" in str(c.message)]) == 3

@@ -157,6 +157,30 @@ def test_rich_envelope_conforms_to_lc_schema():
     _assert_conforms(_lc_validator(), _rich_lc_document())
 
 
+def test_a_sample_name_and_every_custom_datum_type_conform_to_lc_schema():
+    # The sample document fields rainbow reads back off a foreign (Empower)
+    # document and writes out again: `written name` beside the identifier, and
+    # arbitrary named values in a custom information aggregate document. Both
+    # are optional in the schema, so a wrong shape would pass every other test
+    # here and only fail against a real validator.
+    import datetime
+
+    datadir = rb.read("tests/inputs/teal.dx")
+    datadir.metadata["sample_name"] = "NB5-P1A11"
+    # One of each datum type the schema admits, plus the `unit` sibling a double
+    # may carry, since each is written under a different key.
+    datadir.metadata["sample_custom"] = {
+        "MaterialIdentifier": "Vax-033898",              # string
+        "SampleWeight": 1.0,                             # double
+        "Replicates": 3,                                 # double, written bare
+        "Weight": {"value": 1.5, "unit": "mg"},          # double + unit
+        "Passed": True,                                  # boolean
+        "When": datetime.datetime(                       # timestamp
+            2026, 4, 28, 13, 19, 56, tzinfo=datetime.timezone.utc),
+    }
+    _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
+
+
 def test_waters_uv_conforms_to_lc_schema():
     # violet.raw's _CHRO UV chromatograms report absorbance in AU, but the LC
     # schema pins the absorbance measure to mAU. The export must normalize AU to
