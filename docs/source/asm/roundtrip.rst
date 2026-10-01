@@ -84,6 +84,12 @@ fidelity:
      - Recovered when the document carried that identity, which for a sequence
        means the source had a top-level ``sequence.acaml``. Without it, the
        device system is sparse and there is nothing to rebuild.
+   * - **Conditional**
+     - sample name, custom fields
+     - A sample document's ``written name`` and its *custom information
+       aggregate document* are read into ``metadata["sample_name"]`` and
+       ``metadata["sample_custom"]``, and written back when present. Normally
+       only a foreign document carries them -- see :ref:`asm-custom-fields`.
    * - **Export-only**
      - non-absorbance cubes
      - Import rebuilds absorbance channels. A CAD, ELSD, or FID cube, and a
@@ -160,3 +166,115 @@ retention times with a tolerance:
 
 Re-exporting does not degrade the measure values themselves; only the retention
 dimension is subject to the drift above.
+
+.. _asm-custom-fields:
+
+Sample name and custom fields
+-----------------------------
+
+rainbow's own writer has one slot for a sample and puts it in the ``sample
+identifier``, so reading only that was enough to round trip its own output. A
+document from another writer distinguishes the two, and hangs the fields the
+schema has no place for off a *custom information aggregate document*:
+
+.. code-block:: json
+
+   {"sample document": {
+      "sample identifier": "133872",
+      "written name": "NB5-P1A11",
+      "custom information aggregate document": {
+        "custom information document": [
+          {"@index": 1, "datum label": "MaterialIdentifier",
+           "scalar string datum": "Vax-033898"},
+          {"@index": 2, "datum label": "SampleWeight",
+           "scalar double datum": 1.0, "unit": "mg"}]}}}
+
+Both come back as metadata, and are written again on export:
+
+.. code-block:: python
+
+   datadir = rb.from_asm(document)
+   datadir.metadata["sample"]         # '133872'   -- the identifier
+   datadir.metadata["sample_name"]    # 'NB5-P1A11'
+   datadir.metadata["sample_custom"]  # {'MaterialIdentifier': 'Vax-033898', ...}
+
+These are not decoration. An Empower export carries the registered sample's id
+in ``MaterialIdentifier``, and that is what matches an injection to the sample
+downstream, so dropping the custom document loses the only key that join has.
+Setting either key before an export writes it, so a run read from a vendor file
+can be given a sample name and custom fields it never recorded.
+
+The keys are absent rather than empty when the document carries nothing, so test
+for the key rather than for an empty mapping.
+
+A mapping records only the Python type, so that is what picks the datum type on
+the way out, and what each is read back as:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 22 44
+
+   * - Datum type
+     - Python
+     - Note
+   * - ``scalar string datum``
+     - ``str``
+     -
+   * - ``scalar double datum``
+     - ``int`` or ``float``
+     - An ``int`` read as one stays one, so a count comes back a count. Passing
+       ``decimal_places=`` rounds it like every other emitted number, which
+       makes it a float.
+   * - ``scalar double datum`` + ``unit``
+     - ``{"value", "unit"}``
+     - Only when the document carried a unit, so read a numeric field as
+       ``v["value"] if isinstance(v, dict) else v``.
+   * - ``scalar boolean datum``
+     - ``bool``
+     -
+   * - ``scalar timestamp datum``
+     - ``datetime``
+     - Written through the same gate as ``measurement time``: a naive one takes
+       ``utc_offset=`` and warns once without it, since the schema's
+       ``date-time`` requires an offset. A plain ``date`` is dropped.
+
+Either spelling of a value is read: the bare scalar, or the
+``{"@type", "value"}`` object form the schema also permits.
+
+Anything rainbow cannot carry faithfully is warned about and dropped, one field
+at a time, rather than coerced -- an unreadable or ambiguous datum type, a value
+of no type above, a number JSON cannot carry, an integer too large for a float,
+a duplicate or unusable ``datum label``, a ``unit`` beside anything but a
+double. The docstrings of ``_custom_fields`` and ``_custom_datum_entry`` give
+the reasoning for each. A write-side complaint is made once per document, not
+once per channel.
+
+``@index`` orders the fields when the document declares one for every entry;
+otherwise its own order stands, since mixing declared indices with document
+positions would place an unindexed field among someone else's indices. On export
+``@index`` is renumbered 1..n.
+
+One sample per run
+~~~~~~~~~~~~~~~~~~
+
+:func:`rainbow.from_asm` merges every injection in a document into one
+directory, so the three fields are taken from a single sample document,
+together. They are never composed across injections: an identifier from one
+beside a ``MaterialIdentifier`` from another would be a join key silently
+attached to the wrong sample, which is worse than the absent one it replaces.
+
+The document read is the first carrying a ``sample identifier``, since that is
+what everything downstream falls back to, else the first supplying any of the
+three. The choice is made across every injection the directory will hold, so an
+opening injection that records only a name does not suppress the identifier a
+later one carries. :func:`rainbow.sequence_from_asm` builds one directory per
+injection and so keeps each sample with its own.
+
+Two things this gives up, both deliberate. A document whose channels split the
+fields between them -- the identifier on one, the custom fields on another --
+yields only the chosen one's, because a mixture is the thing being avoided. And
+``description``, ``sample role type`` and ``blank`` are still dropped: rainbow
+has no concept of any of them, so reading one would create a key a re-export
+discards. All three are present on every sample document an Empower export
+writes, so a sample document does not round trip whole -- only the identifier,
+the name, the vial position and the custom fields do.

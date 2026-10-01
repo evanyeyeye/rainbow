@@ -28,8 +28,10 @@ rainbow's data model already is an ASM data cube:
 Where the metadata supports it, the envelope is filled in: the instrument and
 its modules become the device system document, the injection volume an
 injection document, and (for a sequence read with peaks) the integrated peaks a
-processed data aggregate document. A DataSequence becomes one aggregate
-document with one chromatography document per injection.
+processed data aggregate document. The `sample_name` and `sample_custom` keys
+are inputs as much as outputs: set either on a run read from a vendor file and
+the export carries it. A DataSequence becomes one aggregate document with one
+chromatography document per injection.
 
 Most detectors are exported faithfully: UV as absorbance, CAD and FID as
 electric current, ELSD as light intensity, each a 1-D chromatogram cube with its
@@ -1492,6 +1494,149 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     return measurement
 
 
+def _warn_once(seen):
+    """A warn function that says each distinct message once within ``seen``."""
+    def warn(message):
+        if message in seen:
+            return
+        seen.add(message)
+        warnings.warn(message)
+    return warn
+
+
+def _warn_custom_write(options, label, complaint):
+    """Reports a custom field that cannot be written, once per document.
+
+    One ``sample_custom`` mapping is written into every measurement, so keyed by
+    label and complaint rather than warned as each is built: otherwise a PDA run
+    says the same thing four times, and two bad fields collapse into one.
+    """
+    _warn_once_per_run(options, ("custom-write", label, complaint),
+                       "custom field {!r} {}".format(label, complaint))
+
+
+def _custom_datum_entry(label, value, options):
+    """One custom information document, or None if the value cannot be written.
+
+    The datum type follows the Python type, which is all a plain mapping records:
+    a string, a bool, a datetime and a number each have exactly one of the four
+    scalar spellings the schema admits. A value of no recognised type is reported
+    rather than coerced -- ``str()`` on it would publish a number or a date as
+    text and change what a reader gets back.
+    """
+    from datetime import datetime
+
+    unit = None
+    if isinstance(value, dict):
+        # The {"value", "unit"} shape a double with a unit is read back as. Only
+        # a double may carry a unit, so one arriving beside anything else is said
+        # out loud rather than quietly thrown away with the rest of the dict.
+        unit = _text(value.get("unit"))
+        if value.get("value") is None:
+            _warn_custom_write(
+                options, label,
+                "holds a mapping with no usable 'value' member ({!r}); it is "
+                "dropped.".format(value))
+            return None
+        value = value["value"]
+    if isinstance(value, bool):
+        # Tested before the number branch: a bool is an int in Python and would
+        # otherwise be written as 1.0, which is not what was recorded.
+        datum = {"scalar boolean datum": value}
+    elif isinstance(value, str):
+        datum = {"scalar string datum": value}
+    elif isinstance(value, datetime):
+        # Through the same gate as every other timestamp rather than
+        # isoformat() direct, so that a naive one picks up the caller's
+        # utc_offset and warns once when there is none. The schema's date-time
+        # format is RFC 3339 and requires an offset, so writing a naive
+        # datetime's isoformat() emitted a value the document then failed to
+        # validate on. A plain `date` is not handled at all: its isoformat() is
+        # a date, not a date-time, and midnight in an invented zone is the kind
+        # of guess this reader refuses elsewhere.
+        stamped = options.timestamp(value.isoformat())
+        if stamped is None:
+            return None
+        datum = {"scalar timestamp datum": stamped}
+    elif isinstance(value, (int, float)):
+        if isinstance(value, int):
+            # Before isfinite, not after: JSON integer literals are unbounded and
+            # math.isfinite raises OverflowError on one too large for a float,
+            # out of the middle of the export, instead of reporting it.
+            try:
+                float(value)
+            except OverflowError:
+                _warn_custom_write(
+                    options, label,
+                    "holds an integer too large to carry as a double; it is "
+                    "dropped.")
+                return None
+        if not math.isfinite(value):
+            # json.dumps writes NaN and Infinity as bare literals no conforming
+            # reader accepts, so to_asm_str would raise after to_asm looked fine.
+            _warn_custom_write(
+                options, label,
+                "holds {!r}, which is not a value JSON can carry; it is "
+                "dropped.".format(value))
+            return None
+        # Rounded only when a precision was asked for, so an int stays an int
+        # by default the way every other number rainbow reads back does.
+        if options.decimals is not None:
+            value = options.scalar(value)
+        datum = {"scalar double datum": value}
+        if unit:
+            datum["unit"] = unit
+        return datum
+    else:
+        _warn_custom_write(
+            options, label,
+            "holds {}, which rainbow cannot write as an ASM scalar datum; it "
+            "is dropped rather than coerced to text."
+            .format(type(value).__name__))
+        return None
+    if unit:
+        # Reached only by the string, bool and timestamp branches, none of which
+        # the schema lets carry a unit.
+        _warn_custom_write(
+            options, label,
+            "carries the unit {!r} beside a {}, which only a double may do; "
+            "the unit is dropped.".format(unit, next(iter(datum))))
+    return datum
+
+
+def _custom_information_document(fields, options):
+    """A ``{label: value}`` mapping as a custom information aggregate document.
+
+    The inverse of :func:`_custom_fields`. ``@index`` is written 1..n in the
+    mapping's order, which is the order the fields were read in.
+    """
+    if fields is None:
+        return None
+    if not isinstance(fields, dict):
+        _warn_once_per_run(
+            options, "custom-not-a-mapping",
+            "metadata['sample_custom'] holds {}, not a mapping of labels to "
+            "values; no custom fields are written."
+            .format(type(fields).__name__))
+        return None
+    entries = []
+    for label, value in fields.items():
+        if not isinstance(label, str) or not label:
+            _warn_once_per_run(
+                options, ("custom-label", repr(label)),
+                "custom field labelled {!r} is not a usable datum label; the "
+                "field is dropped.".format(label))
+            continue
+        datum = _custom_datum_entry(label, value, options)
+        if datum is None:
+            continue
+        entries.append(dict({"@index": len(entries) + 1,
+                             "datum label": label}, **datum))
+    if not entries:
+        return None
+    return {"custom information document": entries}
+
+
 def _note_relabeled_measure(measurement, descriptor):
     """Records the real quantity of a channel relabeled to absorbance."""
     measurement["custom information aggregate document"] = {
@@ -1602,6 +1747,13 @@ def _measurement(datafile, metadata, control, cube_key, cube, options,
                  identifier=None):
     """Wraps a data cube in the shared measurement envelope."""
     sample = {"sample identifier": metadata.get("sample", "unknown")}
+    name = metadata.get("sample_name")
+    if isinstance(name, str) and name:
+        sample["written name"] = name
+    custom = _custom_information_document(
+        metadata.get("sample_custom"), options)
+    if custom:
+        sample["custom information aggregate document"] = custom
     if "vialpos" in metadata:
         sample["location identifier"] = str(metadata["vialpos"])
     measurement = {
@@ -2027,6 +2179,11 @@ def from_asm(document, name="asm"):
 
     datafiles = []
     peak_groups = []
+    # Over every injection at once, not one at a time: this directory holds the
+    # merge of all of them, so the sample has to be chosen with all of them in
+    # view. Choosing per injection and keeping the first answer lost the
+    # identifier whenever an earlier injection supplied only a name.
+    _absorb_samples(_measurements_of(documents), metadata)
     for lc_document in documents:
         _absorb_lc_document(lc_document, metadata, datafiles, peak_groups)
     return _directory(name, datafiles, metadata, peak_groups)
@@ -2191,6 +2348,7 @@ def sequence_from_asm(document, name="asm"):
         injection_metadata = {}
         datafiles = []
         peak_groups = []
+        _absorb_samples(_measurements_of([lc_document]), injection_metadata)
         _absorb_lc_document(
             lc_document, injection_metadata, datafiles, peak_groups)
         # The injection identifier is the name the injection was exported
@@ -2242,6 +2400,18 @@ def _directory(name, datafiles, metadata, peak_groups):
     return datadir
 
 
+def _measurements_of(lc_documents):
+    """Every measurement document across ``lc_documents``, in document order."""
+    measurements = []
+    for lc_document in lc_documents:
+        if not isinstance(lc_document, dict):
+            continue
+        measurements += _as_documents(
+            _first(lc_document.get("measurement aggregate document"))
+            .get("measurement document"))
+    return measurements
+
+
 def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
     """Reads one liquid chromatography document into datafiles and metadata."""
     if not isinstance(lc_document, dict):
@@ -2274,15 +2444,86 @@ def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
             peak_groups.append(group)
 
 
+# The three metadata keys one sample document supplies. They are taken together
+# or not at all, so they always describe the same sample.
+_SAMPLE_KEYS = ("sample", "sample_name", "sample_custom")
+
+
+def _absorb_samples(measurements, metadata):
+    """Lifts ONE measurement's sample document up to directory metadata.
+
+    rainbow's own writer puts everything it knows about a sample in the
+    identifier, so reading only that was enough to round trip its own output. A
+    foreign writer distinguishes the two: an Empower export names the injection
+    in ``written name`` ("NB5-P1A11") and keys it in ``sample identifier``
+    ("133872"). Dropping the name loses the only human-readable handle the
+    document carries on its sample, and the custom fields go with it.
+
+    The sample document is read as a unit: identifier, name, custom fields and
+    vial position all come from one of them or from none. Reading them field by
+    field as each measurement went past composed them instead: :func:`from_asm`
+    merges every injection in a document into one directory, so an identifier
+    from the first injection could end up beside a name and a
+    ``MaterialIdentifier`` from the second. A ``MaterialIdentifier`` is a join
+    key, and one silently attached to the wrong sample is worse than the absent
+    one it replaces -- and so is a vial position, which is what a plate map is
+    looked up by. Hence one pass here, over a list, rather than a field at a
+    time as each measurement is read.
+
+    Which document: the first that carries a *sample identifier*, since that is
+    what everything downstream falls back to, else the first that carries
+    anything at all. A run whose opening channel records a name against an
+    "unknown" identifier would otherwise lose the identifier a later channel had.
+
+    Called once per directory, over every measurement that directory will hold.
+    :func:`from_asm` merges a file's injections into one directory and so passes
+    all of them; :func:`sequence_from_asm` builds one directory per injection and
+    passes one at a time. Running it per injection and keeping the first answer
+    reintroduced the same loss one level up: an opening injection with only a
+    name suppressed the identifier a later one carried.
+    """
+    documents = [_first(measurement.get("sample document"))
+                 for measurement in measurements
+                 if isinstance(measurement, dict)]
+    identified = [sample for sample in documents
+                  if (_text(sample.get("sample identifier")) or "unknown")
+                  != "unknown"]
+    said = set()
+    chosen = None
+    for sample in identified[:1] or documents:
+        identifier = _text(sample.get("sample identifier"))
+        name = _text(sample.get("written name"))
+        custom = _custom_fields(sample, said)
+        if identifier and identifier != "unknown":
+            metadata["sample"] = identifier
+        if name:
+            metadata["sample_name"] = name
+        if custom:
+            metadata["sample_custom"] = custom
+        # Keyed on what was actually absorbed, not on what the document held: a
+        # sample document carrying only the placeholder "unknown" identifier
+        # says something without supplying anything, and stopping on it left the
+        # run with no sample at all.
+        if any(key in metadata for key in _SAMPLE_KEYS):
+            chosen = sample
+            break
+    if chosen is None:
+        # Nothing identified the sample anywhere. The vial position is still
+        # worth having, so it comes from the first document that records one.
+        chosen = next((sample for sample in documents
+                       if _text(sample.get("location identifier"))), None)
+    if chosen is not None:
+        location = _text(chosen.get("location identifier"))
+        if location:
+            metadata["vialpos"] = location
+
+
 def _absorb_envelope(measurement, metadata):
-    """Lifts a measurement's envelope fields up to directory metadata."""
-    sample = _first(measurement.get("sample document"))
-    identifier = _text(sample.get("sample identifier"))
-    if identifier and identifier != "unknown":
-        metadata.setdefault("sample", identifier)
-    location = _text(sample.get("location identifier"))
-    if location:
-        metadata.setdefault("vialpos", location)
+    """Lifts a measurement's envelope fields up to directory metadata.
+
+    The sample document is not read here, vial position included: it is taken as
+    a unit by :func:`_absorb_samples`, once per directory, before this runs.
+    """
     date = _text(measurement.get("measurement time"))
     if date:
         metadata.setdefault("date", date)
@@ -2298,6 +2539,171 @@ def _absorb_envelope(measurement, metadata):
     if volume is not None:
         metadata.setdefault(
             "injection_volume", {"value": volume, "unit": "µL"})
+
+
+# A date-time has a time of day; a date does not. ASM types every timestamp as a
+# full date-time, so the separator is what tells a usable value from a date. The
+# case is not fixed: RFC 3339 permits a lowercase `t`, and _parse_iso already
+# goes out of its way to accept a lowercase `z` for the same reason. A space is
+# accepted too -- the schema's format does not allow one, but _parse_iso reads it
+# and the re-export writes it back as `T`, so taking it in normalizes it. The
+# digits either side are what keep a bare date out.
+_HAS_TIME_OF_DAY = re.compile(r"\d[Tt ]\d")
+
+
+# A custom information document carries its value under a key naming the datum's
+# type, and the schema admits exactly these four. An entry declaring none of
+# them, or more than one, is reported rather than guessed at: the schema makes
+# them a `oneOf`, so more than one is malformed, and picking one of two
+# conflicting values would publish a number rainbow invented a preference for.
+_CUSTOM_DATUM_KEYS = (
+    "scalar string datum",
+    "scalar double datum",
+    "scalar boolean datum",
+    "scalar timestamp datum",
+)
+
+# Returned instead of a value when a datum was recognised but unreadable, so a
+# field dropped after its own warning is not warned about a second time.
+_UNREADABLE = object()
+
+
+def _custom_datum_value(key, entry, label, warn):
+    """One custom entry's value, in the Python type its datum type calls for.
+
+    The datum type is what distinguishes a timestamp from the string it is
+    spelled as, so it has to survive into the mapping or a round trip cannot put
+    it back. A double carrying a ``unit`` sibling becomes ``{"value", "unit"}``,
+    the shape rainbow already uses for ``injection_volume``.
+    """
+    raw = entry[key]
+    unit = _text(entry.get("unit"))
+    if key == "scalar string datum":
+        value = _text(raw)
+    elif key == "scalar boolean datum":
+        value = raw.get("value") if isinstance(raw, dict) else raw
+        # Not bool(raw): "false" and 0 are both truthy-or-falsy in ways that
+        # have nothing to do with what the document recorded.
+        value = value if isinstance(value, bool) else None
+    elif key == "scalar timestamp datum":
+        # Read as a datetime, which is what tells it apart from a string datum
+        # on the way back out. A date with no time of day is refused rather
+        # than parsed: _parse_iso would return midnight, a value the document
+        # never carried, and re-exporting it would publish that invention under
+        # a datum type the schema requires to be a full date-time. The write
+        # side refuses a Python `date` for the same reason.
+        text = _text(raw)
+        value = _parse_iso(text) if text and _HAS_TIME_OF_DAY.search(text) \
+            else None
+    else:
+        # _number unwraps the object form, rejects a bool spelled as a number,
+        # and drops an integer too large for a float rather than handing back a
+        # value that reads but raises OverflowError on re-export.
+        value = _number(raw)
+        if value is not None and unit:
+            value = {"value": value, "unit": unit}
+        unit = None                       # consumed
+    if unit and value is not None:
+        # No subschema forbids it, so a conforming document may put a unit beside
+        # a string, a bool or a timestamp. Only a double has anywhere to keep it.
+        warn(
+            "custom field {!r} carries the unit {!r} beside a {}, which only a "
+            "double may do; the unit is dropped.".format(label, unit, key))
+    if value is None:
+        warn(
+            "custom field {!r} holds a {} rainbow cannot read ({!r}); the "
+            "field is dropped.".format(label, key, raw))
+        return _UNREADABLE
+    return value
+
+
+def _custom_fields(document, seen):
+    """A document's custom information fields as a ``{label: value}`` dict.
+
+    ASM lets a writer hang arbitrary named values off a sample or measurement in
+    a *custom information aggregate document*. Empower uses it for the fields
+    that have no home in the schema proper -- `Notebook`, `MaterialIdentifier`,
+    `SampleWeight` -- and `MaterialIdentifier` is how an Empower injection is
+    matched to a registered sample downstream, so these are not decoration.
+    """
+    aggregate = _first(document.get("custom information aggregate document"))
+    entries = _as_documents(aggregate.get("custom information document"))
+    # One sample document is repeated in every measurement of an injection, so a
+    # complaint about it would otherwise be made once per candidate channel. The
+    # caller passes a set to say the complaints share one scope, as the write
+    # side does through _warn_once_per_run.
+    warn = _warn_once(seen)
+    read = []
+    for position, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        label = _text(entry.get("datum label"))
+        if not label:
+            # `datum label` is required, so an entry without a usable one is
+            # malformed. The write side says so for the mirror case, and a
+            # mapping has nowhere to put an unlabelled value, so it is dropped
+            # out loud rather than quietly.
+            # Positioned, because the message is otherwise identical for every
+            # unlabelled entry and the dedupe would report only the first.
+            warn("the custom field at position {} carries {!r} as its datum "
+                 "label, which cannot key a value; the field is dropped."
+                 .format(position + 1, entry.get("datum label")))
+            continue
+        spellings = [key for key in _CUSTOM_DATUM_KEYS if key in entry]
+        if len(spellings) != 1:
+            _warn_custom_datum_type(label, entry, spellings, warn)
+            continue
+        value = _custom_datum_value(spellings[0], entry, label, warn)
+        if value is _UNREADABLE:
+            continue
+        read.append((_number(entry.get("@index")), label, value))
+    fields = {}
+    for _, label, value in _in_declared_order(read):
+        if label in fields:
+            # Duplicate labels are legal and a mapping cannot hold both. Keeping
+            # the first matches how the rest of a read merges, but silently
+            # discarding a value is the thing this reader otherwise refuses to
+            # do, so it is said out loud.
+            warn("custom field {!r} appears more than once; the first "
+                 "value is kept and the rest dropped.".format(label))
+            continue
+        fields[label] = value
+    return fields
+
+
+def _warn_custom_datum_type(label, entry, spellings, warn):
+    """Reports an entry declaring no datum type rainbow reads, or several."""
+    if spellings:
+        warn(
+            "custom field {!r} declares {} datum types ({}), which the schema "
+            "admits only one of; the field is dropped rather than picking one "
+            "of its values.".format(
+                label, len(spellings),
+                ", ".join(repr(key) for key in spellings)))
+        return
+    unknown = sorted(key for key in entry
+                     if key not in ("@index", "datum label", "unit"))
+    warn(
+        "custom field {!r} records its value under {}, which rainbow does not "
+        "read; the field is dropped rather than reported under a datum type "
+        "that would change its meaning.".format(
+            label, ", ".join(repr(key) for key in unknown) or "nothing"))
+
+
+def _in_declared_order(read):
+    """``read`` ordered by ``@index`` when every entry declares one.
+
+    ``@index`` is 1-based and need not be dense; document position is 0-based
+    and always is. Sorting a mix of the two puts an unindexed entry wherever its
+    position happens to fall among someone else's indices -- three fields
+    indexed 5, 6 and (none) came back as (none), 5, 6. Since the schema does not
+    require ``@index``, a partially indexed document is reachable, so the two
+    are never mixed: either the document orders every entry or its own order
+    stands.
+    """
+    if all(index is not None for index, _, _ in read):
+        return sorted(read, key=lambda item: item[0])
+    return read
 
 
 # The two ADMs neither name nor measure the injection volume the same way.
