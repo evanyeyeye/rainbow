@@ -3,6 +3,53 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.5.3] - 2026-10-01
+
+### Fixed
+- **`rb.from_asm` dropped a foreign sample's name and all of its custom
+  fields.** rainbow's own writer puts everything it knows about a sample in the
+  `sample identifier`, so reading only that was enough to round trip its own
+  output. A foreign writer distinguishes the two: an Empower or OpenLab export
+  names the injection in `written name` (`"NB5-P1A11"`) and keys it in `sample
+  identifier` (`"133872"`), and hangs the fields the schema has no place for —
+  `Notebook`, `MaterialIdentifier`, `SampleWeight` — off a custom information
+  aggregate document. rainbow read neither, leaving a run with no
+  human-readable handle on its sample and no way to reach those fields short of
+  re-walking the raw JSON. This is not cosmetic: Empower records the registered
+  sample's id in `MaterialIdentifier`, and that is the key that matches an
+  injection to its sample downstream. Both are now read into
+  `metadata["sample_name"]` and `metadata["sample_custom"]`, and written again
+  on export, so the lap is lossless.
+
+  All four datum types the schema admits are carried, each as the Python type
+  that distinguishes it — `str`, `bool`, a `datetime` for a timestamp (the datum
+  type is the only thing that tells one from the string it is spelled as), and a
+  number kept as an `int` where it came in as one. A double's optional `unit`
+  rides along as the `{"value", "unit"}` shape `injection_volume` already uses.
+  Either spelling of a value is read, the bare scalar or the `{"@type",
+  "value"}` object form. Nothing is coerced: an unreadable or ambiguous datum
+  type, a value not of the type its datum claims, a number JSON cannot carry, an
+  integer too large for a float, a duplicate or unusable `datum label`, and a
+  `unit` beside anything but a double are each warned about and dropped, once per
+  document. See the round-trip page for the full table.
+
+- **A sample's fields could be composed from different samples.** The
+  identifier, name, custom fields and vial position were each read field by
+  field as the measurements went past, so a document holding several injections
+  — which `rb.from_asm` merges into one directory — could report an identifier
+  from the first beside a `MaterialIdentifier` from the second. A
+  `MaterialIdentifier` is a join key, and one silently attached to the wrong
+  sample is worse than the absent one it replaces; so is a vial position, which
+  is what a plate map is looked up by. All four now come from one measurement's
+  sample document or from none. The document chosen is the first carrying a
+  `sample identifier`, since that is what everything downstream falls back to,
+  else the first carrying anything at all. `rb.sequence_from_asm` is unaffected:
+  it already built one directory per injection.
+
+  `description`, `sample role type` and `blank` are still dropped, so a sample
+  document does not round trip whole — only the identifier, the name, the vial
+  position and the custom fields do.
+
 ## [1.5.2] - 2026-09-09
 
 ### Fixed
