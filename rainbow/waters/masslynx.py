@@ -40,6 +40,17 @@ _FUNC_TYPE_SIR = 1
 _FUNC_TYPE_DIODE_ARRAY = 12
 
 
+def _polarity_from_line(line):
+    """Extract the polarity sign byte from a ``Polarity`` line of _extern.inf.
+
+    Waters exports vary the separator: older MassLynx writes
+    ``Polarity\\t\\t\\tES+`` (triple tab), Xevo-era exports write
+    ``Polarity\\tES+`` (single tab). Split on any tab run and take the last
+    field so both parse to the sign byte.
+    """
+    return line.split('\t')[-1].strip()[-1]
+
+
 def _find_file(directory, target_name):
     """
     Case-insensitive file lookup in a directory.
@@ -118,7 +129,7 @@ def parse_spectrum(path, display_precision=0, bin_width=1.0,
             # Waters format: "Instrument Parameters" trigger
             if lines[i].startswith("Instrument Parameters"):
                 if lines[i + 1].startswith("Polarity"):
-                    polarity = lines[i + 1].split('\t\t\t')[1][-1]
+                    polarity = _polarity_from_line(lines[i + 1])
                 else:
                     try:
                         polarity = lines[i + 2].split('\t')[1][-1]

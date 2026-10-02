@@ -45,6 +45,16 @@ def test_acquisition_mode_tagged_from_function_type():
     assert ms_modes("turquoise") == {"_func001.dat": "Scan"}
 
 
+def test_polarity_single_tab_xevo_format():
+    # Newer Xevo-era MassLynx exports write "Polarity\tES+" with a single tab,
+    # while the classic exports use "Polarity\t\t\tES+". Both must parse to the
+    # sign byte instead of crashing with IndexError.
+    from rainbow.waters import masslynx
+    assert masslynx._polarity_from_line("Polarity\tES+") == "+"
+    assert masslynx._polarity_from_line("Polarity\t\t\tES+") == "+"
+    assert masslynx._polarity_from_line("Polarity\t\t\tES-") == "-"
+
+
 def test_function_type_helpers_degrade_and_map():
     # The function-type helpers must not crash on a missing/short sidecar, and
     # the type-code mapping is scan (0), SIR=SIM (1), and untagged otherwise.
