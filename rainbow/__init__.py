@@ -1,5 +1,6 @@
 import os
 import re
+from rainbow._version import __version__
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence

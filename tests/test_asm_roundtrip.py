@@ -177,7 +177,11 @@ def test_a_cad_channel_comes_back_as_cad():
     back = rb.from_asm(original.to_asm())
     cad = back.get_file("ADC1A.CH")
     assert cad.detector == "CAD"
-    assert cad.metadata["unit"] == "pA"
+    # Its unit as red.D records it: published as pA, which the schema needs,
+    # with the note that restores it.
+    assert cad.metadata["unit"] == "mAu"
+    assert cad.metadata["unit"] == original.get_file("ADC1A.CH").metadata[
+        "unit"]
     assert cad.metadata["measure"] == "electric current"
     assert cad.data[:, 0].tolist() \
         == original.get_file("ADC1A.CH").data[:, 0].tolist()
@@ -981,10 +985,10 @@ def test_a_peak_in_another_unit_keeps_its_value_and_unit_as_written():
     assert peak["start_height"] == 1.0
     assert peak["end_height"] == 1.25
 
-    # An area in a height's unit is not converted as if it were an area.
+    # An absorbance area in a height's unit has no time to convert from.
     peak = asm._peak_from_asm(_empower_peak(**{
         "peak area": {"value": 5.0, "unit": "mAU"}, "peak height": 2.0}))
-    assert (peak["area"], peak["area_unit"]) == (5.0, "mAU")
+    assert (peak["area"], peak["area_unit"]) == (None, None)
     assert (peak["height"], peak["height_unit"]) == (2.0, None)
 
     # An edge height in a unit other than the height's has no unit to be
@@ -2795,9 +2799,11 @@ def test_a_re_exported_data_system_names_rainbow_and_keeps_its_source():
     assert data_system["data system instance identifier"] \
         == "DB ID: 508927282"
     assert data_system["database primary key"] == "128283"
-    source = {entry["datum label"]: entry["scalar string datum"]
+    source = {entry["datum label"]: entry.get(
+        "scalar string datum", entry.get("scalar timestamp datum"))
               for entry in data_system["custom information aggregate document"]
               ["custom information document"]}
+    assert source["source ASM conversion time"] == "2026-04-11T17:55:39-04:00"
     assert source["source ASM converter name"] \
         == "Agilent OpenLab ECM Allotrope Export"
     assert source["source ASM file identifier"] == "SOURCE.JSON"
@@ -2920,3 +2926,68 @@ def test_a_vendor_peak_group_names_its_channels_detector():
         == datadir.get_file("ADC1A.CH").metadata["unit"]
     uv = [g for g in datadir.peaks if g["detector"] == "UV"]
     assert uv
+
+
+# --- Review round 7 ---
+
+
+def test_a_channel_published_in_another_unit_reads_back_with_its_peaks():
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    assert datadir.get_file("ADC1A.CH").metadata["unit"] == "mAu"
+    datadir.peaks = [{"signal": "ADC1A", "channel_file": "ADC1A.CH",
+                      "peaks": [{"retention_time": 1.5, "area": 100.0,
+                                 "height": 10.0}]}]
+    back = rb.from_asm(datadir.to_asm(), name="red.D")
+    assert back.get_file("ADC1A.CH").metadata["unit"] == "mAu"
+    peak = next(g for g in back.peaks
+                if g["channel_file"] == "ADC1A.CH")["peaks"][0]
+    assert (peak["area_unit"], peak["height_unit"]) == ("mAu.s", "mAu")
+    # And a second lap publishes it the same way, under its note.
+    again = rb.from_asm(back.to_asm(), name="red.D")
+    assert again.get_file("ADC1A.CH").metadata["unit"] == "mAu"
+
+
+def test_peaks_from_asm_refuses_a_whole_document():
+    with pytest.raises(ValueError, match="whole ASM document"):
+        asm.peaks_from_asm(_lc(_fluorescence()))
+
+
+def test_the_version_an_export_names_is_pyprojects():
+    import re
+    pyproject = os.path.join(os.path.dirname(__file__), "..",
+                             "pyproject.toml")
+    with open(pyproject) as f:
+        declared = re.search(r'^version\s*=\s*"([^"]+)"', f.read(),
+                             re.MULTILINE).group(1)
+    assert rb.__version__ == declared
+    assert asm._rainbow_version() == declared
+
+
+@pytest.mark.parametrize("unit,absorbance,expected", [
+    ("mAU.min", True, (6.0, "mAU.s")),
+    ("RFU.min", False, (6.0, "RFU.s")),
+    ("mAU.s", True, (0.1, "mAU.s")),
+    ("mAU.h", True, (None, None))])
+def test_an_area_per_minute_is_converted_and_an_unknown_time_is_none(
+        unit, absorbance, expected):
+    value, read_unit = asm._peak_measure({"value": 0.1, "unit": unit}, ".s",
+                                         absorbance)
+    assert read_unit == expected[1]
+    assert value == pytest.approx(expected[0]) if expected[0] is not None \
+        else value is None
+
+
+def test_a_records_source_survives_a_second_round_trip():
+    first = rb.from_asm(_records_document()).to_asm(utc_offset="+00:00")
+    second = rb.from_asm(first).to_asm(utc_offset="+00:00")
+    data_system = second["liquid chromatography aggregate document"][
+        "data system document"]
+    entries = {entry["datum label"]: entry for entry
+               in data_system["custom information aggregate document"]
+               ["custom information document"]}
+    assert entries["source ASM converter name"]["scalar string datum"] \
+        == "Agilent OpenLab ECM Allotrope Export"
+    assert entries["source ASM file identifier"]["scalar string datum"] \
+        == "SOURCE.JSON"
+    assert entries["source ASM conversion time"]["scalar timestamp datum"] \
+        == "2026-04-11T17:55:39-04:00"

@@ -14,18 +14,6 @@ to [Semantic Versioning](https://semver.org/).
   OpenLab exports, 1.5.4 read 15,503 of 20,026 peaks; 1.5.5 reads all of them.
   Each peak group also carries the channel's `detector` and `metadata`, so a
   group with no trace beside it still says which channel it was integrated on.
-- **Every chromatogram cube is rebuilt, not only absorbance.** Fluorescence,
-  electric current, intensity, refractive index and conductivity channels come
-  back as DataFiles with `metadata["unit"]` as written and
-  `metadata["measure"]`. The detector is named from the device type, then the
-  device identifier, then the cube label, then the measure: `UV`, `RID`, `FLD`
-  (new), `ELSD`, `FID`, or `CAD`; a channel rainbow has no name for, such as a
-  conductivity detector, is detector `None` and joins the directory's
-  `analog` traces. The channel metadata also holds `device_type` and
-  `acq_method`, and the optics from the device control settings, the cube
-  label, or the processed data description: `wavelength`, `bandwidth`,
-  `reference_wavelength`, `reference_bandwidth`, and a fluorescence channel's
-  `excitation_wavelength`, `excitation_bandwidth` and `emission_wavelength`.
 - **Peaks carry their units, identifier and index.** `area_unit` and
   `height_unit` say what each value is in; `identifier` and `index` are the
   peak's own; each integration's `processing` gains its `description`.
@@ -40,8 +28,21 @@ to [Semantic Versioning](https://semver.org/).
   peaks. **`rb.sniff_vendor(path)`** is the content check `rb.read` falls back
   to for an unsuffixed folder, and **`rb.asm_technique(run)`** is the `"LC"` or
   `"GC"` the export will use.
+- **`rainbow.__version__`**, the version an export names as its converter.
 
 ### Changed
+- **Every chromatogram cube is rebuilt, not only absorbance.** Fluorescence,
+  electric current, intensity, refractive index and conductivity channels come
+  back as DataFiles with `metadata["unit"]` as written and
+  `metadata["measure"]`. The detector is named from the device type, then the
+  device identifier, then the cube label, then the measure: `UV`, `RID`, `FLD`
+  (new), `ELSD`, `FID`, or `CAD`; a channel rainbow has no name for, such as a
+  conductivity detector, is detector `None` and joins the directory's
+  `analog` traces. The channel metadata also holds `device_type` and
+  `acq_method`, and the optics from the device control settings, the cube
+  label, or the processed data description: `wavelength`, `bandwidth`,
+  `reference_wavelength`, `reference_bandwidth`, and a fluorescence channel's
+  `excitation_wavelength`, `excitation_bandwidth` and `emission_wavelength`.
 - **A peak's `height` and `area` on a non-absorbance channel are kept as
   written.** 1.5.4 read any unit it could not convert to mAU as `None`, which
   lost every fluorescence peak, and converted µV to mAU whatever the channel
@@ -56,7 +57,8 @@ to [Semantic Versioning](https://semver.org/).
 - **`to_asm` wrote every peak area as `mAU.s`**, an FID's or CAD's pA.s
   included. A peak's area and height are now written in the unit of the cube
   it was integrated on. REC/2026/06 gives electric current (pA), intensity
-  (RLU), voltage (mV) and fluorescence (RFU) their own peak lists, so such a channel keeps its faithful cube when it carries peaks; only
+  (RLU), voltage (mV) and fluorescence (RFU) their own peak lists, so such
+  a channel keeps its faithful cube when it carries peaks; only
   a measure with no peak list in the schema (nA, V) is still relabeled to
   absorbance. The relabel note now also records the real concept and unit as
   structured custom information, and `from_asm` reads it (or the sentence
@@ -83,6 +85,12 @@ to [Semantic Versioning](https://semver.org/).
   `area_unit`, `height_unit`, `start_height`, `end_height` and the four
   baseline keys too, as None, and its group `detector`, `metadata` and
   `processing` as None and `alternates` as an empty list.
+- **A unit published under another's name reads back as itself.** A
+  channel whose unit the schema has no term for (red.D's CAD in mAu) is
+  published under its detector's default unit, as before, and now with the
+  structured note a peak relabel writes, so `from_asm` restores its unit and
+  its peaks'. A peak area in a unit per minute is converted to per second,
+  and an absorbance area per an unknown time reads as None.
 - **A re-exported data system record names rainbow as its converter.**
   `ASM converter name` and `version` are rainbow-api's, `ASM conversion time`
   is the export's, and `ASM file identifier` is the file written; the source

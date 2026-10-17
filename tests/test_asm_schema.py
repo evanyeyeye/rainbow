@@ -295,12 +295,13 @@ def test_a_read_back_sample_role_and_plate_conform_to_lc_schema():
     _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
 
 
-def _property_names(schema, key):
+def _property_names(schema, key, root=None):
     """Every property name the schema declares for objects under ``key``.
 
     A definition reached by a ``$ref`` ("#/$defs/electronicProjectRecord") is
     followed, by its last path segment, so a record declared once and
-    referenced is still checked.
+    referenced is still checked. Definitions are looked up in ``root``, the
+    whole schema, when ``schema`` is a part of it.
     """
     names = set()
     definitions = {}
@@ -315,7 +316,7 @@ def _property_names(schema, key):
             for value in node:
                 index(value)
 
-    index(schema)
+    index(root if root is not None else schema)
     followed = set()
 
     def collect(node):
@@ -333,12 +334,23 @@ def _property_names(schema, key):
                 followed.add(target)
                 collect(definitions[target])
 
+    walked = set()
+
     def walk(node):
         if isinstance(node, dict):
             for name, value in node.items():
                 if name == key:
                     collect(value)
                 walk(value)
+            # A part of the schema reaches its documents through references
+            # too, so they are walked into when the whole schema is not.
+            reference = node.get("$ref")
+            if root is not None and isinstance(reference, str) \
+                    and "/$defs/" in reference:
+                target = reference.rsplit("/", 1)[-1]
+                if target not in walked and target in definitions:
+                    walked.add(target)
+                    walk(definitions[target])
         elif isinstance(node, list):
             for value in node:
                 walk(value)
@@ -425,7 +437,8 @@ def _written(node, key):
 
 @pytest.mark.parametrize("url,run", [
     (_LC_URL, "tests/inputs/red.D"), (_LC_URL, "tests/inputs/brown.D"),
-    (_LC_URL, "tests/inputs/blue.raw"), (_GC_URL, "tests/inputs/yellow.D")])
+    (_LC_URL, "tests/inputs/blue.raw"), (_LC_URL, "tests/inputs/teal.dx"),
+    (_GC_URL, "tests/inputs/yellow.D")])
 def test_the_envelope_carries_only_names_the_schema_declares(url, run):
     # Like the processed data check above, for the sample, device control,
     # injection and once-per-file record documents rainbow writes. The
@@ -454,6 +467,112 @@ def test_the_envelope_carries_only_names_the_schema_declares(url, run):
         for item in written:
             names = {name for name in item if not name.startswith("@")}
             assert names <= allowed, (key, names - allowed)
+
+
+def _measurement_variants(schema):
+    """The measurement document's common part and its detector variants.
+
+    The schema's measurement document is a common part, allOf'd with an
+    anyOf over one definition per detector kind. Returns ``(common,
+    [(reference, variant), ...])``.
+    """
+    found = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for name, value in node.items():
+                items = value.get("items") if isinstance(value, dict) else None
+                if name == "measurement document" and isinstance(items, dict) \
+                        and any("anyOf" in part
+                                for part in items.get("allOf", [])):
+                    found.append(items)
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(schema)
+    items, = found
+    common = [part for part in items["allOf"] if "anyOf" not in part]
+    variants = []
+    for part in items["allOf"]:
+        for branch in part.get("anyOf", []):
+            base, fragment = branch["$ref"].split("#")
+            name = fragment.rsplit("/", 1)[-1]
+            variants.append((branch["$ref"],
+                             schema["$defs"][base]["$defs"][name]))
+    return {"allOf": common}, variants
+
+
+# The detector schema each measure has its own variant in, beside the
+# chromatography-detectors definitions matched by their cube's measure.
+_VARIANT_SCHEMAS = {
+    ("chromatogram data cube", "absorbance"): "absorbance-cube-detector",
+    ("three-dimensional ultraviolet spectrum data cube", "absorbance"):
+        "absorbance-spectrum-detector",
+    ("chromatogram data cube", "fluorescence"): "fluorescence-cube-detector",
+    ("mass chromatogram data cube", "count"): "mass-chromatogram-cube",
+}
+
+
+def _matching_variants(variants, measurement):
+    """The variants a written measurement is one of, by its cube."""
+    import re
+    key, = (name for name in measurement if name.endswith("data cube"))
+    measure = measurement[key]["cube-structure"]["measures"][0]
+    pattern = re.compile(
+        r'"concept": \{"const": "%s"\}, "unit": \{"const": "%s"\}' % (
+            re.escape(measure["concept"]), re.escape(measure["unit"])))
+    dedicated = _VARIANT_SCHEMAS.get((key, measure["concept"]))
+    return [variant for reference, variant in variants
+            if (dedicated and dedicated in reference)
+            or (key in variant.get("properties", {}) and pattern.search(
+                json.dumps(variant["properties"][key])))]
+
+
+@pytest.mark.parametrize("url,run", [
+    (_LC_URL, "tests/inputs/red.D"), (_LC_URL, "tests/inputs/brown.D"),
+    (_LC_URL, "tests/inputs/blue.raw"), (_LC_URL, "tests/inputs/teal.dx"),
+    (_GC_URL, "tests/inputs/yellow.D")])
+def test_each_device_control_matches_its_own_detector_variant(url, run):
+    # Not against the union of every detector's names: a fluorescence
+    # setting on an absorbance channel validates against the open schema all
+    # the same, so each device control is checked against the common part
+    # and the variant its own cube makes it. An FLD channel rides along.
+    import numpy as np
+    from rainbow.datafile import DataFile
+
+    import copy
+
+    schema = _validator(url).schema
+    _, variants = _measurement_variants(schema)
+    # What every measurement may carry: the schema's names with every
+    # detector variant taken out.
+    common = copy.deepcopy(schema)
+    for reference, _ in variants:
+        base, fragment = reference.split("#")
+        common["$defs"][base]["$defs"].pop(fragment.rsplit("/", 1)[-1], None)
+    datadir = rb.read(run)
+    datadir.datafiles.append(DataFile(
+        "FLD1A", "FLD", np.array([0.0, 1.0]), np.array([310.0]),
+        np.array([[1.0], [2.0]]),
+        {"unit": "RFU", "excitation_wavelength": 230.0,
+         "excitation_bandwidth": 10.0, "emission_wavelength": 310.0,
+         "bandwidth": 20.0}))
+    document = datadir.to_asm(utc_offset=_TZ, ions=[131])
+    measurements = list(_written(document, "measurement document"))
+    assert any(m["measurement identifier"] == "FLD1A" for m in measurements)
+    for measurement in measurements:
+        matched = _matching_variants(variants, measurement)
+        assert matched, measurement["measurement identifier"]
+        allowed = _property_names(common, "device control document")
+        for variant in matched:
+            allowed |= _property_names(variant, "device control document",
+                                       schema)
+        for control in _written(measurement, "device control document"):
+            names = {name for name in control if not name.startswith("@")}
+            assert names <= allowed, (
+                measurement["measurement identifier"], names - allowed)
 
 
 def test_a_fluorescence_channel_read_from_asm_conforms_to_lc_schema():

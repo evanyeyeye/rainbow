@@ -478,12 +478,9 @@ _RECORD_TIMES = ("start time", "end time", "ASM conversion time")
 
 
 def _rainbow_version():
-    """The installed rainbow-api version, or "unknown"."""
-    from importlib import metadata
-    try:
-        return metadata.version("rainbow-api")
-    except metadata.PackageNotFoundError:
-        return "unknown"
+    """This rainbow-api's version (see rainbow._version)."""
+    from rainbow._version import __version__
+    return __version__
 
 
 def _record_documents(metadata, options, file_identifier=None):
@@ -511,10 +508,16 @@ def _record_documents(metadata, options, file_identifier=None):
             continue
         record = dict(record)
         others = {}
+        source = {}
         if name == "data system document":
             for field in _CONVERTER_FIELDS:
                 if field in record:
-                    others["source " + field] = record.pop(field)
+                    value = record.pop(field)
+                    if field == "ASM conversion time" and \
+                            isinstance(value, str):
+                        # A timestamp datum, as it was a date-time field.
+                        value = _parse_iso(value) or value
+                    source["source " + field] = value
             record.update({
                 "ASM converter name": "rainbow-api",
                 "ASM converter version": _rainbow_version(),
@@ -554,7 +557,12 @@ def _record_documents(metadata, options, file_identifier=None):
                 options, "record-dropped:{}".format(name),
                 "the {} has no place for {}; they are not written.".format(
                     name, ", ".join(repr(field) for field in others)))
-        elif others:
+        elif others or source:
+            # A source field read back from an earlier re-export's custom
+            # information names the original converter, and outranks the
+            # rainbow export that the record's own fields now name.
+            for field, value in source.items():
+                others.setdefault(field, value)
             custom = _custom_information_document(others, options)
             if custom:
                 document["custom information aggregate document"] = custom
@@ -1656,7 +1664,9 @@ def _measure_from_source(datafile, descriptor, options):
     A detector class does not fix the quantity it reads out, so a unit the
     schema has a term for and the detector could plausibly produce (a voltage,
     a current) is carried through rather than renamed. The detector's default
-    stands otherwise, and where that default is a relabel it is said out loud.
+    stands otherwise, and where that default is a relabel it is said out loud,
+    and the returned descriptor's ``reported`` names the unit the values are
+    really in, for the measurement's note.
     """
     unit = datafile.metadata.get("unit")
     if not unit:
@@ -1672,7 +1682,7 @@ def _measure_from_source(datafile, descriptor, options):
         if _absorbance_unit_key(unit) in _ABSORBANCE_TO_MAU:
             return descriptor
         _warn_relabeled_unit(datafile, unit, descriptor, options)
-        return descriptor
+        return dict(descriptor, reported=unit)
     key = str(unit).strip().lower().replace("µ", "u").replace("μ", "u")
     if key == descriptor["unit"].lower():
         # Already the unit the descriptor publishes (an FLD channel's RFU, an
@@ -1686,7 +1696,7 @@ def _measure_from_source(datafile, descriptor, options):
         # gets told about. Suppressing it here made the one channel most likely
         # to be misread the quiet one.
         _warn_relabeled_unit(datafile, unit, descriptor, options)
-        return descriptor
+        return dict(descriptor, reported=unit)
     concept, asm_unit = measure
     if concept == descriptor["concept"] and asm_unit == descriptor["unit"]:
         return descriptor
@@ -1730,8 +1740,21 @@ def _detector_measurement(datafile, metadata, descriptor, options,
         settings = ()
     for key, field in settings:
         value = datafile.metadata.get(key)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            control[field] = _quantity(value, "nm", options)
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        if field in _SPECTRUM_ONLY_SETTINGS:
+            # The schema's single-wavelength absorbance detector has no
+            # property for it (only the spectrum detector does), so it is the
+            # device control's custom information, under the same name.
+            custom = control.setdefault(
+                "custom information aggregate document",
+                {"custom information document": []})
+            entries = custom["custom information document"]
+            entries.append({"@index": len(entries) + 1, "datum label": field,
+                            "scalar double datum": options.scalar(value),
+                            "unit": "nm"})
+            continue
+        control[field] = _quantity(value, "nm", options)
     if settings is _UV_SETTINGS and "reference_wavelength" in \
             datafile.metadata and datafile.metadata["reference_wavelength"] \
             is None:
@@ -1744,8 +1767,19 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     measurement = _measurement(
         datafile, metadata, control, _CHROMATOGRAM_CUBE,
         _detector_cube(datafile, cube_descriptor, options), options)
+    # The unit the values are really in: the source's, where the descriptor
+    # published them under another's name, else the descriptor's own.
+    real = dict(descriptor, unit=descriptor.get("reported") or
+                descriptor["unit"])
     if relabel:
-        _note_relabeled_measure(measurement, descriptor)
+        _note_relabeled_measure(measurement, real)
+    elif descriptor.get("reported"):
+        _note_relabeled_measure(
+            measurement, real,
+            "This channel records its signal in {}; its values are "
+            "published as {} in {}, relabeled and not converted, the schema "
+            "having no term for that unit.".format(
+                real["unit"], descriptor["concept"], descriptor["unit"]))
     return measurement
 
 
@@ -1918,6 +1952,10 @@ _FLD_SETTINGS = (
     ("bandwidth", "detector bandwidth setting"),
 )
 _REFERENCE = "reference"
+# Settings REC/2026/06 defines for the absorbance spectrum detector but not
+# for the single-wavelength one.
+_SPECTRUM_ONLY_SETTINGS = frozenset({
+    "electronic absorbance reference wavelength setting"})
 _ACQUISITION_METHOD = "device acquisition method"
 
 
@@ -1930,8 +1968,13 @@ def _append_custom(document, label, value):
                     "scalar string datum": value})
 
 
-def _note_relabeled_measure(measurement, descriptor):
-    """Records the real quantity of a channel relabeled to absorbance.
+def _note_relabeled_measure(measurement, descriptor, sentence=None):
+    """Records the real quantity of a relabeled channel.
+
+    ``descriptor`` names the quantity the values are really in. The default
+    sentence is the absorbance relabel's; a unit published under another
+    unit's name passes its own. Either way the concept and unit are written
+    as structured fields beside it, which is what from_asm reads back.
 
     Put first in the measurement's custom information, ahead of anything
     already there (its acquisition method), and the whole renumbered.
@@ -1939,15 +1982,17 @@ def _note_relabeled_measure(measurement, descriptor):
     existing = _first(measurement.get(
         "custom information aggregate document")).get(
             "custom information document") or []
+    if sentence is None:
+        sentence = (
+            "This channel measures {} (in {}); its values are reported as "
+            "absorbance in mAU so the integrated peak list can be carried, "
+            "which the schema does not model on that measure."
+            .format(descriptor["concept"], descriptor["unit"]))
     note = {
         "custom information document": [{
             "@index": 1,
             "datum label": "reported measure",
-            "scalar string datum": (
-                "This channel measures {} (in {}); its values are reported as "
-                "absorbance in mAU so the integrated peak list can be carried, "
-                "which the schema does not model on that measure."
-                .format(descriptor["concept"], descriptor["unit"])),
+            "scalar string datum": sentence,
         }, {
             "@index": 2,
             "datum label": _REPORTED_CONCEPT,
@@ -1961,6 +2006,7 @@ def _note_relabeled_measure(measurement, descriptor):
     entries = note["custom information document"] + list(existing)
     for index, entry in enumerate(entries):
         entry["@index"] = index + 1
+    note["custom information document"] = entries
     measurement["custom information aggregate document"] = note
 
 
@@ -2905,11 +2951,16 @@ def _record(document):
     """A record's plain fields as ``{field: value}``, as written, or None.
 
     A string, a number or a bool is kept as it is, a value datum is unwrapped,
-    and a quantity keeps its unit as ``{"value", "unit"}``. Nested documents
-    are left out: a record is read for what it says of itself.
+    and a quantity keeps its unit as ``{"value", "unit"}``. The record's own
+    custom information is read in too, each field under its label (a
+    timestamp datum as a datetime), so a re-export keeps what the source
+    converter said beside it. Other nested documents are left out: a record
+    is read for what it says of itself.
     """
     document = _first(document)
     fields = {}
+    if "custom information aggregate document" in document:
+        fields.update(_custom_fields(document, set()))
     for field, value in document.items():
         if isinstance(value, dict):
             number = _number(value)
@@ -3656,16 +3707,20 @@ def _channel_metadata(measurement):
         # processed data's description and the settings over both.
         optics.update(_optics_from_label(text))
     settings = {}
+    control_custom = _custom_fields(control, set()) \
+        if "custom information aggregate document" in control else {}
     for key, fields in _OPTICS_SETTINGS:
         for field in fields:
-            value = _number(control.get(field))
-            if value is not None and _quantity_unit(control.get(field)) \
-                    in (None, "nm"):
+            # A setting rainbow had to write as custom information is read
+            # from there, as {"value", "unit"}.
+            quantity = control.get(field, control_custom.get(field))
+            value = _number(quantity)
+            unit = _quantity_unit(quantity)
+            if value is not None and unit in (None, "nm"):
                 settings[key] = value
                 break
     if "reference_wavelength" not in settings and \
-            "custom information aggregate document" in control and \
-            _text(_custom_fields(control, set()).get(_REFERENCE)) == "off":
+            _text(control_custom.get(_REFERENCE)) == "off":
         settings["reference_wavelength"] = None
     if concept == "fluorescence" or "excitation_wavelength" in settings \
             or _detector_of(measurement) == "FLD":
@@ -3754,21 +3809,23 @@ def _peak_lists(measurement, said=None):
             peaks = [_peak_from_asm(peak, said, absorbance)
                      for peak in asm_peaks]
             if reported is not None:
-                _restore_peak_units(peaks, reported[1])
+                _restore_peak_units(peaks, reported[1],
+                                    _measure_of(measurement)[1] or "mAU")
             lists.append((_processing_document(document), peaks))
     return lists
 
 
-def _restore_peak_units(peaks, unit):
+def _restore_peak_units(peaks, unit, cube_unit="mAU"):
     """Puts a relabeled channel's peaks back in the unit their values are in.
 
-    The relabel wrote them in mAU and mAU.s beside the absorbance cube without
-    converting them, so the numbers are the channel's own.
+    The relabel wrote them in the cube's units (mAU and mAU.s beside an
+    absorbance cube, pA and pA.s beside a current a CAD in mAu was published
+    as) without converting them, so the numbers are the channel's own.
     """
     for peak in peaks:
-        if peak["area_unit"] == "mAU.s":
+        if peak["area_unit"] == _area_unit(cube_unit):
             peak["area_unit"] = _area_unit(unit)
-        if peak["height_unit"] == "mAU":
+        if peak["height_unit"] == cube_unit:
             peak["height_unit"] = unit
 
 
@@ -3800,6 +3857,13 @@ def peaks_from_asm(measurement):
         raise TypeError(
             "measurement must be a dict, not {}".format(
                 type(measurement).__name__))
+    if "$asm.manifest" in measurement or any(
+            key.endswith("chromatography aggregate document")
+            for key in measurement):
+        raise ValueError(
+            "peaks_from_asm reads one measurement document, and this is a "
+            "whole ASM document: rb.from_asm or rb.sequence_from_asm read "
+            "every measurement's peaks.")
     return _peaks_from_measurement(measurement)
 
 
@@ -3972,17 +4036,29 @@ def _peak_measure(quantity, per="", absorbance=True):
     and compared; Empower's microvolt is a microabsorbance unit only there.
     On any other channel the unit is the detector's own, and is kept as
     written beside the number it measures: a fluorescence peak in RFU, an FID
-    peak in pA, an ELSD peak in µV. The unit is None only when the document
-    wrote none, and the value then is the number as written.
+    peak in pA, an ELSD peak in µV. An area in a unit per minute is converted
+    to per second. On an absorbance channel, an area in a time unit rainbow
+    does not know (neither ``.s`` nor ``.min``) reads as None, since it would
+    be written back as ``mAU.s`` whatever it was. The unit is None only when
+    the document wrote none, and the value then is the number as written.
 
     """
     number = _number(quantity)
     if number is None:
         return None, None
     unit = _quantity_unit(quantity)
+    if unit is not None and per and unit.lower().endswith(".min"):
+        # An area per minute, which every writer of the schema's own units
+        # spells per second: converted, so its number matches the unit it is
+        # written back in.
+        number, unit = number * _SECONDS_PER_MINUTE, unit[:-4] + ".s"
     if unit is None or not absorbance:
         return number, unit
     key = _absorbance_unit_key(unit)
+    if per and not key.endswith(per) and \
+            key.split(".", 1)[0] in _PEAK_VALUE_TO_MAU:
+        # An absorbance area per some time rainbow cannot convert to seconds.
+        return None, None
     scale = _PEAK_VALUE_TO_MAU.get(key[:len(key) - len(per)]) \
         if key.endswith(per) else None
     if scale is None:

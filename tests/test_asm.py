@@ -411,11 +411,21 @@ def test_cad_exports_as_electric_current_with_truthful_type():
 
 
 def _relabeled(measurement):
-    """Whether a measurement carries the note of a relabeled measure."""
-    entries = (measurement.get("custom information aggregate document") or {}
-               ).get("custom information document") or []
-    return any(entry["datum label"] == "reported measure"
-               for entry in entries)
+    """Whether a measurement's cube was relabeled to absorbance."""
+    measure = measurement[_CHROM_KEY]["cube-structure"]["measures"][0]
+    return measure["concept"] == "absorbance" and any(
+        entry["datum label"] == "reported measure"
+        for entry in (measurement.get("custom information aggregate document")
+                      or {}).get("custom information document") or [])
+
+
+def _reported_unit(measurement):
+    """The unit a measurement's relabel note records, or None."""
+    for entry in (measurement.get("custom information aggregate document")
+                  or {}).get("custom information document") or []:
+        if entry["datum label"] == "reported measure unit":
+            return entry["scalar string datum"]
+    return None
 
 
 def test_peaks_on_a_current_channel_ride_its_own_cube_in_its_own_unit():
@@ -508,6 +518,9 @@ def test_non_absorbance_channel_without_peaks_stays_faithful():
     assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
         == "electric current"
     assert not _relabeled(cad)
+    # red.D records the channel in mAu, which the schema has no current for,
+    # so the values go out as pA unconverted and the note records mAu.
+    assert _reported_unit(cad) == "mAu"
 
 
 def test_elsd_exports_as_intensity_with_truthful_type():

@@ -5,7 +5,9 @@ else does. A normal commit or merge to `main` never triggers a release.
 
 ## How to cut a release
 
-1. Edit `version` in `pyproject.toml` (e.g. `1.0.11` -> `1.0.12`) and merge it to `main`.
+1. Edit `version` in `pyproject.toml` (e.g. `1.0.11` -> `1.0.12`), and
+   `__version__` in `rainbow/_version.py` to match (a test checks that they
+   agree), and merge it to `main`.
 2. Tag that commit and push the tag:
 
    ```bash
