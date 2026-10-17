@@ -4,8 +4,9 @@ Detectors
 =========
 
 rainbow tags every channel it reads with a detector kind: ``UV``, ``MS``,
-``FID``, ``CAD``, ``ELSD``, or ``RID``. Export is driven by that tag, not by the
-vendor.
+``FID``, ``CAD``, ``ELSD``, ``RID``, or ``FLD``. Export is driven by that tag,
+not by the vendor. No vendor reader produces ``FLD`` yet; it is the kind a
+fluorescence channel read back with :func:`rainbow.from_asm` has.
 
 Most detectors export faithfully under their own measure (see the table below).
 RID is the one interim: it rides the absorbance cube because the schema has no
@@ -56,6 +57,12 @@ Status at a glance
      - absorbance / mAU [#interim]_
      - liquid chromatography
      - interim
+   * - FLD
+     - fluorescence detector
+     - 1D chromatogram
+     - fluorescence / RFU
+     - liquid chromatography
+     - supported
    * - MS (SIM)
      - mass spectrometer
      - 1D mass chromatogram (per ion)
@@ -148,21 +155,25 @@ are unchanged. Treat such a measure as the vendor's scale under a borrowed name.
 One unit is deliberately not followed: Chemstation labels a generic analog input
 ``mAU`` whatever is wired into it, so ``mAu`` on a bare ``ADC1`` channel is its
 default scaling and not a claim to measure absorbance. Following it would turn a
-CAD channel into an absorbance cube, which :func:`rainbow.from_asm` would then
-reconstruct as a UV trace. Not following it is not the same as converting it,
+CAD channel into an absorbance cube, a claim about what it measures that
+nothing downstream could check. Not following it is not the same as converting it,
 though: such a channel is warned about exactly like the ELSD above, because its
 values still go out under a quantity they are not in.
 
 RID has no refractive-index measure in the published schema, so it alone still
 rides the absorbance cube [#interim]_.
 
-A subtlety, where peaks meet measures: the schema attaches a processed-data peak
-list only to an *absorbance* measurement. So when a CAD, ELSD, or FID channel
-carries integrated peaks, rainbow relabels its measure to ``absorbance``/``mAU``
-to keep them, rather than emit the peaks against a measure the schema forbids and
-fail validation. The device type stays truthful, and a measurement note records
-the real quantity, so nothing is silently lost. A channel without peaks keeps its
-faithful measure; UV and RID are never affected.
+Where peaks meet measures: REC/2026/06 attaches a processed-data peak list to
+absorbance in ``mAU`` and to the chromatography detectors' own measures, each in
+one unit: electric current in ``pA``, intensity in ``RLU``, voltage in ``mV``,
+fluorescence in ``RFU``. A channel in one of these keeps its faithful cube when
+it carries integrated peaks, and its peaks are written in its unit: an FID's
+area in ``pA.s``, its height in ``pA``. (A vendor's peak table states no unit;
+its values are the channel's.) A channel in a measure the schema gives no peak
+list (a current in ``nA``, a voltage in ``V``) is relabeled to
+``absorbance``/``mAU`` to keep its peaks, rather than emit them against a
+measure the schema forbids and fail validation. The device type stays truthful,
+and a measurement note records the real quantity, so nothing is silently lost.
 
 MS
 --

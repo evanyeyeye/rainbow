@@ -19,7 +19,9 @@ class DataFile:
     Attributes:
         name (str): Name of the file. 
         detector (str): Name of the detector.
-            Options: UV, MS, FID, CAD, ELSD, RID.
+            Options: UV, MS, FID, CAD, ELSD, RID, FLD (fluorescence).
+            None marks a signal rainbow holds but has no detector name for,
+            which a DataDirectory keeps among its analog traces.
         xlabels (numpy.ndarray): 1D array with retention times (in minutes).
         ylabels (numpy.ndarray): 1D array with y-axis labels 
             (e.g. mz, wavelength). 
@@ -32,7 +34,8 @@ class DataFile:
     def __init__(self, path, detector, xlabels, ylabels, data, metadata):
         
         if not isinstance(path, str) or \
-           not detector in {'UV', 'MS', 'FID', 'CAD', 'ELSD', 'RID', None} or \
+           not detector in {'UV', 'MS', 'FID', 'CAD', 'ELSD', 'RID', 'FLD',
+                            None} or \
            not isinstance(xlabels, np.ndarray) or xlabels.ndim != 1 or \
            not isinstance(ylabels, np.ndarray) or ylabels.ndim != 1 or \
            not isinstance(data, np.ndarray) or data.ndim != 2 or \

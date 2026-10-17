@@ -227,11 +227,41 @@ def _peaks_on(channel):
                         "start_time": 1.4, "end_time": 1.6, "symmetry": 0.95}]}]
 
 
-def test_cad_with_peaks_relabels_and_conforms_to_lc_schema():
-    # A CAD channel that carries integrated peaks is relabeled to absorbance so
-    # the peak list can ride; the result still validates.
+def test_cad_with_peaks_conforms_to_lc_schema():
+    # A CAD channel that carries integrated peaks keeps its electric-current
+    # cube, and its peak list in pA.s and pA is the one the schema's
+    # picoampere detector defines.
     datadir = rb.read("tests/inputs/red.D")
     datadir.peaks = _peaks_on("ADC1A.CH")
+    _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
+
+
+def test_a_current_in_na_with_peaks_relabels_and_conforms_to_lc_schema():
+    # nA has no peak list in the schema, so that channel alone is relabeled to
+    # absorbance to carry its peaks, and the result still validates.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.get_file("ADC1A.CH").metadata["unit"] = "nA"
+    datadir.peaks = _peaks_on("ADC1A.CH")
+    _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
+
+
+def test_a_fluorescence_channel_read_from_asm_conforms_to_lc_schema():
+    # An FLD channel rebuilt by from_asm exports as a fluorescence cube in RFU
+    # with its peaks in RFU.s and RFU, the schema's fluorescence detector.
+    import numpy as np
+    from rainbow.datadirectory import DataDirectory
+    from rainbow.datafile import DataFile
+
+    fld = DataFile("FLR ChA", "FLD", np.array([0.0, 1.0, 2.0]),
+                   np.array([340.0]), np.array([[0.0], [5.0], [0.0]]),
+                   {"unit": "RFU", "excitation_wavelength": 280.0,
+                    "emission_wavelength": 340.0})
+    datadir = DataDirectory("run", [fld], {"date": "2026-04-10T18:46:25"})
+    datadir.peaks = [{"signal": "FLR CHA", "channel_file": "FLR ChA",
+                      "peaks": [{"retention_time": 1.0, "area": 50.0,
+                                 "area_unit": "RFU.s", "height": 5.0,
+                                 "height_unit": "RFU", "start_height": 0.0,
+                                 "start_time": 0.5, "end_time": 1.5}]}]
     _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
 
 
@@ -287,10 +317,10 @@ def test_elsd_inside_a_gc_document_conforms():
         _rich_gc_document("tests/inputs/orange.D", technique="GC"))
 
 
-def test_fid_with_peaks_relabels_and_conforms_to_gc_schema():
-    # GC-FID peaks are the result of the run, so an FID channel with integrated
-    # peaks is relabeled to absorbance to carry them; it still validates as a gas
-    # chromatography document.
+def test_fid_with_peaks_conforms_to_gc_schema():
+    # GC-FID peaks are the result of the run. An FID channel with integrated
+    # peaks keeps its electric-current cube and writes them in pA.s and pA,
+    # which the gas chromatography document admits.
     datadir = rb.read("tests/inputs/yellow.D")
     datadir.metadata["injection_volume"] = {"value": 1.0, "unit": "µL"}
     datadir.peaks = _peaks_on("FID1A.ch")

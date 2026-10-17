@@ -34,8 +34,9 @@ the export carries it. A DataSequence becomes one aggregate document with one
 chromatography document per injection.
 
 Most detectors are exported faithfully: UV as absorbance, CAD and FID as
-electric current, ELSD as light intensity, each a 1-D chromatogram cube with its
-real measure concept and a truthful device type. RID alone is an interim, riding
+electric current, ELSD as light intensity, FLD as fluorescence, each a 1-D
+chromatogram cube with its real measure concept and a truthful device type, and
+each one's peaks in its own unit. RID alone is an interim, riding
 the absorbance cube because the published schema has no refractive-index measure.
 SIM MS is exported faithfully and in full: every
 monitored ion becomes a mass chromatogram data cube (ion count over retention
@@ -264,7 +265,25 @@ _DETECTOR_CUBES = {
     "FID": {"device_type": "flame ionization detector",
             "concept": "electric current", "unit": "pA",
             "detection_type": "flame ionization"},
+    "FLD": {"device_type": "fluorescence detector",
+            "concept": "fluorescence", "unit": "RFU"},
 }
+
+# The measures REC/2026/06 attaches a processed-data peak list to, as (concept,
+# unit). Each has its own detector schema, which pins the peak area to the
+# measure's unit times seconds and the height to the measure's unit, so a peak
+# list on any of these is written against the cube it belongs to. A measure
+# outside the set (a current in nA, a voltage in V) has nowhere in the schema
+# to carry peaks, and is relabeled to absorbance to keep them; see
+# :func:`_detector_measurement`.
+_PEAK_MEASURES = frozenset({
+    ("absorbance", "mAU"),
+    ("electric current", "pA"),
+    ("intensity", "RLU"),
+    ("voltage", "mV"),
+    ("fluorescence", "RFU"),
+    ("count", "Counts"),
+})
 
 
 def to_asm(datadir, *, export_dad_cube=True, wavelengths=None, ions=None,
@@ -1238,7 +1257,9 @@ def _measurements(datadir, options, technique):
             _add_injection_document(
                 measurement, metadata, datadir.name, technique, options)
             if group and _admits_peaks(measurement):
-                _add_processed_data(measurement, group, options)
+                _add_processed_data(
+                    measurement, group, options,
+                    _cube_measure(measurement)[1])
             measurements.append(measurement)
     if not measurements:
         _warn_nothing_to_export(datadir, options)
@@ -1334,12 +1355,22 @@ def _warn_nothing_to_export(datadir, options=None):
 
 
 def _admits_peaks(measurement):
-    """Whether the measurement's cube can carry a peak list (absorbance only)."""
+    """Whether the measurement's cube can carry a peak list.
+
+    See :data:`_PEAK_MEASURES`.
+    """
+    return _cube_measure(measurement) in _PEAK_MEASURES
+
+
+def _cube_measure(measurement):
+    """The ``(concept, unit)`` of a cube rainbow built, or None."""
     cube = measurement.get(_CHROMATOGRAM_CUBE)
     if not cube:
-        return False
+        return None
     measures = cube.get("cube-structure", {}).get("measures", [])
-    return bool(measures) and measures[0].get("concept") == "absorbance"
+    if not measures:
+        return None
+    return measures[0].get("concept"), measures[0].get("unit")
 
 
 def _channel_device_type(descriptor, technique):
@@ -1467,12 +1498,12 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     the absorbance-cube interim. An FID also carries its detection type, and a
     UV channel its detector wavelength setting.
 
-    One exception: the schema models a processed-data peak list only on an
-    absorbance measurement. So a non-absorbance channel that carries integrated
-    peaks is relabeled to absorbance (the device type stays truthful) so the
-    peaks survive, with a note recording the real quantity. Dropping the peaks
-    would lose more than the imprecise unit does, and the published model is
-    still being refined.
+    One exception: the schema models a processed-data peak list only on the
+    measures in :data:`_PEAK_MEASURES`. So a channel outside them that carries
+    integrated peaks (a current in nA, a voltage in V) is relabeled to
+    absorbance (the device type stays truthful) so the peaks survive, with a
+    note recording the real quantity. Dropping the peaks would lose more than
+    the imprecise unit does, and the published model is still being refined.
     """
     control = {"device type": _channel_device_type(descriptor, technique)}
     descriptor = _measure_from_source(datafile, descriptor, options)
@@ -1484,7 +1515,19 @@ def _detector_measurement(datafile, metadata, descriptor, options,
         if wavelength is not None:
             control["detector wavelength setting"] = _quantity(
                 wavelength, "nm", options)
-    relabel = has_peaks and descriptor["concept"] != "absorbance"
+    elif datafile.detector == 'FLD':
+        # The fluorescence cube names the emission the detector wavelength
+        # setting, which is how from_asm reads it back.
+        for key, field in (("excitation_wavelength",
+                            "excitation wavelength setting"),
+                           ("emission_wavelength",
+                            "detector wavelength setting")):
+            value = datafile.metadata.get(key)
+            if isinstance(value, (int, float)) \
+                    and not isinstance(value, bool):
+                control[field] = _quantity(value, "nm", options)
+    relabel = has_peaks and (descriptor["concept"], descriptor["unit"]) \
+        not in _PEAK_MEASURES
     cube_descriptor = _ABSORBANCE_DESCRIPTOR if relabel else descriptor
     measurement = _measurement(
         datafile, metadata, control, _CHROMATOGRAM_CUBE,
@@ -1912,20 +1955,23 @@ def _add_injection_document(measurement, metadata, identifier, technique,
     measurement["injection document"] = document
 
 
-def _add_processed_data(measurement, group, options):
+def _add_processed_data(measurement, group, options, unit="mAU"):
     """Adds the processed data documents carrying the channel's peak lists.
 
     A channel read back from a document that integrated the same run more than
     once keeps the extra integrations in ``group["alternates"]``; they are
     written out alongside the one in ``group["peaks"]``, in the order they were
     read, so a round trip does not quietly reduce six result versions to one.
+
+    ``unit`` is the unit of the cube the peaks were integrated on, which is
+    what a vendor's peak height is in and its area is in per second.
     """
     documents = [(group.get("processing"), group["peaks"])]
     for alternate in group.get("alternates") or []:
         documents.append((alternate.get("processing"), alternate["peaks"]))
     measurement[_PROCESSED_DATA] = {
         "processed data document": [
-            _asm_processed_data(index + 1, processing, peaks, options)
+            _asm_processed_data(index + 1, processing, peaks, options, unit)
             for index, (processing, peaks) in enumerate(documents)
         ],
     }
@@ -1945,7 +1991,7 @@ _PROCESSING_METHOD_FIELDS = (
 )
 
 
-def _asm_processed_data(index, processing, peaks, options):
+def _asm_processed_data(index, processing, peaks, options, unit="mAU"):
     """One processed data document: a peak list and where it came from."""
     document = {"@index": index}
     for source, target in _PROCESSING_FIELDS:
@@ -1960,30 +2006,45 @@ def _asm_processed_data(index, processing, peaks, options):
     if method:
         document["data processing document"] = method
     document["peak list"] = {
-        "peak": [_asm_peak(i + 1, peak, options)
+        "peak": [_asm_peak(i + 1, peak, options, unit)
                  for i, peak in enumerate(peaks)],
     }
     return document
 
 
-def _asm_peak(index, peak, options=None):
-    """One ASM peak, with retention/start/end times in seconds."""
+def _asm_peak(index, peak, options=None, unit="mAU"):
+    """One ASM peak, with retention/start/end times in seconds.
+
+    The height and the edge heights are in ``unit``, the unit of the cube the
+    peak was integrated on, and the area in ``unit`` per second, unless the
+    peak names its own (a peak read from ASM keeps the units it was read in).
+    A vendor's peak table states no unit, and its values are the channel's:
+    an FID's area is in pA.s, which writing it as mAU.s misreported.
+    """
     entry = {"@index": index}
-    name = peak.get("name")
-    if isinstance(name, str) and name:
-        entry["written name"] = name
+    for source, target in (("identifier", "identifier"),
+                           ("name", "written name")):
+        value = peak.get(source)
+        if isinstance(value, str) and value:
+            entry[target] = value
+    area_unit = peak.get("area_unit")
+    if not (isinstance(area_unit, str) and area_unit):
+        area_unit = unit + ".s"
+    height_unit = peak.get("height_unit")
+    if not (isinstance(height_unit, str) and height_unit):
+        height_unit = unit
     mapping = (
         ("retention_time", "retention time", "s", _SECONDS_PER_MINUTE),
         ("start_time", "peak start", "s", _SECONDS_PER_MINUTE),
         ("end_time", "peak end", "s", _SECONDS_PER_MINUTE),
-        ("area", "peak area", "mAU.s", 1.0),
+        ("area", "peak area", area_unit, 1.0),
         ("area_percent", "relative peak area", "%", 1.0),
-        ("height", "peak height", "mAU", 1.0),
+        ("height", "peak height", height_unit, 1.0),
         ("height_percent", "relative peak height", "%", 1.0),
         ("symmetry", "asymmetry factor measured at 5 % height",
          "(unitless)", 1.0),
-        ("start_height", "peak value at start", "mAU", 1.0),
-        ("end_height", "peak value at end", "mAU", 1.0),
+        ("start_height", "peak value at start", height_unit, 1.0),
+        ("end_height", "peak value at end", height_unit, 1.0),
     )
     for source, target, unit, scale in mapping:
         value = peak.get(source)
