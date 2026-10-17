@@ -2656,7 +2656,7 @@ def test_an_asm_peak_and_a_vendor_peak_have_the_same_keys():
     vendor = rb.read(os.path.join(INPUTS, "red.D"), peaks=True)
     vendor_group = vendor.peaks[0]
     vendor_peak = vendor_group["peaks"][0]
-    assert all(vendor_peak[key] is None for key in _PEAK_KEYS)
+    assert vendor_peak["identifier"] is None and vendor_peak["index"] is None
     asm_group = rb.from_asm(vendor.to_asm()).peaks[0]
     assert set(asm_group["peaks"][0]) == set(vendor_peak)
     assert set(asm_group) == set(vendor_group)
@@ -2991,3 +2991,52 @@ def test_a_records_source_survives_a_second_round_trip():
         == "SOURCE.JSON"
     assert entries["source ASM conversion time"]["scalar timestamp datum"] \
         == "2026-04-11T17:55:39-04:00"
+
+
+# --- Review round 8 ---
+
+
+def test_an_fld_in_mv_keeps_its_excitation_as_custom_information():
+    import numpy as np
+    from rainbow.datadirectory import DataDirectory
+    from rainbow.datafile import DataFile
+
+    fld = DataFile("FLD1A", "FLD", np.array([0.0, 1.0]), np.array([310.0]),
+                   np.array([[1.0], [2.0]]),
+                   {"unit": "mV", "excitation_wavelength": 230.0,
+                    "excitation_bandwidth": 10.0,
+                    "emission_wavelength": 310.0})
+    document = DataDirectory("run", [fld], {}).to_asm()
+    control = (next(_asm_measurements(document))
+               ["device control aggregate document"]
+               ["device control document"][0])
+    assert "excitation wavelength setting" not in control
+    assert control["detector wavelength setting"]["value"] == 310.0
+    labels = {entry["datum label"] for entry in
+              control["custom information aggregate document"]
+              ["custom information document"]}
+    assert labels == {"excitation wavelength setting",
+                      "excitation bandwidth setting"}
+    metadata = rb.from_asm(document).get_file("FLD1A").metadata
+    assert metadata["excitation_wavelength"] == 230.0
+    assert metadata["excitation_bandwidth"] == 10.0
+    assert metadata["emission_wavelength"] == 310.0
+
+
+def test_vendor_peaks_take_their_channels_unit():
+    datadir = rb.read(os.path.join(INPUTS, "red.D"), peaks=True)
+    for group in datadir.peaks:
+        unit = datadir.get_file(group["channel_file"]).metadata["unit"]
+        peak = group["peaks"][0]
+        assert (peak["height_unit"], peak["area_unit"]) \
+            == (unit, unit + ".s")
+
+
+def test_a_non_dict_chromatography_document_does_not_hide_a_later_record():
+    document = _lc(_sample(**{"sample identifier": "s"}))
+    aggregate = document["liquid chromatography aggregate document"]
+    aggregate["liquid chromatography document"].insert(0, "not a document")
+    aggregate["liquid chromatography document"][1][
+        "electronic project record"] = {"written name": "P"}
+    metadata = rb.from_asm(document).metadata
+    assert metadata["project"] == {"written name": "P"}

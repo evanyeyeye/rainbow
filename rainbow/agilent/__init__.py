@@ -288,7 +288,26 @@ def _with_channels(datadir, groups):
         if datafile is not None:
             group["detector"] = datafile.detector
             group["metadata"] = dict(datafile.metadata)
+            _fill_units(group, datafile.metadata.get("unit"))
     return groups
+
+
+def _fill_units(group, unit):
+    """Gives a group's peaks the channel's unit where they state none.
+
+    ChemStation's peak table is in the channel's unit, a height in it and an
+    area in it per second, but does not say so.
+    """
+    if not unit:
+        return
+    lists = [group["peaks"]] + [alternate["peaks"] for alternate
+                                in group.get("alternates") or []]
+    for peaks in lists:
+        for peak in peaks:
+            if peak.get("height_unit") is None:
+                peak["height_unit"] = unit
+            if peak.get("area_unit") is None:
+                peak["area_unit"] = unit + ".s"
 
 
 def _own_peaks(injection_name, injection_path):

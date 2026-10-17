@@ -45,6 +45,9 @@ _SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
 _REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
 _REF_OFF_RE = re.compile(r'Ref=off\b', re.IGNORECASE)
 
+# A fluorescence detector names its channels FLD1A, "FLD1 A", ...
+_FLD_SIGNAL_RE = re.compile(r'\s*FLD\d', re.IGNORECASE)
+
 # Not every single-wavelength channel writes a Sig= clause. A variable- or
 # multi-wavelength detector often spells the same setting out, e.g.
 # "VWD1A, Wavelength=254 nm", with no bandwidth to report.
@@ -226,6 +229,11 @@ def _detector_from_signal(metadata, default=None, uv_only=False):
         # measures at, as rb.from_asm labels a fluorescence channel.
         metadata.update(optics)
         return 'FLD', str(optics['emission_wavelength'])
+    if _FLD_SIGNAL_RE.match(signal):
+        # A fluorescence detector's own channel whose wavelengths are not
+        # spelled as numbers (a scan, a program): still FLD, as OpenLab types
+        # it by its device, rather than falling through to the FID default.
+        return 'FLD', ''
     if uv_only:
         # The 130/30 container holds no flame ionization channel, so the
         # ambiguity that forces the Sig= clause on 179/181 does not arise here:

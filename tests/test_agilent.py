@@ -142,6 +142,17 @@ def test_a_fluorescence_signal_is_fld_with_its_wavelengths(uv_only):
     assert "wavelength" not in metadata
 
 
+@pytest.mark.parametrize("signal", ["FLD1 A, Ex=Scan, Em=310", "FLD1A"])
+def test_an_fld_signal_is_fld_without_numeric_wavelengths(signal):
+    # Named by its own prefix, as OpenLab types it by device, rather than
+    # falling through to the FID default.
+    from rainbow.agilent.chemstation import _detector_from_signal
+
+    metadata = {"signal": signal}
+    assert _detector_from_signal(metadata, default="FID") == ("FLD", "")
+    assert "emission_wavelength" not in metadata
+
+
 def test_a_chemstation_fluorescence_file_is_read_as_fld(tmp_path):
     # brown.D's dad1A.ch, a 30 container, with its signal string rewritten as
     # an FLD's: the read types it FLD, labelled by its emission.

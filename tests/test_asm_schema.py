@@ -559,6 +559,13 @@ def test_each_device_control_matches_its_own_detector_variant(url, run):
         {"unit": "RFU", "excitation_wavelength": 230.0,
          "excitation_bandwidth": 10.0, "emission_wavelength": 310.0,
          "bandwidth": 20.0}))
+    # An FLD read out in mV is a voltage cube, whose variant declares no
+    # excitation setting.
+    datadir.datafiles.append(DataFile(
+        "FLD1B", "FLD", np.array([0.0, 1.0]), np.array([310.0]),
+        np.array([[1.0], [2.0]]),
+        {"unit": "mV", "excitation_wavelength": 230.0,
+         "excitation_bandwidth": 10.0, "emission_wavelength": 310.0}))
     document = datadir.to_asm(utc_offset=_TZ, ions=[131])
     measurements = list(_written(document, "measurement document"))
     assert any(m["measurement identifier"] == "FLD1A" for m in measurements)

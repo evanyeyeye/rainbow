@@ -102,11 +102,15 @@ to [Semantic Versioning](https://semver.org/).
   too, and the acquisition method as the measurement's custom information.
   A CAD's device control names it in its device identifier, so rainbow's
   own export reads back as CAD.
-- **A vendor peak group names its detector.** `rb.read(peaks=True)` and
-  `read_sequence(peaks=True)` fill each group's `detector` and `metadata`
-  from the channel's DataFile.
+- **A vendor peak group names its detector and its peaks' units.**
+  `rb.read(peaks=True)` and `read_sequence(peaks=True)` fill each group's
+  `detector` and `metadata` from the channel's DataFile, and each peak's
+  `height_unit` and `area_unit` from its unit (the peak table is in the
+  channel's unit, per second for an area, and does not say so).
 - **The detector is not read from a measurement identifier.** It is a key
   (often a GUID), and a segment such as `adc4` typed a channel CAD.
+- **A ChemStation FLD channel is FLD by its name too**, as OpenLab's is by
+  its device, when its wavelengths are not numbers.
 - **A Waters fluorescence channel is FLD.** One fluorescence parser serves
   the Agilent readers, the Waters reader and `from_asm`.
 - **`to_asm` dropped peak groups no exported channel carries** (peaks read from

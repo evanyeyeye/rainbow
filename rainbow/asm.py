@@ -1732,6 +1732,16 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     detection_type = descriptor.get("detection_type")
     if detection_type:
         control["detection type"] = detection_type
+    relabel = has_peaks and (descriptor["concept"], descriptor["unit"]) \
+        not in _PEAK_MEASURES
+    cube_descriptor = _ABSORBANCE_DESCRIPTOR if relabel else descriptor
+    # Settings the schema declares only for the detector variant the cube is
+    # not: the reference wavelength (the spectrum detector's), and an FLD's
+    # excitation when its cube is a voltage or a current rather than
+    # fluorescence. Written as the device control's custom information.
+    undeclared = set(_SPECTRUM_ONLY_SETTINGS)
+    if cube_descriptor["concept"] != "fluorescence":
+        undeclared |= _FLUORESCENCE_ONLY_SETTINGS
     if datafile.detector == 'UV':
         settings = _UV_SETTINGS
     elif datafile.detector == 'FLD':
@@ -1744,10 +1754,8 @@ def _detector_measurement(datafile, metadata, descriptor, options,
         value = datafile.metadata.get(key)
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             continue
-        if field in _SPECTRUM_ONLY_SETTINGS:
-            # The schema's single-wavelength absorbance detector has no
-            # property for it (only the spectrum detector does), so it is the
-            # device control's custom information, under the same name.
+        if field in undeclared:
+            # Under the same name, read back from there by _channel_metadata.
             custom = control.setdefault(
                 "custom information aggregate document",
                 {"custom information document": []})
@@ -1763,9 +1771,6 @@ def _detector_measurement(datafile, metadata, descriptor, options,
         # Ref=off: the schema has a reference wavelength setting but no way to
         # say there is none, so it is said as custom information.
         _append_custom(control, _REFERENCE, "off")
-    relabel = has_peaks and (descriptor["concept"], descriptor["unit"]) \
-        not in _PEAK_MEASURES
-    cube_descriptor = _ABSORBANCE_DESCRIPTOR if relabel else descriptor
     measurement = _measurement(
         datafile, metadata, control, _CHROMATOGRAM_CUBE,
         _detector_cube(datafile, cube_descriptor, options), options)
@@ -1958,6 +1963,9 @@ _REFERENCE = "reference"
 # for the single-wavelength one.
 _SPECTRUM_ONLY_SETTINGS = frozenset({
     "electronic absorbance reference wavelength setting"})
+# Settings it defines for the fluorescence detector alone.
+_FLUORESCENCE_ONLY_SETTINGS = frozenset({
+    "excitation wavelength setting", "excitation bandwidth setting"})
 _ACQUISITION_METHOD = "device acquisition method"
 
 
@@ -2942,8 +2950,10 @@ def _absorb_records(aggregate, documents, metadata):
     for key, field in _RECORDS:
         record = _record(aggregate.get(field))
         for lc_document in documents:
-            if record or not isinstance(lc_document, dict):
+            if record:
                 break
+            if not isinstance(lc_document, dict):
+                continue
             record = _record(lc_document.get(field))
         if record:
             metadata[key] = record
