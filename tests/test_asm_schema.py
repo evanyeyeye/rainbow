@@ -296,8 +296,27 @@ def test_a_read_back_sample_role_and_plate_conform_to_lc_schema():
 
 
 def _property_names(schema, key):
-    """Every property name the schema declares for objects under ``key``."""
+    """Every property name the schema declares for objects under ``key``.
+
+    A definition reached by a ``$ref`` ("#/$defs/electronicProjectRecord") is
+    followed, by its last path segment, so a record declared once and
+    referenced is still checked.
+    """
     names = set()
+    definitions = {}
+
+    def index(node):
+        if isinstance(node, dict):
+            for name, value in (node.get("$defs") or {}).items():
+                definitions.setdefault(name.rsplit("/", 1)[-1], value)
+            for value in node.values():
+                index(value)
+        elif isinstance(node, list):
+            for value in node:
+                index(value)
+
+    index(schema)
+    followed = set()
 
     def collect(node):
         if not isinstance(node, dict):
@@ -307,6 +326,12 @@ def _property_names(schema, key):
             for part in node.get(combinator) or []:
                 collect(part)
         collect(node.get("items"))
+        reference = node.get("$ref")
+        if isinstance(reference, str) and "/$defs/" in reference:
+            target = reference.rsplit("/", 1)[-1]
+            if target not in followed and target in definitions:
+                followed.add(target)
+                collect(definitions[target])
 
     def walk(node):
         if isinstance(node, dict):
@@ -384,6 +409,51 @@ def test_records_injection_time_and_role_written_back_conform():
                               "start time": "2026-04-10T18:11:45-04:00"},
         "project": {"written name": "P", "description": "d"}})
     _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
+
+
+def _written(node, key):
+    """Every object written under ``key`` anywhere in ``node``."""
+    if isinstance(node, dict):
+        for name, value in node.items():
+            if name == key:
+                yield from (value if isinstance(value, list) else [value])
+            yield from _written(value, key)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _written(value, key)
+
+
+@pytest.mark.parametrize("url,run", [
+    (_LC_URL, "tests/inputs/red.D"), (_LC_URL, "tests/inputs/brown.D"),
+    (_LC_URL, "tests/inputs/blue.raw"), (_GC_URL, "tests/inputs/yellow.D")])
+def test_the_envelope_carries_only_names_the_schema_declares(url, run):
+    # Like the processed data check above, for the sample, device control,
+    # injection and once-per-file record documents rainbow writes. The
+    # records, the role, the plate and the method are set as from_asm would
+    # read them, so every write path is exercised.
+    schema = _validator(url).schema
+    datadir = rb.read(run)
+    datadir.metadata.update({
+        "injection_volume": {"value": 1.0, "unit": "uL"},
+        "injection_time": "2018-02-27T10:11:50",
+        "sample_name": "n", "sample_role": "blank role",
+        "well_plate_id": "Plate23", "acq_method": "TEST.M",
+        "data_system": {"data system instance identifier": "DB ID: 1",
+                        "database primary key": "1",
+                        "software name": "Empower 3 Software"},
+        "analysis_sequence": {"written name": "SET_1",
+                              "start time": "2026-04-10T18:11:45"},
+        "project": {"written name": "P", "description": "d"}})
+    document = datadir.to_asm(utc_offset=_TZ)
+    for key in ("sample document", "device control document",
+                "injection document", "data system document",
+                "analysis sequence document", "electronic project record"):
+        allowed = _property_names(schema, key)
+        written = list(_written(document, key))
+        assert written, key
+        for item in written:
+            names = {name for name in item if not name.startswith("@")}
+            assert names <= allowed, (key, names - allowed)
 
 
 def test_a_fluorescence_channel_read_from_asm_conforms_to_lc_schema():

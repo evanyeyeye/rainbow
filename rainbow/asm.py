@@ -1711,26 +1711,33 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     the imprecise unit does, and the published model is still being refined.
     """
     control = {"device type": _channel_device_type(descriptor, technique)}
+    if descriptor.get("generic"):
+        # The generic class names no detector, so the detector's own name
+        # rides beside it, where _detector_of reads it back: without it a
+        # CAD read back from rainbow's own export was an analog trace.
+        control["device identifier"] = datafile.detector
     descriptor = _measure_from_source(datafile, descriptor, options)
     detection_type = descriptor.get("detection_type")
     if detection_type:
         control["detection type"] = detection_type
     if datafile.detector == 'UV':
-        wavelength = datafile.metadata.get("wavelength")
-        if wavelength is not None:
-            control["detector wavelength setting"] = _quantity(
-                wavelength, "nm", options)
+        settings = _UV_SETTINGS
     elif datafile.detector == 'FLD':
         # The fluorescence cube names the emission the detector wavelength
         # setting, which is how from_asm reads it back.
-        for key, field in (("excitation_wavelength",
-                            "excitation wavelength setting"),
-                           ("emission_wavelength",
-                            "detector wavelength setting")):
-            value = datafile.metadata.get(key)
-            if isinstance(value, (int, float)) \
-                    and not isinstance(value, bool):
-                control[field] = _quantity(value, "nm", options)
+        settings = _FLD_SETTINGS
+    else:
+        settings = ()
+    for key, field in settings:
+        value = datafile.metadata.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            control[field] = _quantity(value, "nm", options)
+    if settings is _UV_SETTINGS and "reference_wavelength" in \
+            datafile.metadata and datafile.metadata["reference_wavelength"] \
+            is None:
+        # Ref=off: the schema has a reference wavelength setting but no way to
+        # say there is none, so it is said as custom information.
+        _append_custom(control, _REFERENCE, "off")
     relabel = has_peaks and (descriptor["concept"], descriptor["unit"]) \
         not in _PEAK_MEASURES
     cube_descriptor = _ABSORBANCE_DESCRIPTOR if relabel else descriptor
@@ -1894,6 +1901,25 @@ _REPORTED_UNIT = "reported measure unit"
 
 _INJECTION_TIME = "injection time"
 
+# The optics settings written to a channel's device control document, as
+# (metadata key, field); the inverse of _OPTICS_SETTINGS.
+_UV_SETTINGS = (
+    ("wavelength", "detector wavelength setting"),
+    ("bandwidth", "detector bandwidth setting"),
+    ("reference_wavelength",
+     "electronic absorbance reference wavelength setting"),
+    ("reference_bandwidth",
+     "electronic absorbance reference bandwidth setting"),
+)
+_FLD_SETTINGS = (
+    ("excitation_wavelength", "excitation wavelength setting"),
+    ("excitation_bandwidth", "excitation bandwidth setting"),
+    ("emission_wavelength", "detector wavelength setting"),
+    ("bandwidth", "detector bandwidth setting"),
+)
+_REFERENCE = "reference"
+_ACQUISITION_METHOD = "device acquisition method"
+
 
 def _append_custom(document, label, value):
     """Adds one string field to a document's custom information."""
@@ -1905,8 +1931,15 @@ def _append_custom(document, label, value):
 
 
 def _note_relabeled_measure(measurement, descriptor):
-    """Records the real quantity of a channel relabeled to absorbance."""
-    measurement["custom information aggregate document"] = {
+    """Records the real quantity of a channel relabeled to absorbance.
+
+    Put first in the measurement's custom information, ahead of anything
+    already there (its acquisition method), and the whole renumbered.
+    """
+    existing = _first(measurement.get(
+        "custom information aggregate document")).get(
+            "custom information document") or []
+    note = {
         "custom information document": [{
             "@index": 1,
             "datum label": "reported measure",
@@ -1925,6 +1958,10 @@ def _note_relabeled_measure(measurement, descriptor):
             "scalar string datum": descriptor["unit"],
         }],
     }
+    entries = note["custom information document"] + list(existing)
+    for index, entry in enumerate(entries):
+        entry["@index"] = index + 1
+    measurement["custom information aggregate document"] = note
 
 
 # The sentence 1.5.4 wrote as its only record of a relabel. Its documents
@@ -2107,6 +2144,14 @@ def _measurement(datafile, metadata, control, cube_key, cube, options,
         metadata.get("date"), recorded_offset=metadata.get("utc_offset"))
     if timestamp:
         measurement["measurement time"] = timestamp
+    # The method the channel was acquired by. REC/2026/06 has no device
+    # control property for it, so it is the measurement's custom information,
+    # under the 2025/03 name, which _acquisition_method reads from either
+    # place. (A gas chromatography document also names it on the
+    # chromatography document, as its device method identifier.)
+    method = datafile.metadata.get("acq_method") or metadata.get("acq_method")
+    if isinstance(method, str) and method:
+        _append_custom(measurement, _ACQUISITION_METHOD, method)
     return measurement
 
 
@@ -3474,15 +3519,18 @@ def _detector_of(measurement):
     The device type says which detector made the measurement, and is read
     first: rainbow's own export relabels a channel's measure where the schema
     gives its peak list no other home, and a foreign one may do the same, but
-    neither changes the device type. The cube label names the module next
-    (Waters' "ACQUITY FLR ChA", Chemstation's "ADC1A"), and the measure
-    concept last. The measurement identifier is not read: it is a key, often
-    a GUID or a database number, and a segment of one such as "adc4" is not a
-    claim about the detector.
+    neither changes the device type. The device control's device identifier
+    names the module next (Empower's "ACQ-FLR"; rainbow writes a CAD's name
+    there, since its class is the generic one), then the cube label (Waters'
+    "ACQUITY FLR ChA", Chemstation's "ADC1A"), and the measure concept last.
+    The measurement identifier is not read: it is a key, often a GUID or a
+    database number, and a segment of one such as "adc4" is not a claim
+    about the detector.
     """
     control = _device_control(measurement)
     texts = [
         _text(control.get("device type")),
+        _text(control.get("device identifier")),
         _text(_first(measurement.get(_CHROMATOGRAM_CUBE)).get("label")),
     ]
     for text in texts:
@@ -3524,14 +3572,23 @@ def _measure_of(measurement):
 
 
 def _acquisition_method(measurement):
-    """The acquisition method a measurement's device control names, or None."""
+    """The acquisition method a measurement names, or None.
+
+    Read from the device control documents, where a 2025/03 converter writes
+    it, else from the measurement's custom information, where rainbow does.
+    """
     controls = _first(measurement.get(
         "device control aggregate document")).get("device control document")
     for control in _as_documents(controls):
         if isinstance(control, dict):
-            method = _text(control.get("device acquisition method"))
+            method = _text(control.get(_ACQUISITION_METHOD))
             if method and method.strip():
                 return method.strip()
+    if "custom information aggregate document" in measurement:
+        method = _text(_custom_fields(measurement, set()).get(
+            _ACQUISITION_METHOD))
+        if method and method.strip():
+            return method.strip()
     return None
 
 
@@ -3541,7 +3598,8 @@ def _acquisition_method(measurement):
 # fluorescence cube names it, so for that measure the setting is read as the
 # emission and not as an absorbance wavelength.
 _OPTICS_SETTINGS = (
-    ("wavelength", ("detector wavelength setting",)),
+    ("wavelength", ("detector wavelength setting",
+                    "electronic absorbance wavelength setting")),
     ("bandwidth", ("detector bandwidth setting",
                    "electronic absorbance bandwidth setting")),
     ("reference_wavelength",
@@ -3605,6 +3663,10 @@ def _channel_metadata(measurement):
                     in (None, "nm"):
                 settings[key] = value
                 break
+    if "reference_wavelength" not in settings and \
+            "custom information aggregate document" in control and \
+            _text(_custom_fields(control, set()).get(_REFERENCE)) == "off":
+        settings["reference_wavelength"] = None
     if concept == "fluorescence" or "excitation_wavelength" in settings \
             or _detector_of(measurement) == "FLD":
         # A fluorescence detector's wavelength setting is its emission, and a

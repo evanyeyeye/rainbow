@@ -410,6 +410,14 @@ def test_cad_exports_as_electric_current_with_truthful_type():
     assert "detector wavelength setting" not in control
 
 
+def _relabeled(measurement):
+    """Whether a measurement carries the note of a relabeled measure."""
+    entries = (measurement.get("custom information aggregate document") or {}
+               ).get("custom information document") or []
+    return any(entry["datum label"] == "reported measure"
+               for entry in entries)
+
+
 def test_peaks_on_a_current_channel_ride_its_own_cube_in_its_own_unit():
     # REC/2026/06 gives an electric current in pA its own peak list, so a CAD
     # channel that carries integrated peaks keeps its faithful cube, and its
@@ -428,7 +436,7 @@ def test_peaks_on_a_current_channel_ride_its_own_cube_in_its_own_unit():
     assert peak["peak height"] == {"value": 10.0, "unit": "pA"}
     assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
         == "electric current"
-    assert "custom information aggregate document" not in cad
+    assert not _relabeled(cad)
 
 
 def test_peaks_on_a_measure_without_a_peak_list_relabel_with_a_note():
@@ -467,7 +475,7 @@ def test_uv_channel_with_peaks_is_not_relabeled():
     }]
     uv = _by_label(datadir.to_asm())["DAD1B.ch"]
     assert "processed data aggregate document" in uv
-    assert "custom information aggregate document" not in uv
+    assert not _relabeled(uv)
 
 
 def test_fid_peaks_are_written_in_pa():
@@ -491,7 +499,7 @@ def test_fid_peaks_are_written_in_pa():
             [0]["peak list"]["peak"][0])
     assert peak["peak area"]["unit"] == "pA.s"
     assert peak["peak height"]["unit"] == "pA"
-    assert "custom information aggregate document" not in fid
+    assert not _relabeled(fid)
 
 
 def test_non_absorbance_channel_without_peaks_stays_faithful():
@@ -499,7 +507,7 @@ def test_non_absorbance_channel_without_peaks_stays_faithful():
     cad = _by_label(rb.read("tests/inputs/red.D").to_asm())["ADC1A.CH"]
     assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
         == "electric current"
-    assert "custom information aggregate document" not in cad
+    assert not _relabeled(cad)
 
 
 def test_elsd_exports_as_intensity_with_truthful_type():

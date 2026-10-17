@@ -2853,3 +2853,70 @@ def test_one_parser_reads_every_fluorescence_spelling():
         assert _optics.excitation_emission(text) == (230.0, 310.0)
         assert chemstation.parse_optics(text)["emission_wavelength"] == 310.0
         assert asm._optics_from_label(text)["excitation_wavelength"] == 230.0
+
+
+# --- Review round 6 ---
+
+
+@pytest.mark.parametrize("run", ["red.D", "blue.raw"])
+def test_rainbows_own_cad_reads_back_as_cad_and_re_exports(run):
+    original = rb.read(os.path.join(INPUTS, run))
+    assert "CAD" in original.detectors
+    first = original.to_asm()
+    back = rb.from_asm(first, name=original.name)
+    assert "CAD" in back.detectors
+    cads = [d for d in back.datafiles if d.detector == "CAD"]
+    assert cads and all(not d.name.endswith(".ms") for d in cads)
+
+    def labels(document):
+        return {m["measurement identifier"]
+                for m in _asm_measurements(document)}
+
+    assert labels(back.to_asm()) == labels(first)
+
+
+def test_an_lc_acquisition_method_is_written_back():
+    datadir = rb.from_asm(_lc(_fluorescence()))
+    assert datadir.metadata["acq_method"] == "V175 Long SEC Method"
+    again = rb.from_asm(datadir.to_asm())
+    assert again.metadata["acq_method"] == "V175 Long SEC Method"
+    assert again.get_file("128288").metadata["acq_method"] \
+        == "V175 Long SEC Method"
+
+
+def test_the_electronic_absorbance_wavelength_setting_is_read():
+    measurement = _with_cube(**{
+        "measurement identifier": "uv",
+        **_control(**{"electronic absorbance wavelength setting":
+                      {"value": 254.0, "unit": "nm"}})})
+    datafile = rb.from_asm(_lc(measurement)).datafiles[0]
+    assert datafile.metadata["wavelength"] == 254.0
+
+
+@pytest.mark.parametrize("run", ["red.D", "brown.D", "teal.dx"])
+def test_a_uv_channels_optics_survive_a_round_trip(run):
+    keys = ("wavelength", "bandwidth", "reference_wavelength",
+            "reference_bandwidth")
+    original = rb.read(os.path.join(INPUTS, run))
+    back = rb.from_asm(original.to_asm(), name=original.name)
+    checked = 0
+    for datafile in original.datafiles:
+        if datafile.detector != "UV" or datafile.data.shape[1] != 1:
+            continue
+        optics = {key: datafile.metadata[key] for key in keys
+                  if key in datafile.metadata}
+        rebuilt = back.get_file(datafile.name).metadata
+        assert {key: rebuilt[key] for key in optics
+                if key in rebuilt} == optics, datafile.name
+        checked += 1
+    assert checked
+
+
+def test_a_vendor_peak_group_names_its_channels_detector():
+    datadir = rb.read(os.path.join(INPUTS, "red.D"), peaks=True)
+    by_channel = {g["channel_file"].upper(): g for g in datadir.peaks}
+    assert by_channel["ADC1A.CH"]["detector"] == "CAD"
+    assert by_channel["ADC1A.CH"]["metadata"]["unit"] \
+        == datadir.get_file("ADC1A.CH").metadata["unit"]
+    uv = [g for g in datadir.peaks if g["detector"] == "UV"]
+    assert uv

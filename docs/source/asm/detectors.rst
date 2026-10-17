@@ -5,9 +5,10 @@ Detectors
 
 rainbow tags every channel it reads with a detector kind: ``UV``, ``MS``,
 ``FID``, ``CAD``, ``ELSD``, ``RID``, or ``FLD``. Export is driven by that tag,
-not by the vendor. ``FLD`` is a fluorescence channel: a ChemStation signal that
-names its excitation and emission (``FLD1 A, Ex=230, Em=310``), or one read
-back with :func:`rainbow.from_asm`.
+not by the vendor. ``FLD`` is a fluorescence channel: one whose signal names
+its excitation and emission (``FLD1 A, Ex=230, Em=310``, ``ACQUITY FLR ChA
+Ex280,Em340 nm``), as the ChemStation, OpenLab, MassHunter and Waters readers
+read it, or one read back with :func:`rainbow.from_asm`.
 
 Most detectors export faithfully under their own measure (see the table below).
 RID is the one interim: it rides the absorbance cube because the schema has no

@@ -84,8 +84,9 @@ about:
 Every chromatogram cube is reconstructed, whatever it measures, with its unit as
 the document writes it in the channel's :code:`metadata["unit"]` and the
 measure concept in :code:`metadata["measure"]`. The detector is named from the
-device type (:code:`metadata["device_type"]`, as written), then from the cube
-label or the measurement identifier, then from the measure: a diode-array or
+device type (:code:`metadata["device_type"]`, as written), then from the
+device control's device identifier, then from the cube label, then from the
+measure: a diode-array or
 ultraviolet detector is ``UV``, a refractive-index detector ``RID``, a
 fluorescence detector ``FLD``, an evaporative light scattering detector
 ``ELSD``, a flame ionization detector ``FID``, and a charged-aerosol detector or
@@ -344,7 +345,9 @@ The rest of the envelope
 
 A measurement's ``injection time`` is read into ``metadata["injection_time"]``,
 beside the ``measurement time`` in ``metadata["date"]``, and its device
-control's ``device acquisition method`` into ``metadata["acq_method"]`` (a gas
+control's ``device acquisition method`` (or the measurement's custom
+information of that name, where rainbow writes it, REC/2026/06 having no
+device control property for it) into ``metadata["acq_method"]`` (a gas
 chromatography document's ``device method identifier`` too). The records a
 document carries once, beside the device system, are read field by field as
 written: the ``data system document`` (which software wrote the data, and

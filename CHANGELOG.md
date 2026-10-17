@@ -18,7 +18,7 @@ to [Semantic Versioning](https://semver.org/).
   electric current, intensity, refractive index and conductivity channels come
   back as DataFiles with `metadata["unit"]` as written and
   `metadata["measure"]`. The detector is named from the device type, then the
-  cube label or measurement identifier, then the measure: `UV`, `RID`, `FLD`
+  device identifier, then the cube label, then the measure: `UV`, `RID`, `FLD`
   (new), `ELSD`, `FID`, or `CAD`; a channel rainbow has no name for, such as a
   conductivity detector, is detector `None` and joins the directory's
   `analog` traces. The channel metadata also holds `device_type` and
@@ -88,6 +88,15 @@ to [Semantic Versioning](https://semver.org/).
   is the export's, and `ASM file identifier` is the file written; the source
   converter's are kept as the record's custom information, prefixed
   `source`. The record's times take `utc_offset=`.
+- **Bandwidth, reference and acquisition method survive a round trip.** A UV
+  channel's bandwidth and reference are written as their device control
+  settings (Ref=off as custom information), an FLD's excitation bandwidth
+  too, and the acquisition method as the measurement's custom information.
+  A CAD's device control names it in its device identifier, so rainbow's
+  own export reads back as CAD.
+- **A vendor peak group names its detector.** `rb.read(peaks=True)` and
+  `read_sequence(peaks=True)` fill each group's `detector` and `metadata`
+  from the channel's DataFile.
 - **The detector is not read from a measurement identifier.** It is a key
   (often a GUID), and a segment such as `adc4` typed a channel CAD.
 - **A Waters fluorescence channel is FLD.** One fluorescence parser serves
