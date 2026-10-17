@@ -1271,8 +1271,10 @@ def _measurements(datadir, options, technique):
     peak_groups = _peak_groups_by_channel(getattr(datadir, "peaks", None))
     measurements = []
     omitted = []
+    carried = set()
     for datafile in datadir.datafiles:
-        group = peak_groups.get(_channel_key(datafile.name))
+        key = _channel_key(datafile.name)
+        group = peak_groups.get(key)
         has_peaks = bool(group and group.get("peaks"))
         built = _build_measurements(
             datafile, metadata, options, has_peaks, technique)
@@ -1285,12 +1287,36 @@ def _measurements(datadir, options, technique):
                 _add_processed_data(
                     measurement, group, options,
                     _cube_measure(measurement)[1])
+                carried.add(key)
             measurements.append(measurement)
+    _warn_peaks_not_carried(datadir, peak_groups, carried, options)
     if not measurements:
         _warn_nothing_to_export(datadir, options)
     elif omitted:
         _warn_channels_omitted(datadir, omitted, options)
     return measurements
+
+
+def _warn_peaks_not_carried(datadir, peak_groups, carried, options):
+    """Warns, once per group, of peaks no exported measurement carries.
+
+    A peak list rides the measurement of the channel it was integrated on, so
+    a group whose channel is not exported has nowhere to go: one read from an
+    ASM measurement whose cube had no values (an index document), one on an
+    analog channel rainbow has no detector name for, one on a channel the
+    exporter skips. Dropping it in silence made a document with fewer peaks
+    than the run look complete.
+    """
+    for key, group in peak_groups.items():
+        if key in carried or not group.get("peaks"):
+            continue
+        _warn_once_per_run(
+            options, "peaks-not-carried:{}:{}".format(datadir.name, key),
+            "{} peaks on {} in {} are not in the ASM document: no exported "
+            "channel carries them (its trace was not read, or is not one the "
+            "exporter writes).".format(
+                len(group["peaks"]), group.get("channel_file") or key,
+                datadir.name))
 
 
 def _omission_remedy(datafile, options):

@@ -118,6 +118,13 @@ def test_read_peaks_says_waters_results_are_not_read():
     assert datadir.peaks == []
 
 
+def test_read_peaks_says_dx_results_are_not_read():
+    with pytest.warns(UserWarning, match=r"\.dx archive"):
+        datadir = rb.read(os.path.join("tests", "inputs", "teal.dx"),
+                          peaks=True)
+    assert datadir.peaks == []
+
+
 def test_read_metadata_sniffs(tmp_path):
     path = _copy_without_suffix(WATERS_FIXTURE, tmp_path, "md_test")
     assert rb.read_metadata(path)["metadata"]["vendor"] == "Waters"

@@ -164,8 +164,13 @@ the run name, which import otherwise replaces with its default:
 Two caveats keep this from being ``again == first`` in general.
 
 A run that carries MS channels does **not** re-export identically: the mass
-chromatograms are export-only, so the second document is missing them. Compare
-the cubes you care about rather than the whole document.
+chromatograms are export-only, so the second document is missing them. Nor
+does a channel with peaks but no rebuilt trace: a peak list rides the
+measurement of its channel, so peaks read from an index document (whose cubes
+carry no values) or on an analog channel (detector :code:`None`) have nowhere
+to go on export, and :code:`to_asm` warns once for each such group rather than
+drop it in silence. Compare the cubes you care about rather than the whole
+document.
 
 Retention times can also differ in their last floating-point digit, because the
 seconds-to-minutes conversion is not always exactly reversible. Whether any
@@ -315,6 +320,19 @@ One thing this gives up, deliberately. A document whose channels split the
 fields between them -- the identifier on one, the custom fields on another --
 yields only the chosen one's, because a mixture is the thing being avoided.
 ``description`` and ``blank`` are still dropped.
+
+Peaks without an exported channel
+---------------------------------
+
+:func:`rainbow.from_asm` reads every measurement's peaks, but :code:`to_asm`
+can write a peak list only on a measurement it writes. Two kinds of group read
+from ASM therefore do not survive a re-export, and each is warned about once:
+
+* peaks of a measurement whose cube carried no values (an index document),
+  since no trace was rebuilt to export;
+* peaks on a channel rainbow has no detector name for (a conductivity
+  detector, an unnamed current), which joins :code:`analog` and is not
+  exported.
 
 The rest of the envelope
 ------------------------

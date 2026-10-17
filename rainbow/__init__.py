@@ -296,7 +296,8 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             whole sequence. For Agilent they come from the result document of
             the sequence the run sits in (``sequence.acaml`` beside it), or
             else from the run's own (``sequence.acam_`` inside it); a run with
-            neither has none. Waters results are not read.
+            neither has none. Waters results and a .dx archive's are not
+            read; asking for them warns.
 
     Returns:
         DataDirectory representing the directory.

@@ -198,8 +198,8 @@ One injection read on its own takes the same flag, and gets the same peaks:
 :code:`rb.read("Caffeine_Stability/001-A1_01.D", peaks=True)` reads them from
 the :code:`sequence.acaml` beside the .D, or else from its own
 :code:`sequence.acam_`, into :code:`datadir.peaks`. A run neither covers has
-an empty list. Waters results are not read, and saying :code:`peaks=True` for
-a Waters run warns so.
+an empty list. Waters results and an OpenLab ``.dx`` archive's are not read,
+and saying :code:`peaks=True` for either warns so.
 
 Exporting a sequence to ASM
 ---------------------------

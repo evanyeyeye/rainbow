@@ -2364,3 +2364,114 @@ def test_a_fluorescence_channel_round_trips_with_its_peaks():
     again = rb.from_asm(document, name="run")
     assert again.peaks[0]["peaks"] == first.peaks[0]["peaks"]
     assert again.get_file("128288").detector == "FLD"
+
+
+# --- A relabeled channel comes back in its real unit ---
+
+
+def _relabeled_cad():
+    """red.D with peaks on its CAD channel, recorded in nA (relabeled)."""
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    datadir.get_file("ADC1A.CH").metadata["unit"] = "nA"
+    datadir.peaks = [{"signal": "ADC1A", "channel_file": "ADC1A.CH",
+                      "peaks": [{"retention_time": 1.5, "area": 100.0,
+                                 "height": 10.0}]}]
+    return datadir
+
+
+def _cad_measurement(document):
+    return next(m for m in _asm_measurements(document)
+                if m["measurement identifier"] == "ADC1A.CH")
+
+
+def test_a_relabeled_channel_reads_back_in_its_real_unit():
+    back = rb.from_asm(_relabeled_cad().to_asm(), name="red.D")
+    cad = back.get_file("ADC1A.CH")
+    assert cad.detector == "CAD"
+    assert (cad.metadata["measure"], cad.metadata["unit"]) \
+        == ("electric current", "nA")
+    group = next(g for g in back.peaks if g["channel_file"] == "ADC1A.CH")
+    peak = group["peaks"][0]
+    assert (peak["area_unit"], peak["height_unit"]) == ("nA.s", "nA")
+
+
+def test_a_relabeled_channel_re_exports_relabeled_again():
+    again = rb.from_asm(_relabeled_cad().to_asm(), name="red.D").to_asm()
+    measurement = _cad_measurement(again)
+    cube = measurement["chromatogram data cube"]["cube-structure"]
+    assert cube["measures"][0]["unit"] == "mAU"
+    peak = (measurement["processed data aggregate document"]
+            ["processed data document"][0]["peak list"]["peak"][0])
+    assert peak["peak area"]["unit"] == "mAU.s"
+    labels = {entry["datum label"]: entry["scalar string datum"]
+              for entry in measurement["custom information aggregate document"]
+              ["custom information document"]}
+    assert labels["reported measure unit"] == "nA"
+
+
+def _old_relabel_document():
+    """A CAD channel the way 1.5.4 relabeled it: absorbance, a sentence."""
+    measurement = {
+        "measurement identifier": "ADC1A.CH",
+        "chromatogram data cube": _cube("absorbance", "mAU", "ADC1A.CH"),
+        **_control(**{"device type": "liquid chromatography detector"}),
+        "custom information aggregate document": {
+            "custom information document": [{
+                "datum label": "reported measure",
+                "scalar string datum": (
+                    "This channel measures electric current (in pA); its "
+                    "values are reported as absorbance in mAU so the "
+                    "integrated peak list can be carried, which the schema "
+                    "models only on an absorbance measurement.")}]},
+        **_processed(_peak_list(dict(_rt(30.0), **{
+            "peak area": {"value": 5.0, "unit": "mAU.s"},
+            "peak height": {"value": 2.0, "unit": "mAU"}})))}
+    return _lc(measurement)
+
+
+def test_a_1_5_4_relabel_reads_back_from_its_sentence():
+    back = rb.from_asm(_old_relabel_document())
+    cad = back.get_file("ADC1A.CH")
+    assert cad.detector == "CAD"
+    assert cad.metadata["unit"] == "pA"
+    peak = back.peaks[0]["peaks"][0]
+    assert (peak["area"], peak["area_unit"]) == (5.0, "pA.s")
+    measurement = _cad_measurement(back.to_asm())
+    assert measurement["chromatogram data cube"]["cube-structure"][
+        "measures"][0] == {"concept": "electric current", "unit": "pA",
+                           "@componentDatatype": "double"}
+    peak = (measurement["processed data aggregate document"]
+            ["processed data document"][0]["peak list"]["peak"][0])
+    assert peak["peak area"] == {"value": 5.0, "unit": "pA.s"}
+    assert peak["peak height"] == {"value": 2.0, "unit": "pA"}
+
+
+def test_a_peak_in_another_unit_is_written_in_the_cubes_and_said():
+    import warnings as w
+    options = asm._Options()
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        entry = asm._asm_peak(1, {"area": 1.0, "area_unit": "RFU.s",
+                                  "height": 1.0, "height_unit": "RFU"},
+                              options, "pA")
+    assert entry["peak area"]["unit"] == "pA.s"
+    assert entry["peak height"]["unit"] == "pA"
+    assert any("relabeled and not converted" in str(c.message)
+               for c in caught)
+
+
+def test_peaks_no_exported_channel_carries_are_warned_about():
+    # An index document's peaks have no rebuilt trace to ride on.
+    datadir = rb.from_asm(_lc(_fluorescence(data=False),
+                              _with_cube(**{"measurement identifier": "uv"})))
+    with pytest.warns(UserWarning, match="1 peaks on 128288 .* are not in"):
+        datadir.to_asm()
+
+
+def test_an_fld_channel_read_from_asm_exports_without_a_relabel_warning():
+    import warnings as w
+    datadir = rb.from_asm(_lc(_fluorescence()))
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        datadir.to_asm(utc_offset="+00:00")
+    assert not [c for c in caught if "relabeled" in str(c.message)]

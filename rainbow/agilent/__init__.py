@@ -51,8 +51,13 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
         datadir = openlab.read(
             path, display_precision, requested_files, telemetry, bin_width)
         if peaks:
-            # An archive's results are not read; the run is still listed with
-            # its peaks attribute, empty, like a run nobody integrated.
+            # An archive's results are not read. Said, rather than returning
+            # an empty list that reads as a run nobody integrated.
+            import warnings
+            warnings.warn(
+                "rainbow does not read integrated peaks from an OpenLab .dx "
+                "archive; {} is read without them.".format(
+                    os.path.basename(path)))
             datadir.peaks = []
         return datadir
 
