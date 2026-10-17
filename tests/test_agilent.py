@@ -128,6 +128,19 @@ def test_a_uv_only_container_reads_a_wavelength_in_any_spelling(
         assert "wavelength" not in metadata
 
 
+@pytest.mark.parametrize("uv_only", [True, False])
+def test_a_fluorescence_signal_is_fld_with_its_wavelengths(uv_only):
+    # Its first number is the excitation; reading it as a UV wavelength put a
+    # fluorescence trace at 230 nm absorbance.
+    from rainbow.agilent.chemstation import _detector_from_signal
+
+    metadata = {"signal": "FLD1 A, Ex=230, Em=310"}
+    assert _detector_from_signal(metadata, uv_only=uv_only) == ("FLD", "310")
+    assert metadata["excitation_wavelength"] == 230.0
+    assert metadata["emission_wavelength"] == 310.0
+    assert "wavelength" not in metadata
+
+
 def test_the_uv_only_reading_is_not_applied_where_fid_lives():
     # The same leniency on the 179/181 container is the bug it was written to
     # fix: there a gain setting would be read as a wavelength, and the run

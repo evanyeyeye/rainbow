@@ -44,6 +44,12 @@ _SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
 _REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
 _REF_OFF_RE = re.compile(r'Ref=off\b', re.IGNORECASE)
 
+# A fluorescence channel names its excitation and emission instead, e.g.
+# "FLD1 A, Ex=230, Em=310". Its first number is the excitation, so reading it
+# as a UV wavelength put a fluorescence trace at 230 nm absorbance.
+_EX_EM_RE = re.compile(r'\bEx\s*[=:]?\s*([\d.]+)\s*(?:nm)?\s*[,/ ]\s*'
+                       r'Em\s*[=:]?\s*([\d.]+)', re.IGNORECASE)
+
 # Not every single-wavelength channel writes a Sig= clause. A variable- or
 # multi-wavelength detector often spells the same setting out, e.g.
 # "VWD1A, Wavelength=254 nm", with no bandwidth to report.
@@ -210,6 +216,13 @@ def _detector_from_signal(metadata, default=None, uv_only=False):
         return 'UV', sig.group(1)
     if 'ADC' in signal:
         return ('ELSD' if 'CHANNEL' in signal else 'CAD'), ''
+    ex_em = _EX_EM_RE.search(signal)
+    if ex_em:
+        # The y-axis label is the emission, the wavelength the detector
+        # measures at, as rb.from_asm labels a fluorescence channel.
+        metadata['excitation_wavelength'] = float(ex_em.group(1))
+        metadata['emission_wavelength'] = float(ex_em.group(2))
+        return 'FLD', ex_em.group(2)
     if uv_only:
         # The 130/30 container holds no flame ionization channel, so the
         # ambiguity that forces the Sig= clause on 179/181 does not arise here:
