@@ -73,7 +73,7 @@ Controlling document size
 ASM stores every number as text, so a document is several times larger than the
 packed binary it came from, and a diode-array (DAD) spectrum cube,
 retention-time by wavelength, dwarfs everything else. A whole sequence bundles
-one such cube per injection, so a long run can reach gigabytes. Three arguments,
+one such cube per injection, so a long sequence can reach gigabytes. Three arguments,
 accepted by both :code:`to_asm` and :code:`export_asm` (single run or
 sequence), trade fidelity for size:
 

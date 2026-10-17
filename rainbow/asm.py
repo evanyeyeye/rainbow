@@ -6,7 +6,8 @@ the Allotrope Foundation. Where *rainbow* frees data from a vendor's binary
 format, ASM frees it from *rainbow*: a document any ASM-aware tool can read.
 
 This module builds an ASM liquid- or gas-chromatography document from a parsed
-DataDirectory (one injection) or DataSequence (a whole run). The technique is
+DataDirectory (one run, a single injection) or DataSequence (a whole sequence
+of runs). The technique is
 read from the acquisition method (the sample inlet rainbow records as
 ``metadata['technique']``); absent that, a run with an FID channel is taken as
 gas chromatography, and the caller can force either with ``technique=``. rainbow
@@ -358,8 +359,8 @@ def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
     Builds one ASM document from a DataSequence.
 
     The aggregate document carries a single device system document (the
-    instrument shared by the run) and one liquid chromatography document per
-    injection, in acquisition order. Peaks read with the sequence become each
+    instrument shared by the sequence) and one liquid chromatography document
+    per injection, in acquisition order. Peaks read with the sequence become each
     injection's processed data.
 
     Args:
@@ -405,7 +406,7 @@ def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
 
 
 def _sequence_metadata(datasequence):
-    """The run-level metadata used for a sequence's device system + technique.
+    """The sequence-level metadata for a sequence's device system + technique.
 
     Falls back to a per-injection value when the sequence has none of its own
     (no top-level sequence.acaml): an injection's modules name the hardware, and
@@ -572,7 +573,7 @@ def _record_documents(metadata, options, file_identifier=None):
 
 def asm_technique(run):
     """
-    The technique a run is exported as: ``"LC"`` or ``"GC"``.
+    The technique a run or sequence is exported as: ``"LC"`` or ``"GC"``.
 
     The same decision :func:`to_asm` and :func:`sequence_to_asm` make when no
     ``technique=`` is passed: the technique the acquisition method declares
@@ -596,7 +597,7 @@ def asm_technique(run):
 
 
 def _technique(datafiles, metadata, override=None):
-    """The ASM technique (``_LC`` or ``_GC``) a run is exported as.
+    """The ASM technique (``_LC`` or ``_GC``) a run or sequence is exported as.
 
     Resolved in order of authority: an explicit ``override`` ("GC"/"LC") wins;
     then the technique the method recorded (``metadata['technique']``, read from
@@ -790,7 +791,8 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
     The envelope (manifest + device system) is rendered once with a placeholder
     where the injection-document array goes; the placeholder is then replaced by
     a streamed JSON array whose elements are each built, written, and released
-    before the next. Peak memory is one injection document, not the whole run.
+    before the next. Peak memory is one injection document, not the whole
+    sequence.
     """
     # Each call writes one standalone document. Warnings said once per document
     # are scoped here rather than to the _Options object, which

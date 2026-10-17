@@ -654,7 +654,7 @@ def read_sequence(path, display_precision='auto', hrms=False,
     """
     Reads a multi-injection sequence directory.
 
-    Where :func:`read` reads a single injection, this reads the whole run: a
+    Where :func:`read` reads a single run, this reads the whole sequence: a
     directory holding one injection subdirectory per sample, plus the
     sequence-level method and metadata. Each injection is read with
     :func:`read`, and the injections are returned in sorted-name order, which is

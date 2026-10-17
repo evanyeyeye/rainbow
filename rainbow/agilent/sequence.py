@@ -2,7 +2,7 @@
 Read the sequence-level document of an Agilent sequence directory.
 
 A sequence directory holds, alongside the injection .D subdirectories, a
-``sequence.acaml`` describing the run as a whole: the instrument and its
+``sequence.acaml`` describing the sequence as a whole: the instrument and its
 modules (with serial numbers and firmware), the operator, the sample setups,
 and the data-analysis results. This module reads the header part of that
 document, the instrument and operator, which read_sequence merges onto a

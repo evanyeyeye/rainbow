@@ -19,9 +19,9 @@ class DataSequence:
     """
     Class representing a multi-injection sequence.
 
-    Where a :class:`~rainbow.datadirectory.DataDirectory` is a single
-    injection, a DataSequence is the run that produced many of them: an ordered
-    set of injections that share one instrument, one method, and (for Agilent)
+    Where a :class:`~rainbow.datadirectory.DataDirectory` is a single run (one
+    injection), a DataSequence is the sequence of many runs: an ordered set of
+    injections that share one instrument, one method, and (for Agilent)
     a ``sequence.acaml`` document. Each injection is itself a DataDirectory, so
     everything a single read supports still works per injection.
 
@@ -130,8 +130,8 @@ class DataSequence:
         """
         Returns an Allotrope Simple Model (ASM) document for this sequence.
 
-        The document carries one device system document for the run and one
-        liquid- or gas-chromatography document per injection. If the sequence
+        The document carries one device system document for the sequence and
+        one liquid- or gas-chromatography document per injection. If the sequence
         was read with ``peaks=True``, each injection's integrated peaks become
         its processed data. See :mod:`rainbow.asm` for the scope of the mapping.
 
@@ -184,8 +184,8 @@ class DataSequence:
         With ``per_injection=True``, ``filename`` is treated as a directory and
         each injection is written as its own standalone document (named for the
         injection), rather than one bundled file. This keeps a long diode-array
-        run from producing a single multi-gigabyte file; the method then returns
-        the list of paths written.
+        sequence from producing a single multi-gigabyte file; the method then
+        returns the list of paths written.
 
         Args:
             filename (str): Output JSON file, or the output directory when

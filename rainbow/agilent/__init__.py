@@ -222,7 +222,7 @@ def read_sequence(path, display_precision='auto', hrms=False,
     metadata = {'injection_count': len(injections)}
 
     # Merge the sequence-level document (instrument, operator), and let its
-    # run-wide operator fill any injection that lacked one.
+    # sequence-wide operator fill any injection that lacked one.
     from rainbow.agilent import sequence
     sequence_acaml = sequence.find(path)
     if sequence_acaml is not None:
