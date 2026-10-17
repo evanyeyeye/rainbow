@@ -3040,3 +3040,74 @@ def test_a_non_dict_chromatography_document_does_not_hide_a_later_record():
         "electronic project record"] = {"written name": "P"}
     metadata = rb.from_asm(document).metadata
     assert metadata["project"] == {"written name": "P"}
+
+
+# --- Review round 9 ---
+
+
+@pytest.mark.parametrize("area_unit,height_unit,area_scale,height_scale", [
+    ("AU.s", "AU", 1000.0, 1000.0),
+    ("\u00b5V.s", "\u00b5V", 0.001, 0.001),
+    ("mAU.min", "mAU", 60.0, 1.0)])
+def test_a_peak_beside_an_absorbance_cube_is_converted_on_export(
+        area_unit, height_unit, area_scale, height_scale):
+    import warnings as w
+    peak = {"area": 0.5, "area_unit": area_unit, "height": 0.03,
+            "height_unit": height_unit, "start_height": 0.01}
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        entry = asm._asm_peak(1, peak, asm._Options(), "mAU")
+    assert entry["peak area"] == {"value": pytest.approx(0.5 * area_scale),
+                                  "unit": "mAU.s"}
+    assert entry["peak height"]["value"] == pytest.approx(0.03 * height_scale)
+    assert entry["peak value at start"]["value"] == pytest.approx(
+        0.01 * height_scale)
+    assert not [c for c in caught if "relabeled" in str(c.message)]
+
+
+def test_a_peak_in_an_unconvertible_unit_is_still_said():
+    with pytest.warns(UserWarning, match="relabeled and not converted"):
+        asm._asm_peak(1, {"area": 1.0, "area_unit": "RFU.s"},
+                      asm._Options(), "mAU")
+
+
+def test_an_au_channels_group_says_mau_like_its_trace():
+    measurement = {
+        "measurement identifier": "uv",
+        "chromatogram data cube": _cube("absorbance", "AU"),
+        **_processed(_peak_list(_empower_peak(**_rt(30.0), **{
+            "peak height": {"value": 0.0015, "unit": "AU"}})))}
+    datadir = rb.from_asm(_lc(measurement))
+    assert datadir.datafiles[0].metadata["unit"] == "mAU"
+    group = datadir.peaks[0]
+    assert group["metadata"]["unit"] == "mAU"
+    assert group["peaks"][0]["height_unit"] == "mAU"
+    # And re-exported, the peak is the same height beside the same cube.
+    again = rb.from_asm(datadir.to_asm()).peaks[0]["peaks"][0]
+    assert again["height"] == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize("device_type", [
+    "thermal conductivity detector", "electron capture detector"])
+def test_a_detector_rainbow_cannot_name_is_not_named_from_its_label(
+        device_type):
+    measurement = {"measurement identifier": "x",
+                   "chromatogram data cube": _cube(
+                       "electric current", "pA", "ADC1A, uv 254 nm"),
+                   **_control(**{"device type": device_type})}
+    datafile, = rb.from_asm(_lc(measurement)).by_name.values()
+    assert datafile.detector is None
+
+
+def test_a_gc_document_without_an_fid_re_exports_as_gc():
+    document = {"gas chromatography aggregate document": {
+        "gas chromatography document": [{"measurement aggregate document": {
+            "measurement document": [_with_cube(**{
+                "measurement identifier": "uv"})]}}]}}
+    for read in (rb.from_asm, rb.sequence_from_asm):
+        run = read(document)
+        assert run.metadata["technique"] == "GC"
+        assert "gas chromatography aggregate document" in run.to_asm()
+    sequence = rb.sequence_from_asm(document)
+    assert "gas chromatography aggregate document" in \
+        sequence.injections[0].to_asm()

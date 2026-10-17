@@ -93,7 +93,8 @@ to [Semantic Versioning](https://semver.org/).
   and an absorbance area per an unknown time reads as None.
 - **A re-exported data system record names rainbow as its converter.**
   `ASM converter name` and `version` are rainbow-api's, `ASM conversion time`
-  is the export's, and `ASM file identifier` is the file written; the source
+  is the export's, and `ASM file identifier` is the file written, else one
+  named for the run; the source
   converter's are kept as the record's custom information, prefixed
   `source`. The record's times take `utc_offset=`.
 - **Bandwidth, reference and acquisition method survive a round trip.** A UV
@@ -109,6 +110,13 @@ to [Semantic Versioning](https://semver.org/).
   channel's unit, per second for an area, and does not say so).
 - **The detector is not read from a measurement identifier.** It is a key
   (often a GUID), and a segment such as `adc4` typed a channel CAD.
+- **A gas chromatography document re-exports as one.** `from_asm` records
+  the document's technique in `metadata["technique"]`, which the export
+  follows; one with no FID channel used to come back as liquid
+  chromatography.
+- **A peak in AU or µV beside an absorbance cube is converted to mAU on
+  export**, as the cube is, rather than relabeled 1000 times off; a peak
+  group's `metadata["unit"]` is mAU when its trace is.
 - **A ChemStation FLD channel is FLD by its name too**, as OpenLab's is by
   its device, when its wavelengths are not numbers.
 - **A Waters fluorescence channel is FLD.** One fluorescence parser serves

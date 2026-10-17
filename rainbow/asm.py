@@ -495,10 +495,11 @@ def _record_documents(metadata, options, file_identifier=None):
     rather than written incomplete.
 
     The data system document is rewritten as this document's: rainbow-api is
-    its converter, now its conversion time and ``file_identifier`` its file,
-    while the fields naming where the data came from (software, instance,
-    database key, UNC path, file name) are kept, and the source converter's
-    own go under its custom information.
+    its converter, now its conversion time and ``file_identifier`` its file
+    identifier (the file written, else one named for the run), while the
+    fields naming where the data came from (software, instance, database key,
+    UNC path, file name) are kept, and the source converter's own go under
+    its custom information.
     """
     from datetime import datetime, timezone
 
@@ -2467,14 +2468,24 @@ def _asm_peak(index, peak, options=None, unit="mAU", relabeled=False,
             entry[target] = value
     # Always the cube's: the schema pins a peak list's units to the measure it
     # sits on, so a peak read in another unit cannot be written in its own
-    # beside this cube and still validate. Said once, since the values go out
-    # relabeled and not converted.
+    # beside this cube and still validate. Beside an absorbance cube, which
+    # is itself written in mAU, a peak in AU, mAU or µV is converted as the
+    # cube was; any other is relabeled, not converted, and said once.
     area_unit, height_unit = _area_unit(unit), unit
-    for key, expected in (("area_unit", area_unit),
-                          ("height_unit", height_unit)):
+    scales = {}
+    for key, expected, per in (("area_unit", area_unit, ".s"),
+                               ("height_unit", height_unit, "")):
         stated = peak.get(key)
-        if isinstance(stated, str) and stated and stated != expected \
-                and options is not None and not relabeled:
+        scales[key] = 1.0
+        if not (isinstance(stated, str) and stated) or stated == expected:
+            continue
+        if unit == "mAU" and not relabeled:
+            scale, converted = _peak_measure(
+                {"value": 1.0, "unit": stated}, per, True)
+            if converted == expected:
+                scales[key] = scale
+                continue
+        if options is not None and not relabeled:
             _warn_once_per_run(
                 options,
                 "peak-unit:{}:{}:{}".format(channel, stated, expected),
@@ -2485,14 +2496,16 @@ def _asm_peak(index, peak, options=None, unit="mAU", relabeled=False,
         ("retention_time", "retention time", "s", _SECONDS_PER_MINUTE),
         ("start_time", "peak start", "s", _SECONDS_PER_MINUTE),
         ("end_time", "peak end", "s", _SECONDS_PER_MINUTE),
-        ("area", "peak area", area_unit, 1.0),
+        ("area", "peak area", area_unit, scales["area_unit"]),
         ("area_percent", "relative peak area", "%", 1.0),
-        ("height", "peak height", height_unit, 1.0),
+        ("height", "peak height", height_unit, scales["height_unit"]),
         ("height_percent", "relative peak height", "%", 1.0),
         ("symmetry", "asymmetry factor measured at 5 % height",
          "(unitless)", 1.0),
-        ("start_height", "peak value at start", height_unit, 1.0),
-        ("end_height", "peak value at end", height_unit, 1.0),
+        ("start_height", "peak value at start", height_unit,
+         scales["height_unit"]),
+        ("end_height", "peak value at end", height_unit,
+         scales["height_unit"]),
     )
     for source, target, unit, scale in mapping:
         value = peak.get(source)
@@ -2715,6 +2728,10 @@ def from_asm(document, name="asm"):
     if instrument:
         metadata["instrument"] = instrument
     _absorb_records(aggregate, documents, metadata)
+    # The technique the document declares, so a re-export writes the same
+    # one: a gas chromatography document with no FID channel otherwise came
+    # back as liquid chromatography, the fallback _technique has no FID for.
+    metadata["technique"] = _technique_of(document)
 
     if len(documents) > 1:
         # Every injection's channels land in one directory, where channels
@@ -2837,6 +2854,11 @@ def _cube_data(cube):
     return dimensions, measures
 
 
+def _technique_of(document):
+    """``"GC"`` for a gas chromatography document, else ``"LC"``."""
+    return "GC" if isinstance(document.get(_GC["aggregate"]), dict) else "LC"
+
+
 def _aggregate_and_documents(document):
     """The aggregate document and its per-injection documents, either technique.
 
@@ -2895,12 +2917,16 @@ def sequence_from_asm(document, name="asm"):
     if instrument:
         metadata["instrument"] = instrument
     _absorb_records(aggregate, documents, metadata)
+    # The technique the document declares, so a re-export writes the same
+    # one: a gas chromatography document with no FID channel otherwise came
+    # back as liquid chromatography, the fallback _technique has no FID for.
+    metadata["technique"] = _technique_of(document)
 
     injections = []
     taken = set()
     said = set()
     for index, lc_document in enumerate(documents):
-        injection_metadata = {}
+        injection_metadata = {"technique": metadata["technique"]}
         datafiles = []
         peak_groups = []
         _absorb_samples(_measurements_of([lc_document]), injection_metadata)
@@ -3521,7 +3547,7 @@ def _datafile_from_measurement(measurement):
                 f"{name}: cube axes are not the flat lists of numbers the "
                 "cube declares; skipping the channel.")
             return None
-        data = _absorbance_in_mau(data, file_metadata)
+        data = _absorbance_in_mau(data, measurement)
         return DataFile(name, detector, xlabels, ylabels, data, file_metadata)
     except (TypeError, ValueError, OverflowError) as error:
         # OverflowError: JSON integer literals are unbounded, so a 400-digit
@@ -3548,6 +3574,13 @@ _RAINBOW_DETECTORS = {
     "flame ionization detector": "FID",
 }
 
+# Classes the detector rules recognize that rainbow has no detector name for.
+# The neutral and generic classes are not among them: they name no detector,
+# so the label and the measure still get their say.
+_UNNAMED_DETECTORS = frozenset({
+    "thermal conductivity detector", "electron capture detector",
+    "mass spectrometer"})
+
 # The detector a measure concept implies when the device type names none. Only
 # a measure one detector alone reports is here: an electric current is an FID's
 # and a charged-aerosol detector's alike, so it implies neither.
@@ -3558,22 +3591,40 @@ _MEASURE_DETECTORS = {
 }
 
 
-def _absorbance_in_mau(data, metadata):
-    """An absorbance trace's values in mAU, its metadata's unit set to match.
+def _real_measure(measurement):
+    """The ``(concept, unit)`` a measurement's values are really in.
+
+    The cube's, unless the export relabeled it (to absorbance, to carry
+    peaks, or under another unit's name), in which case the note's: the
+    values are in the real unit, unconverted.
+    """
+    reported = _reported_measure(measurement)
+    if reported is not None:
+        return reported[0].strip().lower(), reported[1]
+    return _measure_of(measurement)
+
+
+def _absorbance_scale(concept, unit):
+    """The factor taking an absorbance in ``unit`` to mAU, or None."""
+    if concept != "absorbance" or not unit:
+        return None
+    return _PEAK_VALUE_TO_MAU.get(_absorbance_unit_key(unit))
+
+
+def _absorbance_in_mau(data, measurement):
+    """An absorbance trace's values in mAU.
 
     rainbow holds UV data in mAU, and to_asm writes it in mAU, so a cube in AU
     (or in Empower's microvolts, its microabsorbance unit) is scaled on the way
     in, the same conversion its peaks' heights and areas get. Left in AU, a
-    trace sat a thousand times below the edge heights subtracted from it. Any
+    trace sat a thousand times below the edge heights subtracted from it. The
+    channel's metadata says mAU to match (see :func:`_channel_metadata`). Any
     other measure, or a unit rainbow cannot place, is returned unchanged.
     """
-    if metadata.get("measure") != "absorbance" or not metadata.get("unit"):
+    scale = _absorbance_scale(*_real_measure(measurement))
+    if scale is None or scale == 1.0:
         return data
-    scale = _PEAK_VALUE_TO_MAU.get(_absorbance_unit_key(metadata["unit"]))
-    if scale is None:
-        return data
-    metadata["unit"] = "mAU"
-    return data if scale == 1.0 else data * scale
+    return data * scale
 
 
 def _detector_of(measurement):
@@ -3603,6 +3654,10 @@ def _detector_of(measurement):
         device_type = _specific_detector_type(text)
         if device_type in _RAINBOW_DETECTORS:
             return _RAINBOW_DETECTORS[device_type]
+        if device_type in _UNNAMED_DETECTORS:
+            # A detector the text names for certain, which rainbow has no
+            # name for: nothing later in the label can make it one.
+            return None
         if _GENERIC_DETECTOR_PATTERN.search(text):
             # A charged-aerosol detector, or the analog input Chemstation
             # brings one in on. rainbow names those channels CAD on read.
@@ -3695,12 +3750,11 @@ def _channel_metadata(measurement):
         or _text(_first(measurement.get(_SPECTRUM_CUBE)).get("label"))
     if label:
         metadata["description"] = label
-    concept, unit = _measure_of(measurement)
-    reported = _reported_measure(measurement)
-    if reported is not None:
-        # The cube says absorbance in mAU only because the export relabeled
-        # it to carry peaks; the values are in the real unit, unconverted.
-        concept, unit = reported[0].strip().lower(), reported[1]
+    concept, unit = _real_measure(measurement)
+    if _absorbance_scale(concept, unit) is not None:
+        # The trace is rebuilt in mAU (see _absorbance_in_mau), and its peaks
+        # read in mAU, so the channel says mAU too.
+        unit = "mAU"
     if concept:
         metadata["measure"] = concept
     if unit:

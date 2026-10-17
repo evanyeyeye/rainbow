@@ -3,6 +3,7 @@ Methods for parsing Agilent Masshunter files.
  
 """
 import os
+import re
 import struct
 import warnings
 import numpy as np
@@ -354,6 +355,9 @@ _AXIS_PREFIX_SIZE = 16      # f64 start + f64 step
 # whose pairs hold only telemetry, are not among them.
 _DAD_DEVICES = ('DAD', 'MWD', 'VWD', 'FLD')
 
+# A description naming an excitation or emission, numeric or not.
+_NAMES_EX_EM_RE = re.compile(r'\b(?:Ex|Em)\b', re.IGNORECASE)
+
 
 def parse_dadfiles(path, telemetry=False, requested_files=None, listing=None):
     """
@@ -579,7 +583,13 @@ def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
         # fluorescence signal names its excitation and emission ("Ex=230,
         # Em=310") in any unit.
         optics = parse_optics(signal['description'])
-        is_fluorescence = 'emission_wavelength' in optics
+        # In an FLD's own file, a signal that names an excitation or emission
+        # in any form ("Ex=Scan"), or reads in its luminescence units, is a
+        # fluorescence signal too, not one of the detector's telemetry traces.
+        is_fluorescence = 'emission_wavelength' in optics or (
+            stem[:3].upper() == 'FLD'
+            and (_NAMES_EX_EM_RE.search(signal['description'])
+                 or signal['unit'].strip().upper() == 'LU'))
         is_absorbance = not is_fluorescence and (
             signal['unit'].lower() == 'mau'
             or signal['description'].startswith('Sig='))
@@ -612,7 +622,7 @@ def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
         # the signals share one file, so the letter is what tells them apart.
         name = os.path.join(os.path.dirname(path), f"{stem}{signal['letter']}.cg")
         if is_fluorescence:
-            detector, ylabel = 'FLD', optics['emission_wavelength']
+            detector, ylabel = 'FLD', optics.get('emission_wavelength', '')
         else:
             detector = 'UV' if is_absorbance else None
             ylabel = _signal_wavelength(signal['description'])

@@ -369,7 +369,8 @@ field the schema requires (a data system document needs its instance
 identifier, and either a UNC path and file name or a database primary key) is
 not written, and said. A data system document is written as
 the new document's: ``rainbow-api`` is its converter, with its version, the
-export's time its conversion time and the file written its file identifier,
+export's time its conversion time and the file written (else one named for
+the run) its file identifier,
 while the fields naming where the data came from are kept and the source
 converter's go under its custom information, prefixed ``source``. The
 records' times are stamped with ``utc_offset=``. An integration's ``data processing

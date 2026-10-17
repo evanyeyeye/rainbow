@@ -1174,6 +1174,25 @@ def test_a_masshunter_fluorescence_signal_is_read_as_fld():
     assert fld.metadata["emission_wavelength"] == 310.0
 
 
+@pytest.mark.parametrize("description,unit", [
+    ("Ex=Scan, Em=310", "LU"), ("Emission Signal", "LU"),
+    ("Ex=Program", "mV")])
+def test_an_fld_signal_without_numeric_wavelengths_is_still_fld(
+        description, unit):
+    with tempfile.TemporaryDirectory() as tmp:
+        acqdata = os.path.join(tmp, "synthetic.D", "AcqData")
+        os.makedirs(acqdata)
+        _synthetic_cd(acqdata, [("A", description, unit, 10)])
+        for ext in (".cd", ".cg"):
+            os.rename(os.path.join(acqdata, "DAD1" + ext),
+                      os.path.join(acqdata, "FLD1" + ext))
+        with open(os.path.join(acqdata, "FLD1.cg"), "r+b") as f:
+            f.write(struct.pack('<H', 0x0201))
+        datafiles = masshunter.parse_dadfiles(acqdata)
+    fld, = datafiles
+    assert fld.detector == "FLD"
+
+
 def test_dad_one_letter_unit_does_not_split_a_record():
     """ A single-uppercase-letter unit ("V") has the same byte shape as a
     record's leading letter. Put one on a middle record, where mistaking it for
