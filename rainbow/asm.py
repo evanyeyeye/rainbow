@@ -520,6 +520,12 @@ def _record_documents(metadata, options, file_identifier=None):
                         # A timestamp datum, as it was a date-time field.
                         value = _parse_iso(value) or value
                     source["source " + field] = value
+            if any(field.startswith("source ") for field in record):
+                # Read back from an earlier re-export: its source fields name
+                # the original converter already, and what was just popped is
+                # that export's own (rainbow's), which would fill in fields
+                # the original source never had.
+                source = {}
             record.update({
                 "ASM converter name": "rainbow-api",
                 "ASM converter version": _rainbow_version(),
@@ -527,6 +533,13 @@ def _record_documents(metadata, options, file_identifier=None):
                     timespec="seconds"),
                 "ASM file identifier": file_identifier or "unknown",
             })
+        if name == "data system document" and "database primary key" in \
+                record and "UNC path" in record and "file name" in record:
+            # The schema admits exactly one way of naming the source; a
+            # record naming both keeps the database row and carries the file
+            # as custom information rather than being dropped whole.
+            others["UNC path"] = record.pop("UNC path")
+            others["file name"] = record.pop("file name")
         missing = [field for field in required if field not in record]
         if name == "data system document":
             # And exactly one way of naming the source: a file (both its UNC
@@ -1723,12 +1736,12 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     note recording the real quantity. Dropping the peaks would lose more than
     the imprecise unit does, and the published model is still being refined.
     """
-    control = {"device type": _channel_device_type(descriptor, technique)}
-    if descriptor.get("generic"):
-        # The generic class names no detector, so the detector's own name
-        # rides beside it, where _detector_of reads it back: without it a
-        # CAD read back from rainbow's own export was an analog trace.
-        control["device identifier"] = datafile.detector
+    # The detector's own name rides beside its class, where _detector_of
+    # reads it back. The class alone cannot say it for a CAD (the generic
+    # class) or for a detector in the other technique's document (a neutral
+    # class): without it such a channel read back as an analog trace.
+    control = {"device type": _channel_device_type(descriptor, technique),
+               "device identifier": datafile.detector}
     descriptor = _measure_from_source(datafile, descriptor, options)
     detection_type = descriptor.get("detection_type")
     if detection_type:

@@ -3111,3 +3111,59 @@ def test_a_gc_document_without_an_fid_re_exports_as_gc():
     sequence = rb.sequence_from_asm(document)
     assert "gas chromatography aggregate document" in \
         sequence.injections[0].to_asm()
+
+
+# --- Review round 10 ---
+
+
+def _data_system(document):
+    return document["liquid chromatography aggregate document"][
+        "data system document"]
+
+
+def test_a_second_round_trip_does_not_invent_source_fields():
+    # Like the gc_peaks sweep fixture: the source data system records no
+    # conversion time.
+    document = _records_document()
+    del document["liquid chromatography aggregate document"][
+        "data system document"]["ASM conversion time"]
+    exports = [document]
+    for _ in range(3):
+        exports.append(rb.from_asm(exports[-1], name="run").to_asm(
+            utc_offset="+00:00"))
+    second, third = _data_system(exports[2]), _data_system(exports[3])
+    labels = {entry["datum label"] for entry
+              in second["custom information aggregate document"]
+              ["custom information document"]}
+    assert "source ASM conversion time" not in labels
+    assert "source ASM converter name" in labels
+
+    def without_time(record):
+        return {k: v for k, v in record.items()
+                if k != "ASM conversion time"}
+
+    assert without_time(second) == without_time(third)
+
+
+def test_a_data_system_naming_a_file_and_a_row_keeps_the_row():
+    document = _records_document()
+    document["liquid chromatography aggregate document"][
+        "data system document"].update(
+            {"UNC path": "\\\\server\\share", "file name": "A.JSON"})
+    data_system = _data_system(rb.from_asm(document).to_asm(
+        utc_offset="+00:00"))
+    assert data_system["database primary key"] == "128283"
+    assert "UNC path" not in data_system and "file name" not in data_system
+    custom = {entry["datum label"]: entry["scalar string datum"]
+              for entry in data_system["custom information aggregate document"]
+              ["custom information document"]
+              if "scalar string datum" in entry}
+    assert custom["file name"] == "A.JSON"
+    assert custom["UNC path"] == "\\\\server\\share"
+
+
+def test_an_elsd_in_a_forced_gc_document_reads_back_as_elsd():
+    original = rb.read(os.path.join(INPUTS, "orange.D"))
+    assert "ELSD" in original.detectors
+    back = rb.from_asm(original.to_asm(technique="GC"), name=original.name)
+    assert "ELSD" in back.detectors

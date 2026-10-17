@@ -163,7 +163,13 @@ the run name, which import otherwise replaces with its default:
    first = datadir.to_asm()
    again = rb.from_asm(first, name=datadir.name).to_asm()
 
-Two caveats keep this from being ``again == first`` in general.
+Three caveats keep this from being ``again == first`` in general.
+
+A document that carries a data system record (one :func:`rainbow.from_asm`
+read from another writer's export) gets rainbow's ``ASM conversion time`` on
+every export, which is the time of that export, so two exports of the same run
+differ there. Everything else in the record is stable from the second export
+on.
 
 A run that carries MS channels does **not** re-export identically: the mass
 chromatograms are export-only, so the second document is missing them. Nor
@@ -173,6 +179,14 @@ carry no values) or on an analog channel (detector :code:`None`) have nowhere
 to go on export, and :code:`to_asm` warns once for each such group rather than
 drop it in silence. Compare the cubes you care about rather than the whole
 document.
+
+A document rainbow 1.5.4 wrote reads back as faithfully as its contents
+allow. One case it cannot: a Waters CAD, which 1.5.4 exported under the
+generic detector class with its filename as the cube label (``_CHRO001.DAT``)
+and no device identifier, so nothing in the document names a charged-aerosol
+detector, and it reads back as an analog trace. rainbow now writes the
+detector's name as the device identifier, so its own exports read back as
+CAD.
 
 Retention times can also differ in their last floating-point digit, because the
 seconds-to-minutes conversion is not always exactly reversible. Whether any

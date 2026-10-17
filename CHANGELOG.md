@@ -68,7 +68,9 @@ to [Semantic Versioning](https://semver.org/).
   Em=310" was typed UV at 230 nm in a ChemStation .ch; it is now an `FLD`
   channel with `excitation_wavelength` and `emission_wavelength`, labelled by
   its emission, in the .ch, OpenLab .dx and MassHunter .cg readers alike, and
-  `parse_optics` reads the `Ex=`/`Em=` clause.
+  `parse_optics` reads the `Ex=`/`Em=` clause. In the 179/181 .ch container
+  1.5.4 typed it FID instead, which also exported the whole run as gas
+  chromatography.
 - **`from_asm` scales an absorbance trace to mAU.** A cube in AU (or Empower's
   µV) was rebuilt in its own unit while its peaks' heights and areas were
   converted to mAU, so the trace minus an edge height was a thousand times
@@ -93,10 +95,13 @@ to [Semantic Versioning](https://semver.org/).
   and an absorbance area per an unknown time reads as None.
 - **A re-exported data system record names rainbow as its converter.**
   `ASM converter name` and `version` are rainbow-api's, `ASM conversion time`
-  is the export's, and `ASM file identifier` is the file written, else one
-  named for the run; the source
+  is the time of the export (so two exports differ there), and `ASM file
+  identifier` is the file written, else one named for the run; the source
   converter's are kept as the record's custom information, prefixed
-  `source`. The record's times take `utc_offset=`.
+  `source`, and a second round trip keeps them as they were. A record naming
+  both a file and a database row keeps the row and carries the file as custom
+  information. The record's times take `utc_offset=`. Every detector's
+  device control names it as its device identifier.
 - **Bandwidth, reference and acquisition method survive a round trip.** A UV
   channel's bandwidth and reference are written as their device control
   settings (Ref=off as custom information), an FLD's excitation bandwidth
