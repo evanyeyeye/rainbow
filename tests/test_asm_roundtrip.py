@@ -898,6 +898,116 @@ def test_a_peaks_compound_name_survives_a_round_trip():
     assert rb.from_asm(document).peaks[0]["peaks"][0]["name"] == "Caffeine"
 
 
+def _empower_peak(**fields):
+    """A peak shaped the way an Empower export writes one."""
+    return dict({"peak start": {"value": 90.0, "unit": "s"},
+                 "peak end": {"value": 120.0, "unit": "s"},
+                 "peak baseline start code": "B",
+                 "peak baseline end code": "v",
+                 "peak value at start": {"value": 0.0, "unit": "mAU"},
+                 "peak value at end": {"value": 1.25, "unit": "mAU"},
+                 "baseline value at start of peak": {"value": 84.0,
+                                                     "unit": "s"},
+                 "baseline value at end of peak": {"value": 150.0,
+                                                   "unit": "s"}}, **fields)
+
+
+_BASELINE_KEYS = ("baseline_start_code", "baseline_end_code", "start_height",
+                  "end_height", "baseline_start_time", "baseline_end_time",
+                  "baseline_start_value", "baseline_end_value")
+
+
+def test_a_peaks_baseline_is_read():
+    """ Without its baseline a peak's area cannot be checked against its trace.
+
+    An Empower export records how the integration drew the line under each
+    peak: the type at each edge, how far the trace sits above the line there,
+    and where the line under the peak's cluster begins and ends. rainbow read
+    the area and dropped everything that says what it was measured from.
+    """
+    peak = asm._peak_from_asm(_empower_peak())
+    assert peak["baseline_start_code"] == "B"
+    assert peak["baseline_end_code"] == "v"
+    assert peak["start_height"] == 0.0
+    assert peak["end_height"] == 1.25
+    assert peak["baseline_start_time"] == 1.4
+    assert peak["baseline_end_time"] == 2.5
+    assert peak["baseline_start_value"] is None
+    assert peak["baseline_end_value"] is None
+
+
+def test_a_peak_without_a_baseline_reads_none():
+    peak = asm._peak_from_asm(_rt(90.0))
+    assert all(peak[key] is None for key in _BASELINE_KEYS)
+    assert peak["retention_time"] == 1.5
+
+
+def test_a_baseline_edge_is_a_time_or_a_value_by_its_unit():
+    """ One field, two readings: the unit says which, and nothing else does.
+
+    Empower writes the time the cluster's baseline starts and ends; the field's
+    name reads as the baseline's signal value at the edge. A time comes back in
+    minutes, a signal value as it is, and a bare number as neither, since
+    guessing would put a time where a value belongs or the other way round.
+    """
+    peak = asm._peak_from_asm(_empower_peak(**{
+        "baseline value at start of peak": {"value": 1.4, "unit": "min"},
+        "baseline value at end of peak": {"value": 0.3, "unit": "mAU"}}))
+    assert peak["baseline_start_time"] == 1.4
+    assert peak["baseline_start_value"] is None
+    assert peak["baseline_end_time"] is None
+    assert peak["baseline_end_value"] == 0.3
+
+    peak = asm._peak_from_asm(_empower_peak(**{
+        "baseline value at start of peak": 84.0,
+        "baseline value at end of peak": {"value": 150.0}}))
+    assert all(peak[key] is None for key in _BASELINE_KEYS[4:])
+
+
+def test_a_baseline_field_of_the_wrong_type_drops_to_none():
+    peak = asm._peak_from_asm(_empower_peak(**{
+        "peak baseline start code": 3,
+        "peak value at end": {"value": "1.25", "unit": "mAU"},
+        "baseline value at start of peak": {"value": "84", "unit": "s"}}))
+    assert peak["baseline_start_code"] is None
+    assert peak["end_height"] is None
+    assert peak["baseline_start_time"] is None
+    # The fields beside them still come through.
+    assert peak["baseline_end_code"] == "v"
+    assert peak["baseline_end_time"] == 2.5
+
+
+def test_a_peaks_baseline_survives_a_round_trip():
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    channel = next(d.name for d in datadir.datafiles
+                   if d.detector == "UV" and d.data.shape[1] == 1)
+    first = asm._peak_from_asm(_empower_peak(**_rt(105.0), **{
+        "peak area": {"value": 50.0, "unit": "mAU.s"}}))
+    datadir.peaks = [{"signal": channel.split(".")[0].upper(),
+                      "wavelength": 254.0, "description": None,
+                      "channel_file": channel, "peaks": [first]}]
+    document = datadir.to_asm()
+    peak = (_measurements(document)[0]["processed data aggregate document"]
+            ["processed data document"][0]["peak list"]["peak"][0])
+    assert peak["peak baseline start code"] == "B"
+    assert peak["peak value at end"] == {"value": 1.25, "unit": "mAU"}
+    assert peak["baseline value at start of peak"] == {"value": 84.0,
+                                                       "unit": "s"}
+    assert rb.from_asm(document).peaks[0]["peaks"][0] == first
+
+
+def test_a_baseline_value_survives_a_round_trip():
+    entry = asm._asm_peak(1, {"baseline_start_value": 0.3,
+                              "baseline_end_time": 2.5})
+    assert entry["baseline value at start of peak"] == {"value": 0.3,
+                                                        "unit": "mAU"}
+    assert entry["baseline value at end of peak"] == {"value": 150.0,
+                                                      "unit": "s"}
+    peak = asm._peak_from_asm(entry)
+    assert peak["baseline_start_value"] == 0.3
+    assert peak["baseline_end_time"] == 2.5
+
+
 def _measurements(document):
     """Every measurement carrying a peak list, in document order."""
     return [m for m in document["liquid chromatography aggregate document"]

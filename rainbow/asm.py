@@ -1982,6 +1982,17 @@ def _asm_peak(index, peak, options=None):
         ("height_percent", "relative peak height", "%", 1.0),
         ("symmetry", "asymmetry factor measured at 5 % height",
          "(unitless)", 1.0),
+        ("start_height", "peak value at start", "mAU", 1.0),
+        ("end_height", "peak value at end", "mAU", 1.0),
+        # One ASM field holds either form of the baseline edge, so the value
+        # comes first and a time, if the peak has both, is the one written.
+        ("baseline_start_value", "baseline value at start of peak", "mAU",
+         1.0),
+        ("baseline_end_value", "baseline value at end of peak", "mAU", 1.0),
+        ("baseline_start_time", "baseline value at start of peak", "s",
+         _SECONDS_PER_MINUTE),
+        ("baseline_end_time", "baseline value at end of peak", "s",
+         _SECONDS_PER_MINUTE),
     )
     for source, target, unit, scale in mapping:
         value = peak.get(source)
@@ -1989,6 +2000,11 @@ def _asm_peak(index, peak, options=None):
         # rather than fail the whole export.
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             entry[target] = _quantity(value * scale, unit, options)
+    for source, target in (("baseline_start_code", "peak baseline start code"),
+                           ("baseline_end_code", "peak baseline end code")):
+        code = peak.get(source)
+        if isinstance(code, str) and code:
+            entry[target] = code
     return entry
 
 
@@ -2972,7 +2988,43 @@ def _peak_from_asm(peak):
         "height": value("peak height"),
         "height_percent": value("relative peak height"),
         "symmetry": value("asymmetry factor measured at 5 % height"),
+        # How the integration drew the baseline under this peak. A code is the
+        # integration type at each edge (B, V, S, T, ..., lowercase where the
+        # edge was moved by hand; Empower splits a group's "Gp" into "G" and
+        # "p"). A height is how far the trace sits above the baseline at that
+        # edge, in the signal's unit, so the line runs from (start, trace -
+        # start height) to (end, trace - end height).
+        "baseline_start_code": _text(peak.get("peak baseline start code")),
+        "baseline_end_code": _text(peak.get("peak baseline end code")),
+        "start_height": value("peak value at start"),
+        "end_height": value("peak value at end"),
+        **_baseline_edge("start", peak.get("baseline value at start of peak")),
+        **_baseline_edge("end", peak.get("baseline value at end of peak")),
     }
+
+
+def _baseline_edge(edge, quantity):
+    """
+    A peak's baseline edge as ``baseline_<edge>_time`` and
+    ``baseline_<edge>_value``, at most one of them set.
+
+    The schema does not define the field. Empower writes the time at which the
+    baseline under the peak's cluster begins or ends, in seconds, but the
+    field's name reads as the baseline's signal value at the edge. The unit is the only thing that tells the two
+    apart, so a time comes back in minutes like the peak's other times, any
+    other unit as the value it is, and a number with no unit as neither.
+
+    """
+    number = _number(quantity)
+    unit = quantity.get("unit") if isinstance(quantity, dict) else None
+    time = value = None
+    if number is not None and unit == "min":
+        time = number
+    elif number is not None and unit == "s":
+        time = number / _SECONDS_PER_MINUTE
+    elif number is not None and isinstance(unit, str) and unit:
+        value = number
+    return {f"baseline_{edge}_time": time, f"baseline_{edge}_value": value}
 
 
 def _instrument_from_device_system(device_system):
