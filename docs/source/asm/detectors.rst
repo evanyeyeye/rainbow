@@ -166,15 +166,14 @@ rides the absorbance cube [#interim]_.
 
 Where peaks meet measures: REC/2026/06 attaches a processed-data peak list to
 absorbance in ``mAU`` and to the chromatography detectors' own measures, each in
-one unit: electric current in ``pA``, intensity in ``RLU``, voltage in ``mV``,
-fluorescence in ``RFU``, count in ``Counts``, electric charge in ``nC``, angle
-in ``m°``, electric conductance in ``S`` and conductivity in ``S/m``. rainbow's
-own detectors produce the first five; the others are written back when a
-channel read from another writer's document is in one of them. A channel in
-one of these keeps its faithful cube when it carries integrated peaks, and its
-peaks are written in its unit: an FID's height in ``pA``, its area in
-``pA.s``. The area unit is the one the schema names, which for conductivity is
-``[S/m].s``. (A vendor's peak table states no unit;
+one unit. Electric current in ``pA``, intensity in ``RLU``, voltage in ``mV``
+and fluorescence in ``RFU`` are the ones rainbow exports a chromatogram in. (The
+schema gives charge, angle, conductance, conductivity and counts peak lists
+too, but no rainbow detector exports a chromatogram in them: a channel read
+from ASM in one of those has no detector name and is not exported.) A channel
+in one of these keeps its faithful cube when it carries integrated peaks, and
+its peaks are written in its unit: an FID's height in ``pA``, its area in
+``pA.s``. (A vendor's peak table states no unit;
 its values are the channel's.) A channel in a measure the schema gives no peak
 list (a current in ``nA``, a voltage in ``V``) is relabeled to
 ``absorbance``/``mAU`` to keep its peaks, rather than emit them against a

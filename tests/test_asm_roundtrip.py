@@ -2539,8 +2539,10 @@ def test_a_relabeled_channel_re_exports_without_peak_unit_warnings():
     assert not [c for c in caught if "a peak read in" in str(c.message)]
 
 
-def test_conductance_carries_its_own_peak_list():
-    assert asm._admits_peaks({asm._CHROMATOGRAM_CUBE: {"cube-structure": {
+def test_only_measures_rainbow_exports_are_listed_as_carrying_peaks():
+    # The schema gives conductance a peak list too, but no rainbow detector
+    # exports one, so the exporter does not claim it.
+    assert not asm._admits_peaks({asm._CHROMATOGRAM_CUBE: {"cube-structure": {
         "measures": [{"concept": "electric conductance", "unit": "S"}]}}})
 
 
@@ -2587,8 +2589,7 @@ def test_a_trace_in_another_measure_keeps_its_unit():
 
 
 @pytest.mark.parametrize("unit,area", [
-    ("mAU", "mAU.s"), ("pA", "pA.s"), ("RFU", "RFU.s"),
-    ("S/m", "[S/m].s"), ("nA", "nA.s")])
+    ("mAU", "mAU.s"), ("pA", "pA.s"), ("RFU", "RFU.s"), ("nA", "nA.s")])
 def test_a_peak_area_takes_the_unit_its_schema_names(unit, area):
     entry = asm._asm_peak(1, {"area": 1.0, "height": 1.0}, None, unit)
     assert entry["peak area"]["unit"] == area
@@ -2599,3 +2600,152 @@ def test_the_peak_unit_warning_names_its_channel():
     with pytest.warns(UserWarning, match="^ADC1A: a peak read in 'RFU.s'"):
         asm._asm_peak(1, {"area": 1.0, "area_unit": "RFU.s"},
                       asm._Options(), "pA", channel="ADC1A")
+
+
+# --- Review round 4 ---
+
+
+def test_a_processing_time_without_an_offset_takes_the_callers():
+    processing = {"time": "2025-09-18T11:42:38", "method_name": "m"}
+    stamped = asm._asm_processed_data(
+        1, processing, [{"area": 1.0}], asm._Options(utc_offset="+00:00"))
+    assert stamped["data processing document"]["data processing time"] \
+        == "2025-09-18T11:42:38+00:00"
+    assert "custom information aggregate document" not in stamped
+
+
+def test_a_processing_time_with_no_offset_at_all_is_custom_information():
+    processing = {"time": "2025-09-18T11:42:38", "method_name": "m"}
+    with pytest.warns(UserWarning, match="no UTC offset"):
+        document = asm._asm_processed_data(
+            1, processing, [{"area": 1.0}], asm._Options())
+    assert "data processing time" not in document["data processing document"]
+    entry, = (document["custom information aggregate document"]
+              ["custom information document"])
+    assert entry["datum label"] == "data processing time"
+    assert asm._processing_document(document)["time"] \
+        == "2025-09-18T11:42:38"
+
+
+@pytest.mark.parametrize("unit", ["mV", "pA"])
+def test_an_fld_channel_in_another_unit_keeps_its_emission(unit):
+    import numpy as np
+    from rainbow.datadirectory import DataDirectory
+    from rainbow.datafile import DataFile
+
+    fld = DataFile("FLD1A", "FLD", np.array([0.0, 1.0]), np.array([310.0]),
+                   np.array([[1.0], [2.0]]),
+                   {"unit": unit, "excitation_wavelength": 230.0,
+                    "emission_wavelength": 310.0})
+    back = rb.from_asm(DataDirectory("run", [fld], {}).to_asm())
+    metadata = back.get_file("FLD1A").metadata
+    assert back.get_file("FLD1A").detector == "FLD"
+    assert metadata["emission_wavelength"] == 310.0
+    assert metadata["excitation_wavelength"] == 230.0
+    assert "wavelength" not in metadata
+
+
+_PEAK_KEYS = {"identifier", "index", "area_unit", "height_unit"}
+
+
+def test_an_asm_peak_and_a_vendor_peak_have_the_same_keys():
+    vendor = rb.read(os.path.join(INPUTS, "red.D"), peaks=True)
+    vendor_peak = vendor.peaks[0]["peaks"][0]
+    assert _PEAK_KEYS <= set(vendor_peak)
+    assert all(vendor_peak[key] is None for key in _PEAK_KEYS)
+    asm_peak = rb.from_asm(vendor.to_asm()).peaks[0]["peaks"][0]
+    assert _PEAK_KEYS <= set(asm_peak)
+
+
+def test_a_sample_role_outside_the_schema_is_custom_information():
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_role"] = "system suitability"
+    sample = next(_asm_measurements(datadir.to_asm()))["sample document"]
+    assert "sample role type" not in sample
+    entries = (sample["custom information aggregate document"]
+               ["custom information document"])
+    assert entries[-1]["datum label"] == "sample role type"
+    back = rb.from_asm(datadir.to_asm())
+    assert back.metadata["sample_role"] == "system suitability"
+    assert "sample_custom" not in back.metadata
+
+
+def test_the_injection_time_and_records_are_written_back():
+    measurement = _fluorescence(**{
+        "measurement time": "2026-04-10T18:46:20-04:00",
+        "injection document": {
+            "injection identifier": "128283",
+            "injection time": "2026-04-10T18:46:25-04:00"}})
+    document = _lc(measurement)
+    records = {
+        "data system document": {
+            "ASM file identifier": "A.JSON",
+            "data system instance identifier": "DB ID: 1",
+            "database primary key": "1",
+            "software name": "Empower 3 Software",
+            "Odd Field": "kept"},
+        "analysis sequence document": {"written name": "SET_1"},
+        "electronic project record": {"written name": "P"}}
+    document["liquid chromatography aggregate document"].update(records)
+    again = rb.from_asm(document).to_asm()
+    aggregate = again["liquid chromatography aggregate document"]
+    # No injection volume, so no LC injection document: the time rides the
+    # measurement's custom information, and reads back.
+    measurement = next(_asm_measurements(again))
+    assert "injection document" not in measurement
+    assert rb.from_asm(again).metadata["injection_time"] \
+        == "2026-04-10T18:46:25-04:00"
+    data_system = aggregate["data system document"]
+    assert data_system["software name"] == "Empower 3 Software"
+    assert "Odd Field" not in data_system
+    assert (data_system["custom information aggregate document"]
+            ["custom information document"][0]["datum label"]) == "Odd Field"
+    assert aggregate["analysis sequence document"] == {"written name": "SET_1"}
+    assert aggregate["electronic project record"] == {"written name": "P"}
+    assert rb.from_asm(again).metadata["data_system"]["software name"] \
+        == "Empower 3 Software"
+
+
+def test_a_record_missing_a_required_field_is_not_written():
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["data_system"] = {"software name": "x"}
+    with pytest.warns(UserWarning, match="data system instance identifier"):
+        document = datadir.to_asm()
+    assert "data system document" not in \
+        document["liquid chromatography aggregate document"]
+
+
+_RAINBOW_1_5_4 = os.path.join(INPUTS, "rainbow_1_5_4.asm.json")
+
+
+def test_a_document_rainbow_1_5_4_wrote_reads_back_in_real_units():
+    """ Written by rainbow 1.5.4 (ff716a7) from red.D: its CAD channel was
+    relabeled to absorbance to carry peaks, with only the sentence to say
+    so. """
+    with open(_RAINBOW_1_5_4) as f:
+        document = json.load(f)
+    back = rb.from_asm(document, name="red.D")
+    cad = back.get_file("ADC1A.CH")
+    assert cad.detector == "CAD"
+    assert (cad.metadata["measure"], cad.metadata["unit"]) \
+        == ("electric current", "pA")
+    group = next(g for g in back.peaks if g["channel_file"] == "ADC1A.CH")
+    assert group["peaks"][0]["area_unit"] == "pA.s"
+    again = _cad_measurement(back.to_asm())
+    assert again["chromatogram data cube"]["cube-structure"]["measures"][0][
+        "unit"] == "pA"
+    peak = (again["processed data aggregate document"]
+            ["processed data document"][0]["peak list"]["peak"][0])
+    assert peak["peak area"]["unit"] == "pA.s"
+
+
+def test_an_injection_time_with_a_volume_goes_in_the_injection_document():
+    datadir = rb.from_asm(_lc(_fluorescence(**{
+        "measurement time": "2026-04-10T18:46:20-04:00",
+        "injection document": {
+            "injection identifier": "128283",
+            "injection time": "2026-04-10T18:46:25-04:00",
+            "autosampler injection volume setting (chromatography)":
+                {"value": 5.0, "unit": "mm^3"}}})))
+    injection = next(_asm_measurements(datadir.to_asm()))["injection document"]
+    assert injection["injection time"] == "2026-04-10T18:46:25-04:00"

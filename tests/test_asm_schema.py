@@ -331,8 +331,10 @@ def test_processed_data_carries_only_names_the_schema_declares():
     allowed = {key: _property_names(schema, key) for key in (
         "processed data document", "data processing document")}
     assert "peak list" in allowed["processed data document"]
+    # Without an offset: it takes utc_offset like every other timestamp, so
+    # the dateTimeStamp the data processing document needs has one.
     processing = {"identifier": "1", "group_identifier": "g",
-                  "time": "2026-04-12T09:00:00-04:00", "method_name": "m",
+                  "time": "2025-09-18T11:42:38", "method_name": "m",
                   "method_version": "1", "type": "integration",
                   "description": "DAD: Signal A, 246.0 nm"}
     datadir = rb.read("tests/inputs/red.D")
@@ -357,6 +359,31 @@ def test_processed_data_carries_only_names_the_schema_declares():
         method = processed["data processing document"]
         assert set(method) <= allowed["data processing document"], method
     _assert_conforms(_lc_validator(), document)
+
+
+def test_a_document_rainbow_1_5_4_wrote_re_exports_to_a_valid_document():
+    # tests/inputs/rainbow_1_5_4.asm.json was written by rainbow 1.5.4
+    # (ff716a7) from red.D, with its CAD channel relabeled to carry peaks.
+    with open("tests/inputs/rainbow_1_5_4.asm.json") as f:
+        document = json.load(f)
+    again = rb.from_asm(document, name="red.D").to_asm(utc_offset=_TZ)
+    _assert_conforms(_lc_validator(), again)
+
+
+def test_records_injection_time_and_role_written_back_conform():
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.metadata.update({
+        "injection_time": "2018-02-27T10:11:50",
+        "sample_role": "not a role the schema has",
+        "data_system": {"ASM file identifier": "A.JSON",
+                        "data system instance identifier": "DB ID: 1",
+                        "database primary key": "1",
+                        "software name": "Empower 3 Software",
+                        "Odd Field": "kept"},
+        "analysis_sequence": {"written name": "SET_1",
+                              "start time": "2026-04-10T18:11:45-04:00"},
+        "project": {"written name": "P", "description": "d"}})
+    _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
 
 
 def test_a_fluorescence_channel_read_from_asm_conforms_to_lc_schema():

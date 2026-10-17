@@ -317,8 +317,9 @@ The same document supplies the vial position, the ``well plate identifier``
 (``metadata["sample_role"]``, as written, ``"unknown sample role"`` included),
 and the last two are written back on export. REC/2026/06 has no sample document
 property for the plate, so rainbow writes it as the sample's custom information
-under the label ``well plate identifier``, and reads it from either place into
-``well_plate_id`` (not into ``sample_custom``).
+under the label ``well plate identifier``; a role outside the schema's list of
+roles goes there too, under ``sample role type``. Both are read from either
+place into their keys, not into ``sample_custom``.
 
 One thing this gives up, deliberately. A document whose channels split the
 fields between them -- the identifier on one, the custom fields on another --
@@ -353,3 +354,18 @@ and the ``electronic project record`` into ``metadata["project"]``. For
 :func:`rainbow.sequence_from_asm` they are the sequence's metadata. A custom
 field's ``scalar integer datum``, which converters write for a count though the
 schema does not list it, reads as an ``int``.
+
+All of these are written back on export. The injection time goes in the
+injection document, which a liquid chromatography run without an injection
+volume does not have; there it is the measurement's custom information, under
+``injection time``. The three records go beside the device system document,
+each field the schema defines for it as read and any other as the record's
+custom information; the project record has no custom information, so a field
+the schema does not define for it is dropped, and said. A record missing a
+field the schema requires (a data system document needs its file identifier,
+its instance identifier, and either a UNC path and file name or a database
+primary key) is not written, and said. An integration's ``data processing
+time`` is written in its data processing document, stamped with
+``utc_offset=`` like every other timestamp; one that still has no offset is
+written as the processed data document's custom information instead, since
+the schema requires an offset there.

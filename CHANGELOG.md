@@ -31,8 +31,8 @@ to [Semantic Versioning](https://semver.org/).
   peak's own; each integration's `processing` gains its `description`.
 - **More of the envelope.** `injection_time`, `sample_role`, `well_plate_id`
   and `acq_method`, and the `data_system`, `analysis_sequence` and `project`
-  records, field by field as written. A `scalar integer datum` reads as an
-  `int`.
+  records, field by field as written; all are written back on export (see the
+  round-trip guide for where). A `scalar integer datum` reads as an `int`.
 - **`rb.read(path, peaks=True)`** attaches one injection's integrated peaks,
   found as `read_sequence(peaks=True)` finds them: the `sequence.acaml` beside
   the .D, else its own `sequence.acam_`.
@@ -56,8 +56,7 @@ to [Semantic Versioning](https://semver.org/).
 - **`to_asm` wrote every peak area as `mAU.s`**, an FID's or CAD's pA.s
   included. A peak's area and height are now written in the unit of the cube
   it was integrated on. REC/2026/06 gives electric current (pA), intensity
-  (RLU), voltage (mV), fluorescence (RFU) and counts (Counts) their own peak
-  lists, so such a channel keeps its faithful cube when it carries peaks; only
+  (RLU), voltage (mV) and fluorescence (RFU) their own peak lists, so such a channel keeps its faithful cube when it carries peaks; only
   a measure with no peak list in the schema (nA, V) is still relabeled to
   absorbance. The relabel note now also records the real concept and unit as
   structured custom information, and `from_asm` reads it (or the sentence
@@ -74,9 +73,13 @@ to [Semantic Versioning](https://semver.org/).
   off. The trace is now scaled to mAU too, the unit rainbow holds UV data in
   and to_asm writes, and `metadata["unit"]` says so.
 - **The processing time and description are where REC/2026/06 puts them.**
-  `data processing time` is written in the data processing document (and read
-  from either place), and the 2025/03 `processed data description` is written
-  as the processed data document's custom information.
+  `data processing time` is written in the data processing document, stamped
+  with `utc_offset=` (as custom information when it has no offset), and the
+  2025/03 `processed data description` as the processed data document's
+  custom information; both are read from either place. A sample role outside
+  the schema's list is written as custom information.
+- **Every peak has the same keys.** A peak read from a vendor result document
+  carries `identifier`, `index`, `area_unit` and `height_unit` too, as None.
 - **`to_asm` dropped peak groups no exported channel carries** (peaks read from
   an index document, or on an analog channel) without a word. It warns once
   per group.

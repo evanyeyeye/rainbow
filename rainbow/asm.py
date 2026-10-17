@@ -275,21 +275,17 @@ _DETECTOR_CUBES = {
 # these is written against the cube it belongs to. A measure outside the set
 # (a current in nA, a voltage in V) has nowhere in the schema to carry peaks,
 # and is relabeled to absorbance to keep them; see
-# :func:`_detector_measurement`. rainbow's own detectors produce the first
-# five; the rest are here so a channel read from another writer's document
-# in one of them is written back with the area unit its schema names, which
-# is not always the unit with ".s" appended.
+# :func:`_detector_measurement`. Only the measures rainbow's exporter writes a
+# chromatogram cube in are listed. The schemas also give charge (nC), angle
+# (m°), conductance (S), conductivity (S/m, area "[S/m].s") and counts their
+# own peak lists, but no rainbow detector exports one: a channel read in any
+# of them is detector None and is not exported.
 _PEAK_MEASURES = {
     ("absorbance", "mAU"): "mAU.s",
     ("electric current", "pA"): "pA.s",
     ("intensity", "RLU"): "RLU.s",
     ("voltage", "mV"): "mV.s",
     ("fluorescence", "RFU"): "RFU.s",
-    ("count", "Counts"): "Counts.s",
-    ("electric charge", "nC"): "nC.s",
-    ("angle", "m\u00b0"): "m\u00b0.s",
-    ("electric conductance", "S"): "S.s",
-    ("electric conductivity", "S/m"): "[S/m].s",
 }
 
 
@@ -348,7 +344,8 @@ def to_asm(datadir, *, export_dad_cube=True, wavelengths=None, ions=None,
     return _aggregate_document(
         technique,
         _device_system(metadata, technique),
-        [_injection_document(datadir, metadata, options, technique)])
+        [_injection_document(datadir, metadata, options, technique)],
+        _record_documents(metadata, options))
 
 
 def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
@@ -399,7 +396,8 @@ def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
         technique,
         _device_system(metadata, technique),
         [_injection_document(injection, injection.metadata, options, technique)
-         for injection in datasequence.injections])
+         for injection in datasequence.injections],
+        _record_documents(metadata, options))
 
 
 def _sequence_metadata(datasequence):
@@ -429,15 +427,87 @@ def _sequence_datafiles(datasequence):
             for datafile in injection.datafiles]
 
 
-def _aggregate_document(technique, device_system, documents):
-    """Wraps per-injection documents in the technique's aggregate document."""
+def _aggregate_document(technique, device_system, documents, records=None):
+    """Wraps per-injection documents in the technique's aggregate document.
+
+    ``records`` are the once-per-file records (see :func:`_record_documents`),
+    written beside the device system document.
+    """
+    aggregate = {"device system document": device_system}
+    aggregate.update(records or {})
+    aggregate[technique["document"]] = documents
     return {
         "$asm.manifest": technique["manifest"],
-        technique["aggregate"]: {
-            "device system document": device_system,
-            technique["document"]: documents,
-        },
+        technique["aggregate"]: aggregate,
     }
+
+
+# The fields REC/2026/06 defines for each once-per-file record, and the ones
+# it requires, as (metadata key, record, fields, required).
+_RECORD_FIELDS = (
+    ("data_system", "data system document",
+     ("ASM conversion time", "ASM converter name", "ASM converter version",
+      "ASM file identifier", "UNC path", "data system instance identifier",
+      "database primary key", "file name", "software name",
+      "software version"),
+     ("ASM file identifier", "data system instance identifier")),
+    ("analysis_sequence", "analysis sequence document",
+     ("UNC path", "end time", "file name", "identifier",
+      "method identifier", "method name", "start time", "version number",
+      "written name"),
+     ("written name",)),
+    ("project", "electronic project record",
+     ("description", "start time", "written name"),
+     ("written name",)),
+)
+
+
+def _record_documents(metadata, options):
+    """The once-per-file records ``metadata`` holds, as aggregate entries.
+
+    The inverse of :func:`_absorb_records`. A field the schema defines for the
+    record is written as read; any other goes under the record's custom
+    information (the project record has none, so there it is dropped, said).
+    A record missing a field the schema requires cannot validate, and is left
+    out, said, rather than written incomplete.
+    """
+    documents = {}
+    for key, name, fields, required in _RECORD_FIELDS:
+        record = metadata.get(key)
+        if not isinstance(record, dict) or not record:
+            continue
+        missing = [field for field in required if field not in record]
+        if name == "data system document":
+            # And exactly one way of naming the source: a file (both its UNC
+            # path and its name) or a database row.
+            ways = [all(field in record for field in way)
+                    for way in (("UNC path", "file name"),
+                                ("database primary key",))]
+            if ways.count(True) != 1:
+                missing.append("UNC path and file name, or database primary "
+                               "key (exactly one)")
+        if missing:
+            _warn_once_per_run(
+                options, "record-missing:{}".format(name),
+                "metadata[{!r}] lacks {}, which the schema requires of a {}; "
+                "the record is not written.".format(
+                    key, ", ".join(missing), name))
+            continue
+        document = {field: value for field, value in record.items()
+                    if field in fields}
+        others = {field: value for field, value in record.items()
+                  if field not in fields}
+        if others and name == "electronic project record":
+            _warn_once_per_run(
+                options, "record-dropped:{}".format(name),
+                "the {} has no place for {}; they are not written.".format(
+                    name, ", ".join(repr(field) for field in others)))
+        elif others:
+            custom = _custom_information_document(others, options)
+            if custom:
+                document["custom information aggregate document"] = custom
+        documents[name] = document
+    return documents
 
 
 def asm_technique(run):
@@ -556,7 +626,7 @@ def export_asm(datadir, fileobj, *, export_dad_cube=True, wavelengths=None,
     metadata = datadir.metadata
     technique = _technique(datadir.datafiles, metadata, technique)
     _stream_aggregate(fileobj, technique, _device_system(metadata, technique),
-                       [(datadir, metadata)], options, indent)
+                       [(datadir, metadata)], options, indent, metadata)
 
 
 def sequence_export_asm(datasequence, fileobj, *, export_dad_cube=True,
@@ -577,7 +647,7 @@ def sequence_export_asm(datasequence, fileobj, *, export_dad_cube=True,
     specs = [(injection, injection.metadata)
              for injection in datasequence.injections]
     _stream_aggregate(fileobj, technique, _device_system(metadata, technique),
-                       specs, options, indent)
+                       specs, options, indent, metadata)
 
 
 def sequence_export_asm_per_injection(datasequence, directory, *,
@@ -611,7 +681,7 @@ def sequence_export_asm_per_injection(datasequence, directory, *,
         with open(path, "w", encoding="utf-8") as fileobj:
             _stream_aggregate(fileobj, technique, device_system,
                               [(injection, injection.metadata)], options,
-                              indent)
+                              indent, metadata)
         paths.append(path)
     return paths
 
@@ -644,7 +714,7 @@ def _unique_filename(filename, taken):
 
 
 def _stream_aggregate(fileobj, technique, device_system, specs, options,
-                      indent):
+                      indent, metadata=None):
     """Writes the aggregate document, materializing one injection at a time.
 
     The envelope (manifest + device system) is rendered once with a placeholder
@@ -665,8 +735,9 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
     # looks like a completed export. Escaping is valid JSON in either case, so
     # the fallback costs only legibility.
     ensure_ascii = not _handles_unicode(fileobj)
-    envelope = _aggregate_document(technique, device_system,
-                                   _DOCUMENTS_PLACEHOLDER)
+    envelope = _aggregate_document(
+        technique, device_system, _DOCUMENTS_PLACEHOLDER,
+        _record_documents(metadata or {}, options))
     rendered = json.dumps(envelope, indent=indent, ensure_ascii=ensure_ascii,
                           allow_nan=False)
     # The placeholder is the injection-array slot, emitted after the device
@@ -1759,6 +1830,18 @@ _REPORTED_CONCEPT = "reported measure concept"
 _REPORTED_UNIT = "reported measure unit"
 
 
+_INJECTION_TIME = "injection time"
+
+
+def _append_custom(document, label, value):
+    """Adds one string field to a document's custom information."""
+    custom = document.setdefault("custom information aggregate document",
+                                 {"custom information document": []})
+    entries = custom["custom information document"]
+    entries.append({"@index": len(entries) + 1, "datum label": label,
+                    "scalar string datum": value})
+
+
 def _note_relabeled_measure(measurement, descriptor):
     """Records the real quantity of a channel relabeled to absorbance."""
     measurement["custom information aggregate document"] = {
@@ -1922,20 +2005,30 @@ def _measurement(datafile, metadata, control, cube_key, cube, options,
     # read. A vendor run records none. The well plate identifier is not a
     # sample document property in REC/2026/06, so it goes under its custom
     # information, which _custom_fields reads back from either place.
+    # The role is a class from the schema's enumeration; one outside it is
+    # kept as custom information, like the plate, rather than published as a
+    # role the schema rejects.
     role = metadata.get("sample_role")
+    extra = []
     if isinstance(role, str) and role:
-        sample["sample role type"] = role
+        if role in _SAMPLE_ROLES:
+            sample["sample role type"] = role
+        else:
+            extra.append((_SAMPLE_ROLE, role))
     plate = metadata.get("well_plate_id")
     if isinstance(plate, str) and plate:
+        extra.append((_WELL_PLATE, plate))
+    if extra:
         custom = sample.setdefault(
             "custom information aggregate document",
             {"custom information document": []})
         entries = custom["custom information document"]
-        if not any(entry.get("datum label") == _WELL_PLATE
-                   for entry in entries):
-            entries.append({"@index": len(entries) + 1,
-                            "datum label": _WELL_PLATE,
-                            "scalar string datum": plate})
+        for label, value in extra:
+            if not any(entry.get("datum label") == label
+                       for entry in entries):
+                entries.append({"@index": len(entries) + 1,
+                                "datum label": label,
+                                "scalar string datum": value})
     measurement = {
         "measurement identifier": identifier or datafile.name,
         "sample document": sample,
@@ -2054,6 +2147,12 @@ def _add_injection_document(measurement, metadata, identifier, technique,
     has_volume = microlitres is not None
     if technique is _LC:
         if not has_volume:
+            # No injection document to carry an injection time a document
+            # read by from_asm recorded, so it rides the measurement's custom
+            # information, which _absorb_envelope reads it back from.
+            injection_time = metadata.get("injection_time")
+            if isinstance(injection_time, str) and injection_time:
+                _append_custom(measurement, _INJECTION_TIME, injection_time)
             return
         document = {
             "injection identifier": identifier or "unknown",
@@ -2084,9 +2183,11 @@ def _add_injection_document(measurement, metadata, identifier, technique,
             }
     # Required by both ADMs, so an unreadable vendor spelling is written
     # through rather than dropped; see _Options.timestamp.
+    # The injection time a document read by from_asm recorded, else the run's
+    # date, which is when a vendor file says the run was injected.
     timestamp = options.timestamp(
-        metadata.get("date"), required=True,
-        recorded_offset=metadata.get("utc_offset"))
+        metadata.get("injection_time") or metadata.get("date"),
+        required=True, recorded_offset=metadata.get("utc_offset"))
     if timestamp:
         document["injection time"] = timestamp
     measurement["injection document"] = document
@@ -2147,18 +2248,35 @@ def _asm_processed_data(index, processing, peaks, options, unit="mAU",
         if isinstance(value, str) and value:
             document[target] = value
     method = {}
+    custom = []
     for source, target in _PROCESSING_METHOD_FIELDS:
         value = (processing or {}).get(source)
-        if isinstance(value, str) and value:
-            method[target] = value
+        if not (isinstance(value, str) and value):
+            continue
+        if source == "time":
+            # A dateTimeStamp there, so it takes the offset the caller gave,
+            # like every other timestamp; one that still has none is a time
+            # the schema cannot hold in that field, and is kept as custom
+            # information rather than dropped or published invalid.
+            stamped = options.timestamp(value) if options is not None \
+                else value
+            if stamped and _HAS_OFFSET.search(stamped):
+                method[target] = stamped
+            else:
+                custom.append((target, stamped or value))
+            continue
+        method[target] = value
     if method:
         document["data processing document"] = method
     description = (processing or {}).get("description")
     if isinstance(description, str) and description:
+        custom.append((_PROCESSING_DESCRIPTION, description))
+    if custom:
         document["custom information aggregate document"] = {
-            "custom information document": [{
-                "@index": 1, "datum label": _PROCESSING_DESCRIPTION,
-                "scalar string datum": description}]}
+            "custom information document": [
+                {"@index": i + 1, "datum label": label,
+                 "scalar string datum": value}
+                for i, (label, value) in enumerate(custom)]}
     document["peak list"] = {
         "peak": [_asm_peak(i + 1, peak, options, unit, relabeled, channel)
                  for i, peak in enumerate(peaks)],
@@ -2171,10 +2289,11 @@ def _asm_peak(index, peak, options=None, unit="mAU", relabeled=False,
     """One ASM peak, with retention/start/end times in seconds.
 
     The height and the edge heights are in ``unit``, the unit of the cube the
-    peak was integrated on, and the area in ``unit`` per second, unless the
-    peak names its own (a peak read from ASM keeps the units it was read in).
-    A vendor's peak table states no unit, and its values are the channel's:
-    an FID's area is in pA.s, which writing it as mAU.s misreported.
+    peak was integrated on, and the area in that unit's area unit (see
+    :data:`_PEAK_MEASURES`), which are the only units the schema admits beside
+    that cube. A vendor's peak table states no unit, and its values are the
+    channel's: an FID's area is in pA.s, which writing it as mAU.s
+    misreported. A peak read in another unit is relabeled, and said to be.
     """
     entry = {"@index": index}
     for source, target in (("identifier", "identifier"),
@@ -2862,12 +2981,14 @@ def _absorb_samples(measurements, metadata):
     # REC/2026/06 has no sample document property for it, and reads it back
     # from there into the same key.
     custom = metadata.get("sample_custom") or {}
-    plate = custom.get(_WELL_PLATE)
-    if isinstance(plate, str) and plate:
-        metadata.setdefault("well_plate_id", plate)
-        del custom[_WELL_PLATE]
-        if not custom:
-            del metadata["sample_custom"]
+    for key, label in (("well_plate_id", _WELL_PLATE),
+                       ("sample_role", _SAMPLE_ROLE)):
+        value = custom.get(label)
+        if isinstance(value, str) and value:
+            metadata.setdefault(key, value)
+            del custom[label]
+    if "sample_custom" in metadata and not custom:
+        del metadata["sample_custom"]
 
 
 # What a sample document says of where the sample sat and what it was, as
@@ -2875,6 +2996,17 @@ def _absorb_samples(measurements, metadata):
 # document's own statement that it recorded no role, and saying so is the
 # document's business, not rainbow's to translate.
 _WELL_PLATE = "well plate identifier"
+_SAMPLE_ROLE = "sample role type"
+
+# The sample role classes REC/2026/06 enumerates, for the LC and GC schemas
+# alike.
+_SAMPLE_ROLES = frozenset({
+    "control sample role", "standard sample role", "validation sample role",
+    "experiment sample role", "sample role", "spiked sample role",
+    "blank role", "unknown sample role", "calibration sample role",
+    "unspiked sample role", "specimen role", "quality control sample role",
+    "reference sample role",
+})
 _SAMPLE_PLACEMENT = (
     ("vialpos", "location identifier"),
     ("well_plate_id", "well plate identifier"),
@@ -2896,6 +3028,10 @@ def _absorb_envelope(measurement, metadata):
     # time, which a converter may set to when a channel started recording or
     # leave out. Kept as written, like `date`.
     injection_time = _text(injection.get("injection time"))
+    if not injection_time and \
+            "custom information aggregate document" in measurement:
+        injection_time = _text(_custom_fields(measurement, set()).get(
+            _INJECTION_TIME))
     if injection_time:
         metadata.setdefault("injection_time", injection_time)
     method = _acquisition_method(measurement)
@@ -3405,9 +3541,12 @@ def _channel_metadata(measurement):
                     in (None, "nm"):
                 settings[key] = value
                 break
-    if concept == "fluorescence":
+    if concept == "fluorescence" or "excitation_wavelength" in settings \
+            or _detector_of(measurement) == "FLD":
         # A fluorescence detector's wavelength setting is its emission, and a
-        # setting outranks what a label names, here as everywhere else.
+        # setting outranks what a label names, here as everywhere else. Keyed
+        # on the detector as well as the measure: an FLD read out in mV or pA
+        # still has an emission, not an absorbance wavelength.
         if "wavelength" in settings:
             settings["emission_wavelength"] = settings.pop("wavelength")
         label_wavelength = optics.pop("wavelength", None)
@@ -3437,16 +3576,17 @@ def _signal_description(measurement):
 def _processing_document(processed_data):
     """The provenance of one processed data document: which integration ran."""
     processing = _first(processed_data.get("data processing document"))
-    description = _text(processed_data.get(_PROCESSING_DESCRIPTION))
-    if description is None and \
-            "custom information aggregate document" in processed_data:
-        description = _text(_custom_fields(processed_data, set()).get(
-            _PROCESSING_DESCRIPTION))
+    custom = {}
+    if "custom information aggregate document" in processed_data:
+        custom = _custom_fields(processed_data, set())
+    description = _text(processed_data.get(_PROCESSING_DESCRIPTION)) \
+        or _text(custom.get(_PROCESSING_DESCRIPTION))
     return {
         "identifier": _text(processed_data.get("processed data identifier")),
         "group_identifier": _text(processed_data.get("group identifier")),
         "time": _text(processed_data.get("data processing time"))
-        or _text(processing.get("data processing time")),
+        or _text(processing.get("data processing time"))
+        or _text(custom.get("data processing time")),
         "method_name": _text(processing.get("method name")),
         "method_version": _text(processing.get("method version")),
         "type": _text(processing.get("data processing type")),
