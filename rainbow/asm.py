@@ -518,11 +518,13 @@ def _record_documents(metadata, options, file_identifier=None):
             for field in _CONVERTER_FIELDS:
                 if field in record:
                     source["source " + field] = record.pop(field)
-            if any(field.startswith("source ") for field in record):
-                # Read back from an earlier re-export: its source fields name
-                # the original converter already, and what was just popped is
-                # that export's own (rainbow's), which would fill in fields
-                # the original source never had.
+            if any(field.startswith("source ") for field in record) or \
+                    source.get("source ASM converter name") == "rainbow-api":
+                # Read back from an earlier re-export: what was just popped is
+                # that export's own (rainbow's), never a source, and its
+                # source fields, if any, name the original converter already.
+                # Promoting rainbow's would invent source fields the original
+                # record never had.
                 source = {}
             record.update({
                 "ASM converter name": "rainbow-api",
@@ -1746,12 +1748,17 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     note recording the real quantity. Dropping the peaks would lose more than
     the imprecise unit does, and the published model is still being refined.
     """
-    # The detector's own name rides beside its class, where _detector_of
-    # reads it back. The class alone cannot say it for a CAD (the generic
-    # class) or for a detector in the other technique's document (a neutral
-    # class): without it such a channel read back as an analog trace.
+    # The detector's own name rides beside its class, as custom information
+    # where _detector_of reads it back: the class alone cannot say it for a
+    # CAD (the generic class) or for a detector in the other technique's
+    # document (a neutral class), and without it such a channel read back as
+    # an analog trace. The device identifier is the source's, which names the
+    # module in its device system document ("DAD", "ACQ-FLR"), and the
+    # detector's name only where the source had none.
     control = {"device type": _channel_device_type(descriptor, technique),
-               "device identifier": datafile.detector}
+               "device identifier": datafile.metadata.get("device_identifier")
+               or datafile.detector}
+    _append_custom(control, _RAINBOW_DETECTOR, datafile.detector)
     descriptor = _measure_from_source(datafile, descriptor, options)
     detection_type = descriptor.get("detection_type")
     if detection_type:
@@ -1983,6 +1990,7 @@ _FLD_SETTINGS = (
     ("bandwidth", "detector bandwidth setting"),
 )
 _REFERENCE = "reference"
+_RAINBOW_DETECTOR = "rainbow detector"
 # Settings REC/2026/06 defines for the absorbance spectrum detector but not
 # for the single-wavelength one.
 _SPECTRUM_ONLY_SETTINGS = frozenset({
@@ -3621,6 +3629,9 @@ _RAINBOW_DETECTORS = {
     "flame ionization detector": "FID",
 }
 
+# The detector names a DataFile takes, as rainbow writes them back.
+_DETECTOR_NAMES = frozenset({"UV", "FID", "CAD", "ELSD", "RID", "FLD"})
+
 # Classes the detector rules recognize that rainbow has no detector name for.
 # The neutral and generic classes are not among them: they name no detector,
 # so the label and the measure still get their say.
@@ -3695,6 +3706,11 @@ def _detector_of(measurement):
     about the detector.
     """
     control = _device_control(measurement)
+    if "custom information aggregate document" in control:
+        named = _text(_custom_fields(control, set()).get(_RAINBOW_DETECTOR))
+        if named in _DETECTOR_NAMES:
+            # rainbow's own export, naming the detector it was read as.
+            return named
     texts = [
         _text(control.get("device type")),
         _text(control.get("device identifier")),
@@ -3821,6 +3837,10 @@ def _channel_metadata(measurement):
     device_type = _text(control.get("device type"))
     if device_type and device_type.strip():
         metadata["device_type"] = " ".join(device_type.split())
+    # Kept so a re-export names the same module the device system does.
+    device_identifier = _text(control.get("device identifier"))
+    if device_identifier and device_identifier.strip():
+        metadata["device_identifier"] = device_identifier.strip()
     method = _acquisition_method(measurement)
     if method:
         metadata["acq_method"] = method

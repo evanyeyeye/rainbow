@@ -3016,7 +3016,7 @@ def test_an_fld_in_mv_keeps_its_excitation_as_custom_information():
               control["custom information aggregate document"]
               ["custom information document"]}
     assert labels == {"excitation wavelength setting",
-                      "excitation bandwidth setting"}
+                      "excitation bandwidth setting", "rainbow detector"}
     metadata = rb.from_asm(document).get_file("FLD1A").metadata
     assert metadata["excitation_wavelength"] == 230.0
     assert metadata["excitation_bandwidth"] == 10.0
@@ -3240,3 +3240,67 @@ def test_the_source_conversion_time_is_kept_as_written():
             "@index": entries["source ASM conversion time"]["@index"],
             "datum label": "source ASM conversion time",
             "scalar timestamp datum": written}
+
+
+# --- Review round 12 ---
+
+
+def _empower_channel(device_identifier, device_type, cube):
+    return {"measurement identifier": "m",
+            "chromatogram data cube": cube,
+            **_control(**{"device identifier": device_identifier,
+                          "device type": device_type})}
+
+
+@pytest.mark.parametrize("identifier,device_type,cube,detector", [
+    ("DAD", "diode array uv detector", _cube("absorbance", "mAU"), "UV"),
+    ("ACQ-FLR", "fluorescence detector", _cube("fluorescence", "RFU"), "FLD"),
+])
+def test_the_sources_device_identifier_is_written_back(
+        identifier, device_type, cube, detector):
+    back = rb.from_asm(_lc(_empower_channel(identifier, device_type, cube)))
+    datafile = back.datafiles[0]
+    assert datafile.detector == detector
+    assert datafile.metadata["device_identifier"] == identifier
+    control = (next(_asm_measurements(back.to_asm()))
+               ["device control aggregate document"]
+               ["device control document"][0])
+    assert control["device identifier"] == identifier
+    named = {entry["datum label"]: entry["scalar string datum"]
+             for entry in control["custom information aggregate document"]
+             ["custom information document"]}
+    assert named["rainbow detector"] == detector
+
+
+def test_rainbows_detector_name_reads_back_without_a_device_identifier():
+    # A vendor CAD has no source identifier, so rainbow names it there too,
+    # and in its own custom information, which is what reads it back.
+    original = rb.read(os.path.join(INPUTS, "blue.raw"))
+    control = next(m for m in _asm_measurements(original.to_asm())
+                   if m["measurement identifier"] == "_CHRO001.DAT")[
+        "device control aggregate document"]["device control document"][0]
+    assert control["device identifier"] == "CAD"
+    del control["device identifier"]
+    measurement = {"measurement identifier": "c",
+                   "chromatogram data cube": _cube("voltage", "mV"),
+                   "device control aggregate document": {
+                       "device control document": [control]}}
+    assert rb.from_asm(_lc(measurement)).datafiles[0].detector == "CAD"
+
+
+def test_a_source_with_no_converter_fields_gains_none_on_a_second_lap():
+    document = _records_document()
+    data_system = document["liquid chromatography aggregate document"][
+        "data system document"]
+    for field in ("ASM converter name", "ASM converter version",
+                  "ASM conversion time", "ASM file identifier"):
+        del data_system[field]
+    first = rb.from_asm(document).to_asm(utc_offset="+00:00")
+    second = rb.from_asm(first).to_asm(utc_offset="+00:00")
+    for export in (first, second):
+        record = _data_system(export)
+        labels = {entry["datum label"] for entry in
+                  (record.get("custom information aggregate document") or {})
+                  .get("custom information document", [])}
+        assert not any(label.startswith("source ") for label in labels)
+        assert record["ASM converter name"] == "rainbow-api"

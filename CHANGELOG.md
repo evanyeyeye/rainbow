@@ -51,7 +51,9 @@ to [Semantic Versioning](https://semver.org/).
   heights are in the height's unit.
 - **`Ref=off` reads as `reference_wavelength` None**, present, in the vendor
   readers and in `from_asm`, so a channel without a reference is told apart
-  from one whose reference was not recorded.
+  from one whose reference was not recorded. Code that reads
+  `metadata["reference_wavelength"]` may now find the key with the value
+  `None`, where it used to be absent.
 
 ### Fixed
 - **`to_asm` wrote every peak area as `mAU.s`**, an FID's or CAD's pA.s
@@ -102,7 +104,10 @@ to [Semantic Versioning](https://semver.org/).
   conversion time exactly as written). A record naming both a file and a
   database row keeps the row and carries the file as custom information. The
   record's times take `utc_offset=`. Every chromatogram channel's device
-  control names its detector as its device identifier.
+  control keeps the source's device identifier (read into
+  `metadata["device_identifier"]`), names the detector there only when the
+  source had none, and names rainbow's detector in its custom information
+  (`rainbow detector`), which is what reads it back.
 - **Bandwidth, reference and acquisition method survive a round trip.** A UV
   channel's bandwidth and reference are written as their device control
   settings (Ref=off as custom information), an FLD's excitation bandwidth
