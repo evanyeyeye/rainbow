@@ -425,7 +425,7 @@ def _aggregate_document(technique, device_system, documents):
     }
 
 
-def technique(run):
+def asm_technique(run):
     """
     The technique a run is exported as: ``"LC"`` or ``"GC"``.
 
@@ -1524,6 +1524,10 @@ def _measure_from_source(datafile, descriptor, options):
         _warn_relabeled_unit(datafile, unit, descriptor, options)
         return descriptor
     key = str(unit).strip().lower().replace("µ", "u").replace("μ", "u")
+    if key == descriptor["unit"].lower():
+        # Already the unit the descriptor publishes (an FLD channel's RFU, an
+        # ELSD's RLU), so there is nothing to relabel or say.
+        return descriptor
     measure = _SOURCE_UNIT_MEASURES.get(key)
     if measure is None:
         # A Chemstation analog channel labeled mAU is not published as

@@ -80,20 +80,20 @@ def test_sniff_vendor_is_public_and_reads_contents_only(tmp_path):
     assert rb._sniff_vendor is rb.sniff_vendor
 
 
-def test_technique_is_the_one_the_export_uses():
+def test_asm_technique_is_the_one_the_export_uses():
     # yellow.D declares gas chromatography in its method; red.D is LC.
     yellow = rb.read(os.path.join("tests", "inputs", "yellow.D"))
-    assert rb.technique(yellow) == "GC"
+    assert rb.asm_technique(yellow) == "GC"
     assert "gas chromatography aggregate document" in yellow.to_asm()
-    assert rb.technique(rb.read(AGILENT_FIXTURE)) == "LC"
+    assert rb.asm_technique(rb.read(AGILENT_FIXTURE)) == "LC"
     sequence = rb.read_sequence(os.path.join("tests", "inputs"))
-    assert rb.technique(sequence) in ("LC", "GC")
+    assert rb.asm_technique(sequence) in ("LC", "GC")
 
 
 def test_the_asm_peak_reader_is_public():
     from rainbow import asm
     assert rb.peaks_from_asm is asm.peaks_from_asm
-    assert rb.technique is asm.technique
+    assert rb.asm_technique is asm.asm_technique
 
 
 def test_read_peaks_reads_one_injections_own_results():

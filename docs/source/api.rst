@@ -57,7 +57,7 @@ guide for an overview.
    from_asm
    sequence_from_asm
    peaks_from_asm
-   technique
+   asm_technique
    iso_timestamp
 
 Those interested in directly parsing specific files should also view the following:

@@ -5,8 +5,8 @@ from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
 from rainbow import agilent, waters
 from rainbow._binning import MZ_FLOORS
-from rainbow.asm import (from_asm, iso_timestamp, peaks_from_asm,
-                         sequence_from_asm, technique)
+from rainbow.asm import (asm_technique, from_asm, iso_timestamp,
+                         peaks_from_asm, sequence_from_asm)
 
 
 # `debug` is listed although it is not imported above: __getattr__ fetches it on
@@ -17,7 +17,7 @@ __all__ = [
     'agilent', 'waters', 'debug',
     'read', 'read_sequence', 'read_metadata', 'mz_resolution',
     'from_asm', 'sequence_from_asm', 'peaks_from_asm', 'iso_timestamp',
-    'technique', 'sniff_vendor',
+    'asm_technique', 'sniff_vendor',
     'VENDORS', 'MZ_FLOORS',
 ]
 

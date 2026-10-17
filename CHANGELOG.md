@@ -38,7 +38,7 @@ to [Semantic Versioning](https://semver.org/).
   the .D, else its own `sequence.acam_`.
 - **`rb.peaks_from_asm(measurement)`** reads one ASM measurement document's
   peaks. **`rb.sniff_vendor(path)`** is the content check `rb.read` falls back
-  to for an unsuffixed folder, and **`rb.technique(run)`** is the `"LC"` or
+  to for an unsuffixed folder, and **`rb.asm_technique(run)`** is the `"LC"` or
   `"GC"` the export will use.
 
 ### Changed
@@ -55,9 +55,16 @@ to [Semantic Versioning](https://semver.org/).
 - **`to_asm` wrote every peak area as `mAU.s`**, an FID's or CAD's pA.s
   included. A peak's area and height are now written in the unit of the cube
   it was integrated on. REC/2026/06 gives electric current (pA), intensity
-  (RLU), voltage (mV) and fluorescence (RFU) their own peak lists, so such a
-  channel keeps its faithful cube when it carries peaks; only a measure with
-  no peak list in the schema (nA, V) is still relabeled to absorbance.
+  (RLU), voltage (mV), fluorescence (RFU) and counts (Counts) their own peak
+  lists, so such a channel keeps its faithful cube when it carries peaks; only
+  a measure with no peak list in the schema (nA, V) is still relabeled to
+  absorbance. The relabel note now also records the real concept and unit as
+  structured custom information, and `from_asm` reads it (or the sentence
+  1.5.4 wrote alone) to put the channel and its peaks back in their real
+  unit, so a relabeled channel re-exports to a valid document.
+- **`to_asm` dropped peak groups no exported channel carries** (peaks read from
+  an index document, or on an analog channel) without a word. It warns once
+  per group.
 
 ## [1.5.4] - 2026-10-17
 
