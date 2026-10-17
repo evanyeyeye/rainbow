@@ -3,6 +3,62 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.5.5] - 2026-10-17
+
+### Added
+- **`rb.from_asm` and `rb.sequence_from_asm` read every measurement's peaks.**
+  They read a measurement's peaks only beside a rebuilt trace, and rebuilt
+  only absorbance cubes with inline data, so the peaks of every fluorescence
+  channel, of an FID run, and of every measurement in an index document
+  (whose cubes carry no values) were dropped. Over 531 local Empower and
+  OpenLab exports, 1.5.4 read 15,503 of 20,026 peaks; 1.5.5 reads all of them.
+  Each peak group also carries the channel's `detector` and `metadata`, so a
+  group with no trace beside it still says which channel it was integrated on.
+- **Every chromatogram cube is rebuilt, not only absorbance.** Fluorescence,
+  electric current, intensity, refractive index and conductivity channels come
+  back as DataFiles with `metadata["unit"]` as written and
+  `metadata["measure"]`. The detector is named from the device type, then the
+  cube label or measurement identifier, then the measure: `UV`, `RID`, `FLD`
+  (new), `ELSD`, `FID`, or `CAD`; a channel rainbow has no name for, such as a
+  conductivity detector, is detector `None` and joins the directory's
+  `analog` traces. The channel metadata also holds `device_type` and
+  `acq_method`, and the optics from the device control settings, the cube
+  label, or the processed data description: `wavelength`, `bandwidth`,
+  `reference_wavelength`, `reference_bandwidth`, and a fluorescence channel's
+  `excitation_wavelength` and `emission_wavelength`.
+- **Peaks carry their units, identifier and index.** `area_unit` and
+  `height_unit` say what each value is in; `identifier` and `index` are the
+  peak's own; each integration's `processing` gains its `description`.
+- **More of the envelope.** `injection_time`, `sample_role`, `well_plate_id`
+  and `acq_method`, and the `data_system`, `analysis_sequence` and `project`
+  records, field by field as written. A `scalar integer datum` reads as an
+  `int`.
+- **`rb.read(path, peaks=True)`** attaches one injection's integrated peaks,
+  found as `read_sequence(peaks=True)` finds them: the `sequence.acaml` beside
+  the .D, else its own `sequence.acam_`.
+- **`rb.peaks_from_asm(measurement)`** reads one ASM measurement document's
+  peaks. **`rb.sniff_vendor(path)`** is the content check `rb.read` falls back
+  to for an unsuffixed folder, and **`rb.technique(run)`** is the `"LC"` or
+  `"GC"` the export will use.
+
+### Changed
+- **A peak's `height` and `area` in a non-absorbance unit are kept as
+  written.** 1.5.4 read any unit it could not convert to mAU as `None`, which
+  lost every fluorescence peak; an RFU or pA value now comes back with its
+  unit. Absorbance in AU or µV is still converted to mAU, and the edge heights
+  are in the height's unit.
+- **`Ref=off` reads as `reference_wavelength` None**, present, in the vendor
+  readers and in `from_asm`, so a channel without a reference is told apart
+  from one whose reference was not recorded.
+
+### Fixed
+- **`to_asm` wrote every peak area as `mAU.s`**, an FID's or CAD's pA.s
+  included. A peak's area and height are now written in the unit of the cube
+  it was integrated on. REC/2026/06 gives electric current (pA), intensity
+  (RLU), voltage (mV) and fluorescence (RFU) their own peak lists, so such a
+  channel keeps its faithful cube when it carries peaks; only a measure with
+  no peak list in the schema (nA, V) is still relabeled to absorbance.
+
 ## [1.5.4] - 2026-10-17
 
 ### Added
