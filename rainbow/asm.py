@@ -474,6 +474,9 @@ _RECORD_FIELDS = (
 _CONVERTER_FIELDS = ("ASM converter name", "ASM converter version",
                      "ASM conversion time", "ASM file identifier")
 
+# The source converter's time, written as custom information as read.
+_SOURCE_TIMES = ("source ASM conversion time",)
+
 # The record fields typed as date-times, stamped like every other timestamp.
 _RECORD_TIMES = ("start time", "end time", "ASM conversion time")
 
@@ -514,12 +517,7 @@ def _record_documents(metadata, options, file_identifier=None):
         if name == "data system document":
             for field in _CONVERTER_FIELDS:
                 if field in record:
-                    value = record.pop(field)
-                    if field == "ASM conversion time" and \
-                            isinstance(value, str):
-                        # A timestamp datum, as it was a date-time field.
-                        value = _parse_iso(value) or value
-                    source["source " + field] = value
+                    source["source " + field] = record.pop(field)
             if any(field.startswith("source ") for field in record):
                 # Read back from an earlier re-export: its source fields name
                 # the original converter already, and what was just popped is
@@ -578,8 +576,20 @@ def _record_documents(metadata, options, file_identifier=None):
             # rainbow export that the record's own fields now name.
             for field, value in source.items():
                 others.setdefault(field, value)
-            custom = _custom_information_document(others, options)
-            if custom:
+            # A source time is a timestamp datum, as it was a date-time field,
+            # and is kept exactly as the source wrote it rather than
+            # re-serialized (a .NET writer's seven fractional digits).
+            times = {field: others.pop(field) for field in list(others)
+                     if field in _SOURCE_TIMES
+                     and isinstance(others[field], str)}
+            custom = _custom_information_document(others, options) or {
+                "custom information document": []}
+            entries = custom["custom information document"]
+            for field, value in times.items():
+                entries.append({"@index": len(entries) + 1,
+                                "datum label": field,
+                                "scalar timestamp datum": value})
+            if entries:
                 document["custom information aggregate document"] = custom
         documents[name] = document
     return documents
@@ -2492,6 +2502,14 @@ def _asm_peak(index, peak, options=None, unit="mAU", relabeled=False,
         scales[key] = 1.0
         if not (isinstance(stated, str) and stated) or stated == expected:
             continue
+        if per and not relabeled:
+            # An area per minute, in the cube's unit, is the same area in
+            # seconds times sixty, whatever the cube measures.
+            scale, converted = _peak_measure(
+                {"value": 1.0, "unit": stated}, per, False)
+            if converted == expected:
+                scales[key] = scale
+                continue
         if unit == "mAU" and not relabeled:
             scale, converted = _peak_measure(
                 {"value": 1.0, "unit": stated}, per, True)
@@ -2598,8 +2616,14 @@ _ABSORBANCE_TO_MAU = {"au": 1000.0, "mau": 1.0}
 
 def _absorbance_unit_key(unit):
     """An absorbance unit reduced to the spelling :data:`_ABSORBANCE_TO_MAU`
-    keys on: case-folded and unspaced."""
-    return str(unit).strip().lower().replace(" ", "")
+    keys on: case-folded and unspaced, with a product written ``*``, ``·`` or
+    a space before the time as ``.``, and ``sec`` as ``s`` ("µV*sec" and
+    "µV s" are "µv.s")."""
+    key = str(unit).strip().lower()
+    key = re.sub(r"\s*[*\u00b7.]\s*", ".", key)
+    # A space before the time is a product too; any other space is dropped.
+    key = re.sub(r"\s+(?=(?:s|sec|min)\Z)", ".", key).replace(" ", "")
+    return key[:-3] + "s" if key.endswith(".sec") else key
 
 
 def _absorbance_unit_and_scale(datafile):
@@ -3004,14 +3028,24 @@ def _record(document):
     A string, a number or a bool is kept as it is, a value datum is unwrapped,
     and a quantity keeps its unit as ``{"value", "unit"}``. The record's own
     custom information is read in too, each field under its label (a
-    timestamp datum as a datetime), so a re-export keeps what the source
-    converter said beside it. Other nested documents are left out: a record
-    is read for what it says of itself.
+    timestamp datum as a datetime, the source conversion time as written), so
+    a re-export keeps what the source converter said beside it. Other nested
+    documents are left out: a record is read for what it says of itself.
     """
     document = _first(document)
     fields = {}
     if "custom information aggregate document" in document:
         fields.update(_custom_fields(document, set()))
+        # A source time is kept as the text it was written as, so a second
+        # re-export writes it unchanged.
+        for entry in _as_documents(_first(document.get(
+                "custom information aggregate document")).get(
+                    "custom information document")):
+            if isinstance(entry, dict) and \
+                    _text(entry.get("datum label")) in _SOURCE_TIMES and \
+                    _text(entry.get("scalar timestamp datum")):
+                fields[entry["datum label"]] = _text(
+                    entry["scalar timestamp datum"])
     for field, value in document.items():
         if isinstance(value, dict):
             number = _number(value)
@@ -3633,8 +3667,14 @@ def _absorbance_in_mau(data, measurement):
     trace sat a thousand times below the edge heights subtracted from it. The
     channel's metadata says mAU to match (see :func:`_channel_metadata`). Any
     other measure, or a unit rainbow cannot place, is returned unchanged.
+
+    The scale is the cube's own unit's. A relabeled cube's note names the
+    unit its values are in, unconverted, and they stay in it, as its peaks
+    do: scaling the trace and not the peaks put them a thousand times apart.
     """
-    scale = _absorbance_scale(*_real_measure(measurement))
+    if _reported_measure(measurement) is not None:
+        return data
+    scale = _absorbance_scale(*_measure_of(measurement))
     if scale is None or scale == 1.0:
         return data
     return data * scale
@@ -3671,9 +3711,12 @@ def _detector_of(measurement):
             # A detector the text names for certain, which rainbow has no
             # name for: nothing later in the label can make it one.
             return None
-        if _GENERIC_DETECTOR_PATTERN.search(text):
+        if _GENERIC_DETECTOR_PATTERN.search(text) and \
+                _real_measure(measurement)[0] not in _MEASURE_DETECTORS:
             # A charged-aerosol detector, or the analog input Chemstation
-            # brings one in on. rainbow names those channels CAD on read.
+            # brings one in on. rainbow names those channels CAD on read,
+            # unless the measure names another detector: "adc" in an
+            # identifier is no reason to call an absorbance trace CAD.
             return "CAD"
     reported = _reported_measure(measurement)
     concept = reported[0].strip().lower() if reported \
@@ -3764,9 +3807,11 @@ def _channel_metadata(measurement):
     if label:
         metadata["description"] = label
     concept, unit = _real_measure(measurement)
-    if _absorbance_scale(concept, unit) is not None:
+    if _reported_measure(measurement) is None and \
+            _absorbance_scale(*_measure_of(measurement)) is not None:
         # The trace is rebuilt in mAU (see _absorbance_in_mau), and its peaks
-        # read in mAU, so the channel says mAU too.
+        # read in mAU, so the channel says mAU too. A unit from a relabel
+        # note is the one the values are in, unconverted, and stays.
         unit = "mAU"
     if concept:
         metadata["measure"] = concept
@@ -4126,11 +4171,13 @@ def _peak_measure(quantity, per="", absorbance=True):
     if number is None:
         return None, None
     unit = _quantity_unit(quantity)
-    if unit is not None and per and unit.lower().endswith(".min"):
+    if unit is not None and per and \
+            _absorbance_unit_key(unit).endswith(".min"):
         # An area per minute, which every writer of the schema's own units
         # spells per second: converted, so its number matches the unit it is
         # written back in.
-        number, unit = number * _SECONDS_PER_MINUTE, unit[:-4] + ".s"
+        number = number * _SECONDS_PER_MINUTE
+        unit = _TIME_SUFFIX_RE.sub(".s", unit)
     if unit is None or not absorbance:
         return number, unit
     key = _absorbance_unit_key(unit)
@@ -4144,6 +4191,11 @@ def _peak_measure(quantity, per="", absorbance=True):
         return number, unit
     # Unscaled when already mAU, so an integer stays the integer it was.
     return (number if scale == 1.0 else number * scale), "mAU" + per
+
+
+# A unit's per-minute suffix, however the product is spelled.
+_TIME_SUFFIX_RE = re.compile(r"(?:\s*[.*\u00b7]\s*|\s+)min\Z",
+                             re.IGNORECASE)
 
 
 def _edge_height(quantity, height_unit, absorbance=True):

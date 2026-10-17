@@ -3167,3 +3167,76 @@ def test_an_elsd_in_a_forced_gc_document_reads_back_as_elsd():
     assert "ELSD" in original.detectors
     back = rb.from_asm(original.to_asm(technique="GC"), name=original.name)
     assert "ELSD" in back.detectors
+
+
+# --- Review round 11 ---
+
+
+def test_a_uv_channel_in_microvolts_keeps_trace_and_peaks_together():
+    """ A UV channel in µV is published as mAU unconverted, under a note.
+
+    Reading it back scaled the trace by 0.001 and left the peaks in µV, so
+    the trace minus an edge height moved a thousandfold on every lap.
+    """
+    import numpy as np
+    from rainbow.datadirectory import DataDirectory
+    from rainbow.datafile import DataFile
+
+    uv = DataFile("UV1", "UV", np.array([0.0, 1.0, 2.0]), np.array([254.0]),
+                  np.array([[0.0], [3000.0], [0.0]]),
+                  {"unit": "µV", "wavelength": 254.0})
+    run = DataDirectory("run", [uv], {})
+    run.peaks = [{"signal": "UV1", "channel_file": "UV1", "peaks": [{
+        "retention_time": 1.0, "height": 2900.0, "start_height": 100.0}]}]
+
+    def apex_minus_edge(run):
+        datafile = run.get_file("UV1")
+        peak = run.peaks[0]["peaks"][0]
+        return datafile.data[1, 0] - peak["start_height"], peak["height"]
+
+    expected = apex_minus_edge(run)
+    for _ in range(2):
+        run = rb.from_asm(run.to_asm(), name="run")
+        assert apex_minus_edge(run) == pytest.approx(expected)
+        assert run.get_file("UV1").metadata["unit"] == "µV"
+
+
+def test_a_guid_does_not_make_an_absorbance_channel_cad():
+    measurement = {"measurement identifier": "x",
+                   "chromatogram data cube": _cube("absorbance", "mAU"),
+                   **_control(**{"device identifier": "9e1f-adc4-77b2"})}
+    assert rb.from_asm(_lc(measurement)).datafiles[0].detector == "UV"
+
+
+def test_an_area_per_minute_beside_a_current_cube_is_converted():
+    entry = asm._asm_peak(1, {"area": 0.5, "area_unit": "pA.min"},
+                          asm._Options(), "pA")
+    assert entry["peak area"] == {"value": pytest.approx(30.0),
+                                  "unit": "pA.s"}
+
+
+@pytest.mark.parametrize("unit", ["µV*sec", "µV.s", "µV s",
+                                  "AU*min"])
+def test_an_area_unit_is_read_however_its_product_is_spelled(unit):
+    value, read = asm._peak_measure({"value": 1000.0, "unit": unit}, ".s")
+    assert read == "mAU.s"
+    assert value == pytest.approx(
+        1000.0 * 60 * 1000 if unit.startswith("AU") else 1.0)
+
+
+def test_the_source_conversion_time_is_kept_as_written():
+    document = _records_document()
+    written = "2026-04-11T17:55:39.2722453-04:00"
+    document["liquid chromatography aggregate document"][
+        "data system document"]["ASM conversion time"] = written
+    first = rb.from_asm(document).to_asm(utc_offset="+00:00")
+    second = rb.from_asm(first).to_asm(utc_offset="+00:00")
+    for export in (first, second):
+        entries = {entry["datum label"]: entry for entry
+                   in _data_system(export)
+                   ["custom information aggregate document"]
+                   ["custom information document"]}
+        assert entries["source ASM conversion time"] == {
+            "@index": entries["source ASM conversion time"]["@index"],
+            "datum label": "source ASM conversion time",
+            "scalar timestamp datum": written}

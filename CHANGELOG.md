@@ -98,10 +98,11 @@ to [Semantic Versioning](https://semver.org/).
   is the time of the export (so two exports differ there), and `ASM file
   identifier` is the file written, else one named for the run; the source
   converter's are kept as the record's custom information, prefixed
-  `source`, and a second round trip keeps them as they were. A record naming
-  both a file and a database row keeps the row and carries the file as custom
-  information. The record's times take `utc_offset=`. Every detector's
-  device control names it as its device identifier.
+  `source`, and a second round trip keeps them as they were (the source
+  conversion time exactly as written). A record naming both a file and a
+  database row keeps the row and carries the file as custom information. The
+  record's times take `utc_offset=`. Every chromatogram channel's device
+  control names its detector as its device identifier.
 - **Bandwidth, reference and acquisition method survive a round trip.** A UV
   channel's bandwidth and reference are written as their device control
   settings (Ref=off as custom information), an FLD's excitation bandwidth
