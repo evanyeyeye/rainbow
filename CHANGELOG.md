@@ -20,13 +20,22 @@ to [Semantic Versioning](https://semver.org/).
   reproduces the reported area: within 1% for 99.6% of 11,040 peaks across
   four Empower studies, the misses being edges moved by hand.
 
-  A height in AU or in Empower's µV is converted to mAU, and a baseline time
-  in `s` or `min` to minutes; any other unit, or none, reads as `None`, as
-  does an absent field. The heights are written back on export as `peak value
+  A height in AU or in Empower's µV is converted to mAU (one with no unit is
+  taken to be in mAU), and a baseline time in `s` or `min` to minutes; any
+  other unit reads as `None`, as do an absent field and a unitless time. The heights are written back on export as `peak value
   at start` and `peak value at end`. The schema defines neither the codes nor
   the baseline times, so they are written as the peak's custom information,
   under the labels Empower uses, and read from either place: an export keeps
   them and still validates.
+
+### Changed
+- **`rb.from_asm` reads a peak's `height` and `area` in mAU and mAU·s, by
+  their unit.** They were taken as numbers whatever unit the document named,
+  and exported as mAU and mAU·s, so a peak list in AU or in Empower's µV was
+  written a thousand times off under a unit it was not in. They are now
+  converted from AU or µV (and AU·s or µV·s), as the edge heights are. A unit
+  rainbow does not know now reads as `None` where it used to pass through
+  unconverted; a value with no unit is still taken to be in mAU.
 
 ## [1.5.3] - 2026-10-01
 

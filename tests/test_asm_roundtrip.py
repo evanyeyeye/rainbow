@@ -939,24 +939,57 @@ def test_a_peak_without_a_baseline_reads_none():
     assert peak["retention_time"] == 1.5
 
 
-def test_an_edge_height_converts_to_mau_by_its_unit():
-    """ A height in AU or in Empower's microvolts is the same line in mAU.
+def test_a_peaks_heights_and_area_convert_to_mau_by_their_unit():
+    """ A height in AU or in Empower's microvolts is the same height in mAU.
 
-    The heights are subtracted from the trace, and the trace is in mAU, so a
-    height left in its own unit draws the baseline a thousand times off. A
-    unit rainbow does not know, or none, cannot be converted and reads as None.
+    The export labels heights mAU and areas mAU.s, and the edge heights are
+    subtracted from a trace in mAU, so a value left in its own unit is a
+    thousand times off. A unit rainbow does not know cannot be converted and
+    reads as None; a value with no unit is taken to be in the schema's mAU.
     """
     peak = asm._peak_from_asm(_empower_peak(**{
+        "peak height": {"value": 0.03, "unit": "AU"},
+        "peak area": {"value": 0.5, "unit": "AU.s"},
         "peak value at start": {"value": 0.002, "unit": "AU"},
-        "peak value at end": {"value": 1250.0, "unit": "µV"}}))
+        "peak value at end": {"value": 1250.0, "unit": "\u00b5V"}}))
+    assert peak["height"] == 30.0
+    assert peak["area"] == 500.0
     assert peak["start_height"] == 2.0
     assert peak["end_height"] == 1.25
 
     peak = asm._peak_from_asm(_empower_peak(**{
+        "peak height": {"value": 3.0, "unit": "RFU"},
+        "peak area": {"value": 5.0, "unit": "mAU"},
         "peak value at start": {"value": 1.0, "unit": "RFU"},
         "peak value at end": 1.25}))
+    assert peak["height"] is None
+    assert peak["area"] is None
     assert peak["start_height"] is None
-    assert peak["end_height"] is None
+    assert peak["end_height"] == 1.25
+
+
+def test_a_microvolt_document_reads_and_exports_in_mau():
+    """ An Empower peak list in microvolts reads, and exports, in mAU. """
+    document = _lc(_with_cube(**{
+        "measurement identifier": "uv",
+        **_processed(_peak_list(_empower_peak(**_rt(105.0), **{
+            "peak height": {"value": 32572.0, "unit": "\u00b5V"},
+            "peak area": {"value": 101951.0, "unit": "\u00b5V.s"},
+            "peak value at start": {"value": 0.0, "unit": "\u00b5V"},
+            "peak value at end": {"value": 52.5, "unit": "\u00b5V"}})))}))
+    datadir = rb.from_asm(document)
+    peak = datadir.peaks[0]["peaks"][0]
+    assert peak["height"] == pytest.approx(32.572)
+    assert peak["area"] == pytest.approx(101.951)
+    assert peak["start_height"] == 0.0
+    assert peak["end_height"] == pytest.approx(0.0525)
+
+    exported = asm._asm_peak(1, peak)
+    assert exported["peak height"] == {"value": peak["height"], "unit": "mAU"}
+    assert exported["peak area"] == {"value": peak["area"], "unit": "mAU.s"}
+    assert exported["peak value at end"] == {"value": peak["end_height"],
+                                             "unit": "mAU"}
+    assert asm._peak_from_asm(exported) == peak
 
 
 def test_a_baseline_time_needs_a_time_unit():
@@ -1028,7 +1061,7 @@ def test_a_peaks_baseline_survives_a_round_trip():
                    if d.detector == "UV" and d.data.shape[1] == 1)
     first = asm._peak_from_asm(_empower_peak(**_rt(105.0), **{
         "peak area": {"value": 50.0, "unit": "mAU.s"},
-        "peak value at end": {"value": 1250.0, "unit": "µV"}}))
+        "peak value at end": {"value": 1250.0, "unit": "\u00b5V"}}))
     datadir.peaks = [{"signal": channel.split(".")[0].upper(),
                       "wavelength": 254.0, "description": None,
                       "channel_file": channel, "peaks": [first]}]
@@ -1041,7 +1074,7 @@ def test_a_peaks_baseline_survives_a_round_trip():
 
 
 def test_the_edge_heights_of_a_real_empower_export_reproduce_its_areas():
-    """ The heights mean what the area was measured from, not something near it.
+    """ The heights mean what the area was measured from.
 
     Three touching peaks from an Empower export, a valley-split cluster, with
     the trace under them. Names and identifiers are removed and times shifted
