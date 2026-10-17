@@ -425,6 +425,31 @@ def _aggregate_document(technique, device_system, documents):
     }
 
 
+def technique(run):
+    """
+    The technique a run is exported as: ``"LC"`` or ``"GC"``.
+
+    The same decision :func:`to_asm` and :func:`sequence_to_asm` make when no
+    ``technique=`` is passed: the technique the acquisition method declares
+    (``metadata['technique']``), and only without one, gas chromatography for
+    a run with an FID channel. Asking it here gives a caller the answer the
+    export will act on, rather than a second opinion that can disagree.
+
+    Args:
+        run (DataDirectory or DataSequence): A parsed run.
+
+    Returns:
+        str: ``"LC"`` or ``"GC"``.
+
+    """
+    from rainbow.datasequence import DataSequence
+    if isinstance(run, DataSequence):
+        found = _technique(_sequence_datafiles(run), _sequence_metadata(run))
+    else:
+        found = _technique(run.datafiles, run.metadata)
+    return "GC" if found is _GC else "LC"
+
+
 def _technique(datafiles, metadata, override=None):
     """The ASM technique (``_LC`` or ``_GC``) a run is exported as.
 

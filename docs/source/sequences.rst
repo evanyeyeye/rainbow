@@ -194,6 +194,13 @@ file does not cover, that injection's own :code:`sequence.acam_`. They are off
 by default, like the :code:`hrms` and :code:`centroid` flags, because reading
 them parses the full result document.
 
+One injection read on its own takes the same flag, and gets the same peaks:
+:code:`rb.read("Caffeine_Stability/001-A1_01.D", peaks=True)` reads them from
+the :code:`sequence.acaml` beside the .D, or else from its own
+:code:`sequence.acam_`, into :code:`datadir.peaks`. A run neither covers has
+an empty list. Waters results are not read, and saying :code:`peaks=True` for
+a Waters run warns so.
+
 Exporting a sequence to ASM
 ---------------------------
 
@@ -233,6 +240,8 @@ Quick reference
      - a DataSequence (many injections)
    * - ``rb.read_sequence(path, peaks=True)``
      - the same, with integrated peaks attached
+   * - ``rb.read(injection, peaks=True)``
+     - one injection, with its integrated peaks attached
    * - ``sequence.injections``
      - the injections, in sorted-name order
    * - ``sequence.metadata``

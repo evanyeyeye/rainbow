@@ -9,7 +9,7 @@ from rainbow.datasequence import DataSequence
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,
          telemetry=False, centroid=False, bin_width=None, _labels_only=False,
-         **removed):
+         peaks=False, **removed):
     """
     Reads an Agilent .D directory or .dx archive.
 
@@ -32,6 +32,8 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             representation (one
             :class:`~rainbow.agilent.masshunter.ProfileDataFile` per flight-time
             grid), or pass a width to project onto the shared m/z grid.
+        peaks (bool, optional): Flag for reading the run's integrated peaks
+            into ``DataDirectory.peaks`` (see :func:`injection_peaks`).
 
     Returns:
         DataDirectory representing the Agilent data.
@@ -46,8 +48,13 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     validate_bin_width(bin_width)
     if os.path.splitext(path)[1].lower() == '.dx':
         from rainbow.agilent import openlab
-        return openlab.read(
+        datadir = openlab.read(
             path, display_precision, requested_files, telemetry, bin_width)
+        if peaks:
+            # An archive's results are not read; the run is still listed with
+            # its peaks attribute, empty, like a run nobody integrated.
+            datadir.peaks = []
+        return datadir
 
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(
@@ -92,7 +99,42 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             os.path.join(path, "AcqData", "MSPeak.bin")):
         metadata['centroid_available'] = True
 
-    return DataDirectory(path, datafiles, metadata)
+    datadir = DataDirectory(path, datafiles, metadata)
+    if peaks:
+        datadir.peaks = injection_peaks(path)
+    return datadir
+
+
+def injection_peaks(path):
+    """
+    Reads the integrated peaks of one injection .D directory.
+
+    The same peaks :func:`read_sequence` attaches to the injection, found the
+    same way: from the ``sequence.acaml`` of the sequence directory the .D
+    sits in, matched by the .D's folder name, or failing that from the .D's
+    own ``sequence.acam_``.
+
+    Args:
+        path (str): Path of the .D directory.
+
+    Returns:
+        list: The injection's signal groups (see
+        :func:`rainbow.agilent.sequence.parse_peaks`), or ``[]`` when no
+        result document covers it.
+
+    """
+    from rainbow.agilent import sequence
+    path = os.path.normpath(path)
+    name = os.path.basename(path)
+    sequence_acaml = sequence.find(os.path.dirname(path) or os.curdir)
+    groups = None
+    if sequence_acaml is not None:
+        groups = {injection.lower(): found for injection, found
+                  in sequence.parse_peaks(sequence_acaml).items()
+                  }.get(name.lower())
+    if not groups:
+        groups = _own_peaks(name, path)
+    return groups or []
 
 
 def injection_dirs(path):
@@ -213,11 +255,11 @@ def _attach_peaks(injections, injection_paths, sequence_acaml):
     for injection, injection_path in zip(injections, injection_paths):
         groups = folded.get(injection.name.lower())
         if not groups:
-            groups = _injection_peaks(injection, injection_path)
+            groups = _own_peaks(injection.name, injection_path)
         injection.peaks = groups or []
 
 
-def _injection_peaks(injection, injection_path):
+def _own_peaks(injection_name, injection_path):
     """Peaks from an injection's own result document (sequence.acam_)."""
     from rainbow.agilent import sequence
     document = sequence.find_result_document(injection_path)
@@ -227,7 +269,7 @@ def _injection_peaks(injection, injection_path):
     if not by_injection:
         return None
     folded = {name.lower(): groups for name, groups in by_injection.items()}
-    groups = folded.get(injection.name.lower())
+    groups = folded.get(injection_name.lower())
     if groups is None and len(by_injection) == 1:
         # A per-injection document holds exactly this injection's peaks.
         groups = next(iter(by_injection.values()))

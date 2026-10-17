@@ -238,6 +238,28 @@ def test_peaks_flag_leaves_unmatched_injections_empty(tmp_path):
     assert others and all(inj.peaks == [] for inj in others)
 
 
+def test_read_peaks_on_one_injection_matches_the_sequence(tmp_path):
+    # One .D read alone takes its peaks from the sequence.acaml beside it,
+    # the same groups read_sequence(peaks=True) attaches to it.
+    seq_dir = _make_sequence_with_peaks(tmp_path)
+    name = "008-D1F-A1-sample_01.D"
+    alone = rb.read(os.path.join(seq_dir, name), peaks=True)
+    together = rb.read_sequence(seq_dir, peaks=True).get_injection(name)
+    assert alone.peaks and alone.peaks == together.peaks
+    other = next(n for n in INJECTION_NAMES if n != name)
+    assert rb.read(os.path.join(seq_dir, other), peaks=True).peaks == []
+
+
+def test_read_peaks_falls_back_to_the_injections_own_document(tmp_path):
+    seq_dir = _make_sequence(tmp_path)
+    name = INJECTION_NAMES[1]
+    with open(os.path.join(seq_dir, name, "sequence.acam_"),
+              "w", encoding="utf-8") as f:
+        f.write(_injection_acam(name))
+    datadir = rb.read(os.path.join(seq_dir, name), peaks=True)
+    assert datadir.peaks[0]["peaks"][0]["area"] == 50.0
+
+
 def test_peaks_off_by_default(tmp_path):
     seq = rb.read_sequence(_make_sequence_with_peaks(tmp_path))
     assert "peaks_read" not in seq.metadata
@@ -295,7 +317,7 @@ def test_peaks_fall_back_to_per_injection_acam(tmp_path):
 def test_per_injection_acam_adopted_despite_name_mismatch(tmp_path):
     # When a per-injection sequence.acam_ names a .D that differs from the
     # folder (its single result still belongs to this injection), it is still
-    # adopted. This is why _injection_peaks falls back to the sole entry.
+    # adopted. This is why _own_peaks falls back to the sole entry.
     seq_dir = _make_sequence(tmp_path)
     for name in INJECTION_NAMES:
         with open(os.path.join(seq_dir, name, "sequence.acam_"),

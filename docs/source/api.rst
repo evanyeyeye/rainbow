@@ -13,6 +13,7 @@ The :code:`read` method, :code:`DataFile` class, and :code:`DataDirectory` class
 
    read
    read_metadata
+   sniff_vendor
    datafile.DataFile
    datadirectory.DataDirectory
 
@@ -55,6 +56,8 @@ guide for an overview.
    datasequence.DataSequence
    from_asm
    sequence_from_asm
+   peaks_from_asm
+   technique
    iso_timestamp
 
 Those interested in directly parsing specific files should also view the following:

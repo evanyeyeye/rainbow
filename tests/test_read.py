@@ -65,6 +65,59 @@ def test_detect_vendor_helpers(tmp_path):
     assert rb._detect_vendor(AGILENT_FIXTURE) == "agilent"
 
 
+def test_sniff_vendor_is_public_and_reads_contents_only(tmp_path):
+    # The question rb.read asks of a directory without a vendor suffix, so a
+    # caller deciding whether a folder is a run asks the same one. The name
+    # plays no part: a .D folder holding nothing is not Agilent.
+    assert rb.sniff_vendor(
+        _copy_without_suffix(WATERS_FIXTURE, tmp_path, "w")) == "waters"
+    assert rb.sniff_vendor(
+        _copy_without_suffix(AGILENT_FIXTURE, tmp_path, "a")) == "agilent"
+    empty = tmp_path / "nothing.D"
+    empty.mkdir()
+    assert rb.sniff_vendor(str(empty)) is None
+    assert rb.sniff_vendor(str(tmp_path / "missing")) is None
+    assert rb._sniff_vendor is rb.sniff_vendor
+
+
+def test_technique_is_the_one_the_export_uses():
+    # yellow.D declares gas chromatography in its method; red.D is LC.
+    yellow = rb.read(os.path.join("tests", "inputs", "yellow.D"))
+    assert rb.technique(yellow) == "GC"
+    assert "gas chromatography aggregate document" in yellow.to_asm()
+    assert rb.technique(rb.read(AGILENT_FIXTURE)) == "LC"
+    sequence = rb.read_sequence(os.path.join("tests", "inputs"))
+    assert rb.technique(sequence) in ("LC", "GC")
+
+
+def test_the_asm_peak_reader_is_public():
+    from rainbow import asm
+    assert rb.peaks_from_asm is asm.peaks_from_asm
+    assert rb.technique is asm.technique
+
+
+def test_read_peaks_reads_one_injections_own_results():
+    # red.D carries its own result document (sequence.acam_), and the folder
+    # it sits in has no sequence.acaml, so its peaks come from its own.
+    datadir = rb.read(os.path.join("tests", "inputs", "red.D"), peaks=True)
+    channels = {group["channel_file"] for group in datadir.peaks}
+    assert "ADC1A.CH" in channels
+    assert all(group["peaks"] for group in datadir.peaks)
+    assert not hasattr(rb.read(os.path.join("tests", "inputs", "red.D")),
+                       "peaks")
+
+
+def test_read_peaks_is_empty_without_a_result_document(tmp_path):
+    path = _copy_without_suffix(AGILENT_FIXTURE, tmp_path, "brown.D")
+    assert rb.read(path, peaks=True).peaks == []
+
+
+def test_read_peaks_says_waters_results_are_not_read():
+    with pytest.warns(UserWarning, match="does not read integrated peaks"):
+        datadir = rb.read(WATERS_FIXTURE, peaks=True)
+    assert datadir.peaks == []
+
+
 def test_read_metadata_sniffs(tmp_path):
     path = _copy_without_suffix(WATERS_FIXTURE, tmp_path, "md_test")
     assert rb.read_metadata(path)["metadata"]["vendor"] == "Waters"
@@ -155,6 +208,7 @@ def test_the_labels_only_shortcut_is_not_public(call):
         ({"telemetry": "yes"}, "telemetry flag must be a boolean"),
         ({"hrms": "yes"}, "hrms flag must be a boolean"),
         ({"centroid": 1}, "centroid flag must be a boolean"),
+        ({"peaks": "yes"}, "peaks flag must be a boolean"),
     ],
 )
 def test_flags_must_be_booleans(kwargs, message):
