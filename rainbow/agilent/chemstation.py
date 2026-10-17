@@ -65,11 +65,18 @@ def parse_optics(description):
     the ``Sig=``/``Ref=`` clause of a single-wavelength channel. ``Ref=off``
     gives a ``reference_wavelength`` of None: the channel states that it has
     no reference, which is not the same as stating nothing about one, and two
-    channels at one wavelength differ by it. Descriptions without such a
-    clause (spectra, FID, telemetry) yield an empty dict.
+    channels at one wavelength differ by it. A fluorescence channel's
+    ``Ex=``/``Em=`` clause gives ``excitation_wavelength`` and
+    ``emission_wavelength`` instead. Descriptions without such a clause
+    (spectra, FID, telemetry) yield an empty dict.
 
     """
     optics = {}
+    ex_em = _EX_EM_RE.search(description)
+    if ex_em:
+        optics['excitation_wavelength'] = float(ex_em.group(1))
+        optics['emission_wavelength'] = float(ex_em.group(2))
+        return optics
     sig = _SIG_RE.search(description)
     if sig:
         optics['wavelength'] = float(sig.group(1))
@@ -216,13 +223,12 @@ def _detector_from_signal(metadata, default=None, uv_only=False):
         return 'UV', sig.group(1)
     if 'ADC' in signal:
         return ('ELSD' if 'CHANNEL' in signal else 'CAD'), ''
-    ex_em = _EX_EM_RE.search(signal)
-    if ex_em:
+    optics = parse_optics(signal)
+    if 'emission_wavelength' in optics:
         # The y-axis label is the emission, the wavelength the detector
         # measures at, as rb.from_asm labels a fluorescence channel.
-        metadata['excitation_wavelength'] = float(ex_em.group(1))
-        metadata['emission_wavelength'] = float(ex_em.group(2))
-        return 'FLD', ex_em.group(2)
+        metadata.update(optics)
+        return 'FLD', str(optics['emission_wavelength'])
     if uv_only:
         # The 130/30 container holds no flame ionization channel, so the
         # ambiguity that forces the Sig= clause on 179/181 does not arise here:
