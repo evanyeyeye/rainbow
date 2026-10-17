@@ -360,7 +360,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     elif vendor == 'waters':
         datadir = waters.read(
             path, display_precision, requested_files, bin_width, _labels_only)
-        if peaks:
+        if peaks and datadir is not None:
             import warnings
             # Said, rather than returning an empty list that reads as a run
             # nobody integrated.

@@ -50,7 +50,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
         from rainbow.agilent import openlab
         datadir = openlab.read(
             path, display_precision, requested_files, telemetry, bin_width)
-        if peaks:
+        if peaks and datadir is not None:
             # An archive's results are not read. Said, rather than returning
             # an empty list that reads as a run nobody integrated.
             import warnings
@@ -118,6 +118,11 @@ def injection_peaks(path):
     same way: from the ``sequence.acaml`` of the sequence directory the .D
     sits in, matched by the .D's folder name, or failing that from the .D's
     own ``sequence.acam_``.
+
+    Each call parses the whole result document, which for a sequence holds
+    every injection's results. To read the peaks of many injections of one
+    sequence, ``read_sequence(path, peaks=True)`` parses it once for all of
+    them and is the efficient path.
 
     Args:
         path (str): Path of the .D directory.

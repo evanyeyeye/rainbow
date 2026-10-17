@@ -42,11 +42,12 @@ to [Semantic Versioning](https://semver.org/).
   `"GC"` the export will use.
 
 ### Changed
-- **A peak's `height` and `area` in a non-absorbance unit are kept as
+- **A peak's `height` and `area` on a non-absorbance channel are kept as
   written.** 1.5.4 read any unit it could not convert to mAU as `None`, which
-  lost every fluorescence peak; an RFU or pA value now comes back with its
-  unit. Absorbance in AU or µV is still converted to mAU, and the edge heights
-  are in the height's unit.
+  lost every fluorescence peak, and converted µV to mAU whatever the channel
+  measured. An RFU, pA or ELSD µV value now comes back with its unit. Only on
+  an absorbance channel is AU or Empower's µV converted to mAU; the edge
+  heights are in the height's unit.
 - **`Ref=off` reads as `reference_wavelength` None**, present, in the vendor
   readers and in `from_asm`, so a channel without a reference is told apart
   from one whose reference was not recorded.
@@ -62,6 +63,9 @@ to [Semantic Versioning](https://semver.org/).
   structured custom information, and `from_asm` reads it (or the sentence
   1.5.4 wrote alone) to put the channel and its peaks back in their real
   unit, so a relabeled channel re-exports to a valid document.
+- **A ChemStation fluorescence signal is FLD.** "FLD1 A, Ex=230, Em=310" was
+  typed UV at 230 nm; it is now an `FLD` channel with `excitation_wavelength`
+  and `emission_wavelength`, labelled by its emission.
 - **`to_asm` dropped peak groups no exported channel carries** (peaks read from
   an index document, or on an analog channel) without a word. It warns once
   per group.

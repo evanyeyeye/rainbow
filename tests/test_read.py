@@ -87,7 +87,12 @@ def test_asm_technique_is_the_one_the_export_uses():
     assert "gas chromatography aggregate document" in yellow.to_asm()
     assert rb.asm_technique(rb.read(AGILENT_FIXTURE)) == "LC"
     sequence = rb.read_sequence(os.path.join("tests", "inputs"))
-    assert rb.asm_technique(sequence) in ("LC", "GC")
+    # The bundled inputs hold yellow.D, whose method declares GC, and the
+    # declaration of the first injection that has one routes the sequence.
+    expected = next(inj.metadata["technique"].upper()
+                    for inj in sequence.injections
+                    if inj.metadata.get("technique"))
+    assert rb.asm_technique(sequence) == expected
 
 
 def test_the_asm_peak_reader_is_public():
@@ -123,6 +128,15 @@ def test_read_peaks_says_dx_results_are_not_read():
         datadir = rb.read(os.path.join("tests", "inputs", "teal.dx"),
                           peaks=True)
     assert datadir.peaks == []
+
+
+def test_an_unreadable_dx_with_peaks_says_it_is_unreadable(monkeypatch):
+    # A .dx the OpenLab reader cannot read returns None; asking for its peaks
+    # must not turn the clean error into an AttributeError.
+    from rainbow.agilent import openlab
+    monkeypatch.setattr(openlab, "read", lambda *args, **kwargs: None)
+    with pytest.raises(Exception, match="Rainbow cannot read"):
+        rb.read(os.path.join("tests", "inputs", "teal.dx"), peaks=True)
 
 
 def test_read_metadata_sniffs(tmp_path):
