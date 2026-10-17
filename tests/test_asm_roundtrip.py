@@ -2257,7 +2257,15 @@ def test_the_sample_fields_are_written_back():
     assert {key: datadir.metadata[key] for key in metadata} == metadata
     sample = next(_asm_measurements(datadir.to_asm()))["sample document"]
     assert sample["sample role type"] == "blank role"
-    assert sample["well plate identifier"] == "Plate23"
+    # Not a sample document property in REC/2026/06: custom information.
+    assert "well plate identifier" not in sample
+    entries = (sample["custom information aggregate document"]
+               ["custom information document"])
+    assert {"datum label": "well plate identifier",
+            "scalar string datum": "Plate23"}.items() <= entries[-1].items()
+    again = rb.from_asm(datadir.to_asm())
+    assert again.metadata["well_plate_id"] == "Plate23"
+    assert "sample_custom" not in again.metadata
 
 
 _RECORDS = {
@@ -2475,3 +2483,58 @@ def test_an_fld_channel_read_from_asm_exports_without_a_relabel_warning():
         w.simplefilter("always")
         datadir.to_asm(utc_offset="+00:00")
     assert not [c for c in caught if "relabeled" in str(c.message)]
+
+
+# --- Review round 2 ---
+
+
+def test_an_elsd_peak_in_microvolts_stays_in_microvolts():
+    """ Empower's microvolt is a microabsorbance unit only on a UV channel.
+
+    On an ELSD channel the trace is in µV, and converting its peaks to mAU
+    put them a thousand times below the trace they were integrated on.
+    """
+    measurement = {
+        "measurement identifier": "elsd",
+        "chromatogram data cube": _cube("intensity", "\u00b5V"),
+        **_control(**{"device type": "evaporative light scattering detector"}),
+        **_processed(_peak_list(_empower_peak(**_rt(105.0), **{
+            "peak height": {"value": 3000.0, "unit": "\u00b5V"},
+            "peak area": {"value": 9000.0, "unit": "\u00b5V.s"},
+            "peak value at start": {"value": 0.0, "unit": "\u00b5V"},
+            "peak value at end": {"value": 50.0, "unit": "\u00b5V"}})))}
+    peak = rb.from_asm(_lc(measurement)).peaks[0]["peaks"][0]
+    assert (peak["height"], peak["height_unit"]) == (3000.0, "\u00b5V")
+    assert (peak["area"], peak["area_unit"]) == (9000.0, "\u00b5V.s")
+    assert peak["end_height"] == 50.0
+
+
+def test_agilents_fluorescence_label_is_read():
+    assert asm._optics_from_label("FLD1 A, Ex=230, Em=310") == {
+        "excitation_wavelength": 230.0, "emission_wavelength": 310.0}
+
+
+def test_a_fluorescence_setting_outranks_its_label():
+    measurement = _fluorescence(**_control(**{
+        "device type": "fluorescence detector",
+        "detector wavelength setting": {"value": 350.0, "unit": "nm"},
+        "excitation wavelength setting": {"value": 285.0, "unit": "nm"}}))
+    metadata = rb.from_asm(_lc(measurement)).get_file("128288").metadata
+    assert metadata["emission_wavelength"] == 350.0
+    assert metadata["excitation_wavelength"] == 285.0
+    assert "wavelength" not in metadata
+
+
+def test_a_relabeled_channel_re_exports_without_peak_unit_warnings():
+    import warnings as w
+    first = rb.from_asm(_relabeled_cad().to_asm(utc_offset="+00:00"),
+                        name="red.D")
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        first.to_asm(utc_offset="+00:00")
+    assert not [c for c in caught if "a peak read in" in str(c.message)]
+
+
+def test_conductance_carries_its_own_peak_list():
+    assert asm._admits_peaks({asm._CHROMATOGRAM_CUBE: {"cube-structure": {
+        "measures": [{"concept": "electric conductance", "unit": "S"}]}}})

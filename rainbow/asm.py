@@ -269,13 +269,13 @@ _DETECTOR_CUBES = {
             "concept": "fluorescence", "unit": "RFU"},
 }
 
-# The measures REC/2026/06 attaches a processed-data peak list to, as (concept,
-# unit). Each has its own detector schema, which pins the peak area to the
-# measure's unit times seconds and the height to the measure's unit, so a peak
-# list on any of these is written against the cube it belongs to. A measure
-# outside the set (a current in nA, a voltage in V) has nowhere in the schema
-# to carry peaks, and is relabeled to absorbance to keep them; see
-# :func:`_detector_measurement`.
+# The (concept, unit) of every chromatogram measure the REC/2026/06 LC and GC
+# schemas define a processed-data peak list for. Each detector schema pins the
+# peak area to the measure's unit times seconds and the height to the
+# measure's unit, so a peak list on any of these is written against the cube
+# it belongs to. A measure outside the set (a current in nA, a voltage in V)
+# has nowhere in the schema to carry peaks, and is relabeled to absorbance to
+# keep them; see :func:`_detector_measurement`.
 _PEAK_MEASURES = frozenset({
     ("absorbance", "mAU"),
     ("electric current", "pA"),
@@ -283,6 +283,10 @@ _PEAK_MEASURES = frozenset({
     ("voltage", "mV"),
     ("fluorescence", "RFU"),
     ("count", "Counts"),
+    ("electric charge", "nC"),
+    ("angle", "m\u00b0"),
+    ("electric conductance", "S"),
+    ("electric conductivity", "S/m"),
 })
 
 
@@ -1286,7 +1290,8 @@ def _measurements(datadir, options, technique):
             if group and _admits_peaks(measurement):
                 _add_processed_data(
                     measurement, group, options,
-                    _cube_measure(measurement)[1])
+                    _cube_measure(measurement)[1],
+                    _reported_measure(measurement) is not None)
                 carried.add(key)
             measurements.append(measurement)
     _warn_peaks_not_carried(datadir, peak_groups, carried, options)
@@ -1901,12 +1906,24 @@ def _measurement(datafile, metadata, control, cube_key, cube, options,
         sample["custom information aggregate document"] = custom
     if "vialpos" in metadata:
         sample["location identifier"] = str(metadata["vialpos"])
-    # Read from a sample document by from_asm, and written back as they were
-    # read. A vendor run records neither.
-    for key, field in _SAMPLE_PLACEMENT[1:]:
-        value = metadata.get(key)
-        if isinstance(value, str) and value:
-            sample[field] = value
+    # Read from a sample document by from_asm, and written back as it was
+    # read. A vendor run records none. The well plate identifier is not a
+    # sample document property in REC/2026/06, so it goes under its custom
+    # information, which _custom_fields reads back from either place.
+    role = metadata.get("sample_role")
+    if isinstance(role, str) and role:
+        sample["sample role type"] = role
+    plate = metadata.get("well_plate_id")
+    if isinstance(plate, str) and plate:
+        custom = sample.setdefault(
+            "custom information aggregate document",
+            {"custom information document": []})
+        entries = custom["custom information document"]
+        if not any(entry.get("datum label") == _WELL_PLATE
+                   for entry in entries):
+            entries.append({"@index": len(entries) + 1,
+                            "datum label": _WELL_PLATE,
+                            "scalar string datum": plate})
     measurement = {
         "measurement identifier": identifier or datafile.name,
         "sample document": sample,
@@ -2063,7 +2080,8 @@ def _add_injection_document(measurement, metadata, identifier, technique,
     measurement["injection document"] = document
 
 
-def _add_processed_data(measurement, group, options, unit="mAU"):
+def _add_processed_data(measurement, group, options, unit="mAU",
+                        relabeled=False):
     """Adds the processed data documents carrying the channel's peak lists.
 
     A channel read back from a document that integrated the same run more than
@@ -2073,13 +2091,16 @@ def _add_processed_data(measurement, group, options, unit="mAU"):
 
     ``unit`` is the unit of the cube the peaks were integrated on, which is
     what a vendor's peak height is in and its area is in per second.
+    ``relabeled`` says the cube was relabeled to carry them, which the export
+    has already said, so the peaks do not say it again.
     """
     documents = [(group.get("processing"), group["peaks"])]
     for alternate in group.get("alternates") or []:
         documents.append((alternate.get("processing"), alternate["peaks"]))
     measurement[_PROCESSED_DATA] = {
         "processed data document": [
-            _asm_processed_data(index + 1, processing, peaks, options, unit)
+            _asm_processed_data(index + 1, processing, peaks, options, unit,
+                                relabeled)
             for index, (processing, peaks) in enumerate(documents)
         ],
     }
@@ -2100,7 +2121,8 @@ _PROCESSING_METHOD_FIELDS = (
 )
 
 
-def _asm_processed_data(index, processing, peaks, options, unit="mAU"):
+def _asm_processed_data(index, processing, peaks, options, unit="mAU",
+                        relabeled=False):
     """One processed data document: a peak list and where it came from."""
     document = {"@index": index}
     for source, target in _PROCESSING_FIELDS:
@@ -2115,13 +2137,13 @@ def _asm_processed_data(index, processing, peaks, options, unit="mAU"):
     if method:
         document["data processing document"] = method
     document["peak list"] = {
-        "peak": [_asm_peak(i + 1, peak, options, unit)
+        "peak": [_asm_peak(i + 1, peak, options, unit, relabeled)
                  for i, peak in enumerate(peaks)],
     }
     return document
 
 
-def _asm_peak(index, peak, options=None, unit="mAU"):
+def _asm_peak(index, peak, options=None, unit="mAU", relabeled=False):
     """One ASM peak, with retention/start/end times in seconds.
 
     The height and the edge heights are in ``unit``, the unit of the cube the
@@ -2145,7 +2167,7 @@ def _asm_peak(index, peak, options=None, unit="mAU"):
                           ("height_unit", height_unit)):
         stated = peak.get(key)
         if isinstance(stated, str) and stated and stated != expected \
-                and options is not None:
+                and options is not None and not relabeled:
             _warn_once_per_run(
                 options, "peak-unit:{}:{}".format(stated, expected),
                 "a peak read in {!r} is written beside a cube in {!r}, as "
@@ -2811,12 +2833,23 @@ def _absorb_samples(measurements, metadata):
             value = _text(chosen.get(field))
             if value:
                 metadata[key] = value
+    # rainbow writes the well plate identifier as custom information, since
+    # REC/2026/06 has no sample document property for it, and reads it back
+    # from there into the same key.
+    custom = metadata.get("sample_custom") or {}
+    plate = custom.get(_WELL_PLATE)
+    if isinstance(plate, str) and plate:
+        metadata.setdefault("well_plate_id", plate)
+        del custom[_WELL_PLATE]
+        if not custom:
+            del metadata["sample_custom"]
 
 
 # What a sample document says of where the sample sat and what it was, as
 # (metadata key, field). Read as written: "unknown sample role" is the
 # document's own statement that it recorded no role, and saying so is the
 # document's business, not rainbow's to translate.
+_WELL_PLATE = "well plate identifier"
 _SAMPLE_PLACEMENT = (
     ("vialpos", "location identifier"),
     ("well_plate_id", "well plate identifier"),
@@ -3319,17 +3352,23 @@ def _channel_metadata(measurement):
         # Later texts override earlier ones, so the label wins over the
         # processed data's description and the settings over both.
         optics.update(_optics_from_label(text))
+    settings = {}
     for key, fields in _OPTICS_SETTINGS:
         for field in fields:
             value = _number(control.get(field))
             if value is not None and _quantity_unit(control.get(field)) \
                     in (None, "nm"):
-                optics[key] = value
+                settings[key] = value
                 break
-    if concept == "fluorescence" and "wavelength" in optics:
-        optics.setdefault("emission_wavelength", optics.pop("wavelength"))
-    elif concept == "fluorescence":
-        optics.pop("wavelength", None)
+    if concept == "fluorescence":
+        # A fluorescence detector's wavelength setting is its emission, and a
+        # setting outranks what a label names, here as everywhere else.
+        if "wavelength" in settings:
+            settings["emission_wavelength"] = settings.pop("wavelength")
+        label_wavelength = optics.pop("wavelength", None)
+        if label_wavelength is not None:
+            optics.setdefault("emission_wavelength", label_wavelength)
+    optics.update(settings)
     metadata.update(optics)
     return metadata
 
@@ -3379,6 +3418,13 @@ def _peak_lists(measurement, said=None):
     """
     processed = _first(measurement.get(_PROCESSED_DATA))
     reported = _reported_measure(measurement)
+    # Which measure the peaks were integrated on: the relabeled channel's real
+    # one, else the cube's. A measurement that names none is taken as
+    # absorbance, the measure a peak list was read in before rainbow read
+    # any other.
+    concept = reported[0].strip().lower() if reported \
+        else _measure_of(measurement)[0]
+    absorbance = concept in (None, "absorbance")
     lists = []
     for document in _as_documents(processed.get("processed data document")):
         if not isinstance(document, dict):
@@ -3388,7 +3434,8 @@ def _peak_lists(measurement, said=None):
                          _first(document.get("peak list")).get("peak"))
                      if isinstance(peak, dict)]
         if asm_peaks:
-            peaks = [_peak_from_asm(peak, said) for peak in asm_peaks]
+            peaks = [_peak_from_asm(peak, said, absorbance)
+                     for peak in asm_peaks]
             if reported is not None:
                 _restore_peak_units(peaks, reported[1])
             lists.append((_processing_document(document), peaks))
@@ -3491,7 +3538,8 @@ def _peaks_from_measurement(measurement, said=None):
 # two wavelengths are its excitation and emission, never an absorbance one.
 _NUMBER = r"(\d+(?:\.\d+)?)"
 _LABEL_EXCITATION_EMISSION_RE = re.compile(
-    r"\bEx\s*:?\s*" + _NUMBER + r"\s*(?:nm)?\s*[,/ ]\s*Em\s*:?\s*" + _NUMBER,
+    r"\bEx\s*[:=]?\s*" + _NUMBER + r"\s*(?:nm)?\s*[,/ ]\s*Em\s*[:=]?\s*"
+    + _NUMBER,
     re.IGNORECASE)
 _LABEL_REFERENCE_RE = re.compile(
     r"\bRef\s*[=:]?\s*(?:(off)\b|" + _NUMBER
@@ -3541,8 +3589,12 @@ def _optics_from_label(label):
     return optics
 
 
-def _peak_from_asm(peak, said=None):
-    """Reconstructs a peak's measures, times back from seconds to minutes."""
+def _peak_from_asm(peak, said=None, absorbance=True):
+    """Reconstructs a peak's measures, times back from seconds to minutes.
+
+    ``absorbance`` says the peak was integrated on an absorbance channel, the
+    only kind whose units are converted (see :func:`_peak_measure`).
+    """
     def value(key):
         # A foreign writer may spell a measure as text, or as something else
         # entirely. These go straight into user code and into arithmetic just
@@ -3553,8 +3605,9 @@ def _peak_from_asm(peak, said=None):
         seconds = value(key)
         return seconds / _SECONDS_PER_MINUTE if seconds is not None else None
 
-    area, area_unit = _peak_measure(peak.get("peak area"), ".s")
-    height, height_unit = _peak_measure(peak.get("peak height"))
+    area, area_unit = _peak_measure(peak.get("peak area"), ".s", absorbance)
+    height, height_unit = _peak_measure(peak.get("peak height"), "",
+                                        absorbance)
     return {
         # The compound the integration assigned this peak to, when the
         # processing method identified one. Without it a peak list is a set of
@@ -3581,8 +3634,9 @@ def _peak_from_asm(peak, said=None):
         # peak height's unit, so the line runs from (start, trace - start
         # height) to (end, trace - end height).
         "start_height": _edge_height(
-            peak.get("peak value at start"), height_unit),
-        "end_height": _edge_height(peak.get("peak value at end"), height_unit),
+            peak.get("peak value at start"), height_unit, absorbance),
+        "end_height": _edge_height(
+            peak.get("peak value at end"), height_unit, absorbance),
         **_peak_baseline_fields(peak, said),
     }
 
@@ -3596,24 +3650,26 @@ _PEAK_VALUE_TO_MAU = dict(_ABSORBANCE_TO_MAU, **{"\u00b5v": 0.001,
                                                  "\u03bcv": 0.001})
 
 
-def _peak_measure(quantity, per=""):
+def _peak_measure(quantity, per="", absorbance=True):
     """
     A peak's height (or, with ``per=".s"``, its area) and its unit.
 
-    Returns ``(value, unit)``. An absorbance, in AU or mAU or Empower's
-    microvolts, is converted to mAU (``mAU.s`` for an area), since a trace is
-    read in mAU and the two are subtracted and compared. Any other unit is
-    the detector's own, and is kept as written beside the number it measures:
-    a fluorescence peak in RFU, an FID peak in pA. The unit is None only when
-    the document wrote none, and the value then is the number as written.
+    Returns ``(value, unit)``. On an absorbance channel (``absorbance``), a
+    value in AU or mAU or Empower's microvolts is converted to mAU (``mAU.s``
+    for an area), since the trace is read in mAU and the two are subtracted
+    and compared; Empower's microvolt is a microabsorbance unit only there.
+    On any other channel the unit is the detector's own, and is kept as
+    written beside the number it measures: a fluorescence peak in RFU, an FID
+    peak in pA, an ELSD peak in µV. The unit is None only when the document
+    wrote none, and the value then is the number as written.
 
     """
     number = _number(quantity)
     if number is None:
         return None, None
     unit = _quantity_unit(quantity)
-    if unit is None:
-        return number, None
+    if unit is None or not absorbance:
+        return number, unit
     key = _absorbance_unit_key(unit)
     scale = _PEAK_VALUE_TO_MAU.get(key[:len(key) - len(per)]) \
         if key.endswith(per) else None
@@ -3623,7 +3679,7 @@ def _peak_measure(quantity, per=""):
     return (number if scale == 1.0 else number * scale), "mAU" + per
 
 
-def _edge_height(quantity, height_unit):
+def _edge_height(quantity, height_unit, absorbance=True):
     """A peak's height at one edge, in its height's unit, or None.
 
     An edge height is converted like the height (absorbance to mAU) and
@@ -3632,7 +3688,7 @@ def _edge_height(quantity, height_unit):
     no unit to be reported in and reads as None. One with no unit is taken as
     written.
     """
-    number, unit = _peak_measure(quantity)
+    number, unit = _peak_measure(quantity, "", absorbance)
     if unit is not None and height_unit is not None and unit != height_unit:
         return None
     return number

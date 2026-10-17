@@ -5,8 +5,9 @@ Detectors
 
 rainbow tags every channel it reads with a detector kind: ``UV``, ``MS``,
 ``FID``, ``CAD``, ``ELSD``, ``RID``, or ``FLD``. Export is driven by that tag,
-not by the vendor. No vendor reader produces ``FLD`` yet; it is the kind a
-fluorescence channel read back with :func:`rainbow.from_asm` has.
+not by the vendor. ``FLD`` is a fluorescence channel: a ChemStation signal that
+names its excitation and emission (``FLD1 A, Ex=230, Em=310``), or one read
+back with :func:`rainbow.from_asm`.
 
 Most detectors export faithfully under their own measure (see the table below).
 RID is the one interim: it rides the absorbance cube because the schema has no
@@ -166,7 +167,8 @@ rides the absorbance cube [#interim]_.
 Where peaks meet measures: REC/2026/06 attaches a processed-data peak list to
 absorbance in ``mAU`` and to the chromatography detectors' own measures, each in
 one unit: electric current in ``pA``, intensity in ``RLU``, voltage in ``mV``,
-fluorescence in ``RFU``, count in ``Counts``. A channel in one of these keeps its faithful cube when
+fluorescence in ``RFU``, count in ``Counts``, electric charge in ``nC``, angle
+in ``m°``, electric conductance in ``S`` and conductivity in ``S/m``. A channel in one of these keeps its faithful cube when
 it carries integrated peaks, and its peaks are written in its unit: an FID's
 area in ``pA.s``, its height in ``pA``. (A vendor's peak table states no unit;
 its values are the channel's.) A channel in a measure the schema gives no peak

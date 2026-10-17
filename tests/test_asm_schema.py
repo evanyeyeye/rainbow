@@ -286,6 +286,15 @@ def test_a_1_5_4_relabeled_channel_re_exports_to_a_valid_document():
     _assert_conforms(_lc_validator(), again)
 
 
+def test_a_read_back_sample_role_and_plate_conform_to_lc_schema():
+    # The sample role is a sample document property; the plate is not, so it
+    # is written as custom information, and the document validates.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.metadata["sample_role"] = "standard sample role"
+    datadir.metadata["well_plate_id"] = "Plate23"
+    _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
+
+
 def test_a_fluorescence_channel_read_from_asm_conforms_to_lc_schema():
     # An FLD channel rebuilt by from_asm exports as a fluorescence cube in RFU
     # with its peaks in RFU.s and RFU, the schema's fluorescence detector.

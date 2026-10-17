@@ -314,7 +314,10 @@ injection and so keeps each sample with its own.
 The same document supplies the vial position, the ``well plate identifier``
 (``metadata["well_plate_id"]``) and the ``sample role type``
 (``metadata["sample_role"]``, as written, ``"unknown sample role"`` included),
-and the last two are written back on export.
+and the last two are written back on export. REC/2026/06 has no sample document
+property for the plate, so rainbow writes it as the sample's custom information
+under the label ``well plate identifier``, and reads it from either place into
+``well_plate_id`` (not into ``sample_custom``).
 
 One thing this gives up, deliberately. A document whose channels split the
 fields between them -- the identifier on one, the custom fields on another --
