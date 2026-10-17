@@ -87,12 +87,10 @@ def test_asm_technique_is_the_one_the_export_uses():
     assert "gas chromatography aggregate document" in yellow.to_asm()
     assert rb.asm_technique(rb.read(AGILENT_FIXTURE)) == "LC"
     sequence = rb.read_sequence(os.path.join("tests", "inputs"))
-    # The bundled inputs hold yellow.D, whose method declares GC, and the
-    # declaration of the first injection that has one routes the sequence.
-    expected = next(inj.metadata["technique"].upper()
-                    for inj in sequence.injections
-                    if inj.metadata.get("technique"))
-    assert rb.asm_technique(sequence) == expected
+    # yellow.D is the one bundled injection whose method declares a
+    # technique, gas chromatography, and that declaration routes the whole
+    # sequence (asserted above for yellow.D read alone).
+    assert rb.asm_technique(sequence) == "GC"
 
 
 def test_the_asm_peak_reader_is_public():

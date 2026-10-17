@@ -51,8 +51,9 @@ about:
   then the processed data's description of the signal. They land in the
   channel's metadata under the keys the vendor readers use:
   :code:`wavelength`, :code:`bandwidth`, :code:`reference_wavelength` and
-  :code:`reference_bandwidth`, plus :code:`excitation_wavelength` and
-  :code:`emission_wavelength` for a fluorescence channel. :code:`Ref=off`
+  :code:`reference_bandwidth`, plus :code:`excitation_wavelength`,
+  :code:`excitation_bandwidth` and :code:`emission_wavelength` for a
+  fluorescence channel. :code:`Ref=off`
   reads as a :code:`reference_wavelength` of :code:`None`, present. The label
   is kept whole as the channel's and the peak group's :code:`description`.
 * **A peak records the baseline it was integrated from.** Empower writes the

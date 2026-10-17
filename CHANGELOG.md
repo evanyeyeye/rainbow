@@ -25,7 +25,7 @@ to [Semantic Versioning](https://semver.org/).
   `acq_method`, and the optics from the device control settings, the cube
   label, or the processed data description: `wavelength`, `bandwidth`,
   `reference_wavelength`, `reference_bandwidth`, and a fluorescence channel's
-  `excitation_wavelength` and `emission_wavelength`.
+  `excitation_wavelength`, `excitation_bandwidth` and `emission_wavelength`.
 - **Peaks carry their units, identifier and index.** `area_unit` and
   `height_unit` say what each value is in; `identifier` and `index` are the
   peak's own; each integration's `processing` gains its `description`.
@@ -63,9 +63,20 @@ to [Semantic Versioning](https://semver.org/).
   structured custom information, and `from_asm` reads it (or the sentence
   1.5.4 wrote alone) to put the channel and its peaks back in their real
   unit, so a relabeled channel re-exports to a valid document.
-- **A ChemStation fluorescence signal is FLD.** "FLD1 A, Ex=230, Em=310" was
-  typed UV at 230 nm; it is now an `FLD` channel with `excitation_wavelength`
-  and `emission_wavelength`, labelled by its emission.
+- **A fluorescence signal is FLD in every Agilent reader.** "FLD1 A, Ex=230,
+  Em=310" was typed UV at 230 nm in a ChemStation .ch; it is now an `FLD`
+  channel with `excitation_wavelength` and `emission_wavelength`, labelled by
+  its emission, in the .ch, OpenLab .dx and MassHunter .cg readers alike, and
+  `parse_optics` reads the `Ex=`/`Em=` clause.
+- **`from_asm` scales an absorbance trace to mAU.** A cube in AU (or Empower's
+  µV) was rebuilt in its own unit while its peaks' heights and areas were
+  converted to mAU, so the trace minus an edge height was a thousand times
+  off. The trace is now scaled to mAU too, the unit rainbow holds UV data in
+  and to_asm writes, and `metadata["unit"]` says so.
+- **The processing time and description are where REC/2026/06 puts them.**
+  `data processing time` is written in the data processing document (and read
+  from either place), and the 2025/03 `processed data description` is written
+  as the processed data document's custom information.
 - **`to_asm` dropped peak groups no exported channel carries** (peaks read from
   an index document, or on an analog channel) without a word. It warns once
   per group.

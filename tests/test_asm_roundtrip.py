@@ -2364,8 +2364,12 @@ def test_a_fluorescence_channel_round_trips_with_its_peaks():
     assert control["detector wavelength setting"]["value"] == 340.0
     document_peaks = (measurement["processed data aggregate document"]
                       ["processed data document"][0])
-    assert document_peaks["processed data description"] \
-        == "FLR ChA Ex280,Em340 nm"
+    # Not a REC/2026/06 property: written as custom information.
+    assert "processed data description" not in document_peaks
+    assert (document_peaks["custom information aggregate document"]
+            ["custom information document"][0]) == {
+        "@index": 1, "datum label": "processed data description",
+        "scalar string datum": "FLR ChA Ex280,Em340 nm"}
     peak = document_peaks["peak list"]["peak"][0]
     assert peak["peak area"] == {"value": 50.0, "unit": "RFU.s"}
     assert peak["peak height"] == {"value": 3.0, "unit": "RFU"}
@@ -2538,3 +2542,60 @@ def test_a_relabeled_channel_re_exports_without_peak_unit_warnings():
 def test_conductance_carries_its_own_peak_list():
     assert asm._admits_peaks({asm._CHROMATOGRAM_CUBE: {"cube-structure": {
         "measures": [{"concept": "electric conductance", "unit": "S"}]}}})
+
+
+# --- Review round 3 ---
+
+
+def test_the_processing_time_is_written_where_the_schema_puts_it():
+    processing = {"identifier": "1", "time": "2026-04-12T09:00:00-04:00",
+                  "method_name": "m", "description": "Signal A"}
+    document = asm._asm_processed_data(1, processing, [{"area": 1.0}],
+                                       asm._Options())
+    assert "data processing time" not in document
+    assert document["data processing document"]["data processing time"] \
+        == "2026-04-12T09:00:00-04:00"
+    # And it reads back, with the description, from where it was written.
+    assert asm._processing_document(document) == dict(
+        processing, group_identifier=None, method_version=None, type=None)
+
+
+def test_an_absorbance_trace_in_au_is_rebuilt_in_mau():
+    """ The peaks convert to mAU, so the trace has to as well, or the trace
+    minus an edge height is a thousand times off. """
+    measurement = {
+        "measurement identifier": "uv",
+        "chromatogram data cube": _cube("absorbance", "AU"),
+        **_processed(_peak_list(_empower_peak(**_rt(30.0), **{
+            "peak height": {"value": 0.0015, "unit": "AU"},
+            "peak value at start": {"value": 0.0005, "unit": "AU"}})))}
+    datadir = rb.from_asm(_lc(measurement))
+    datafile = datadir.datafiles[0]
+    assert datafile.metadata["unit"] == "mAU"
+    assert datafile.data[:, 0].tolist() == [1000.0, 2000.0]
+    peak = datadir.peaks[0]["peaks"][0]
+    assert peak["height"] == pytest.approx(1.5)
+    assert peak["start_height"] == pytest.approx(0.5)
+
+
+def test_a_trace_in_another_measure_keeps_its_unit():
+    measurement = {"measurement identifier": "elsd",
+                   "chromatogram data cube": _cube("intensity", "\u00b5V")}
+    datafile, = rb.from_asm(_lc(measurement)).by_name.values()
+    assert datafile.metadata["unit"] == "\u00b5V"
+    assert datafile.data[:, 0].tolist() == [1.0, 2.0]
+
+
+@pytest.mark.parametrize("unit,area", [
+    ("mAU", "mAU.s"), ("pA", "pA.s"), ("RFU", "RFU.s"),
+    ("S/m", "[S/m].s"), ("nA", "nA.s")])
+def test_a_peak_area_takes_the_unit_its_schema_names(unit, area):
+    entry = asm._asm_peak(1, {"area": 1.0, "height": 1.0}, None, unit)
+    assert entry["peak area"]["unit"] == area
+    assert entry["peak height"]["unit"] == unit
+
+
+def test_the_peak_unit_warning_names_its_channel():
+    with pytest.warns(UserWarning, match="^ADC1A: a peak read in 'RFU.s'"):
+        asm._asm_peak(1, {"area": 1.0, "area_unit": "RFU.s"},
+                      asm._Options(), "pA", channel="ADC1A")

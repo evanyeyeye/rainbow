@@ -295,6 +295,70 @@ def test_a_read_back_sample_role_and_plate_conform_to_lc_schema():
     _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
 
 
+def _property_names(schema, key):
+    """Every property name the schema declares for objects under ``key``."""
+    names = set()
+
+    def collect(node):
+        if not isinstance(node, dict):
+            return
+        names.update((node.get("properties") or {}).keys())
+        for combinator in ("allOf", "anyOf", "oneOf"):
+            for part in node.get(combinator) or []:
+                collect(part)
+        collect(node.get("items"))
+
+    def walk(node):
+        if isinstance(node, dict):
+            for name, value in node.items():
+                if name == key:
+                    collect(value)
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(schema)
+    return names
+
+
+def test_processed_data_carries_only_names_the_schema_declares():
+    # The embed schemas are not closed, so a property they do not declare
+    # still validates. Each name rainbow writes in a processed data document,
+    # or in its data processing document, is checked against the schema's
+    # own list instead.
+    schema = _lc_validator().schema
+    allowed = {key: _property_names(schema, key) for key in (
+        "processed data document", "data processing document")}
+    assert "peak list" in allowed["processed data document"]
+    processing = {"identifier": "1", "group_identifier": "g",
+                  "time": "2026-04-12T09:00:00-04:00", "method_name": "m",
+                  "method_version": "1", "type": "integration",
+                  "description": "DAD: Signal A, 246.0 nm"}
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.peaks = [dict(_peaks_on("DAD1B.ch")[0], processing=processing)]
+    document = datadir.to_asm(utc_offset=_TZ)
+
+    def documents(node):
+        if isinstance(node, dict):
+            for name, value in node.items():
+                if name == "processed data document":
+                    yield from (value if isinstance(value, list) else [value])
+                yield from documents(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from documents(value)
+
+    written = list(documents(document))
+    assert written
+    for processed in written:
+        names = {name for name in processed if not name.startswith("@")}
+        assert names <= allowed["processed data document"], names
+        method = processed["data processing document"]
+        assert set(method) <= allowed["data processing document"], method
+    _assert_conforms(_lc_validator(), document)
+
+
 def test_a_fluorescence_channel_read_from_asm_conforms_to_lc_schema():
     # An FLD channel rebuilt by from_asm exports as a fluorescence cube in RFU
     # with its peaks in RFU.s and RFU, the schema's fluorescence detector.
