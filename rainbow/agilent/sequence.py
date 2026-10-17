@@ -47,6 +47,11 @@ _PEAK_MEASURES = {
 }
 
 
+# Keys every peak rainbow returns has, which a result document's peak table
+# does not state; see rainbow.asm._peak_from_asm.
+_UNSTATED = ("identifier", "index", "area_unit", "height_unit")
+
+
 def _local(tag):
     """The local name of a tag, dropping any ``{namespace}`` prefix."""
     return tag.rsplit('}', 1)[-1]
@@ -307,6 +312,11 @@ def _peak(element):
     for key, tag in _PEAK_MEASURES.items():
         child = values.get(tag)
         peak[key] = _value(child) if child is not None else None
+    # The keys a peak read from ASM carries and a result document does not
+    # state, present as None so the two have one shape. The values are in the
+    # channel's unit, which the peak table does not name.
+    for key in _UNSTATED:
+        peak[key] = None
     return peak
 
 

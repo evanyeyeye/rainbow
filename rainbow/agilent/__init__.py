@@ -8,8 +8,8 @@ from rainbow.datasequence import DataSequence
 
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,
-         telemetry=False, centroid=False, bin_width=None, _labels_only=False,
-         peaks=False, **removed):
+         telemetry=False, centroid=False, bin_width=None, peaks=False,
+         _labels_only=False, **removed):
     """
     Reads an Agilent .D directory or .dx archive.
 
@@ -51,8 +51,9 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
         datadir = openlab.read(
             path, display_precision, requested_files, telemetry, bin_width)
         if peaks and datadir is not None:
-            # An archive's results are not read. Said, rather than returning
-            # an empty list that reads as a run nobody integrated.
+            # An archive's results are not read. The run gets an empty list,
+            # which alone would read as a run nobody integrated, so the read
+            # says why it is empty.
             import warnings
             warnings.warn(
                 "rainbow does not read integrated peaks from an OpenLab .dx "
@@ -134,7 +135,9 @@ def injection_peaks(path):
 
     """
     from rainbow.agilent import sequence
-    path = os.path.normpath(path)
+    # Absolute, so a relative path such as "run.D" still has a parent
+    # directory to look for the sequence.acaml in.
+    path = os.path.abspath(path)
     name = os.path.basename(path)
     sequence_acaml = sequence.find(os.path.dirname(path) or os.curdir)
     groups = None

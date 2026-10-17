@@ -238,7 +238,7 @@ def _unreadable(path, what="read"):
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,
          telemetry=False, centroid=False, format=None, bin_width=None,
-         _labels_only=False, peaks=False, **removed):
+         peaks=False, _labels_only=False, **removed):
     """
     Reads a chromatogram data directory. Main method of the package.
 
@@ -356,14 +356,14 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     if vendor == 'agilent':
         datadir = agilent.read(
             path, display_precision, hrms, requested_files, telemetry, centroid,
-            bin_width, _labels_only, peaks=peaks)
+            bin_width, peaks=peaks, _labels_only=_labels_only)
     elif vendor == 'waters':
         datadir = waters.read(
             path, display_precision, requested_files, bin_width, _labels_only)
         if peaks and datadir is not None:
             import warnings
-            # Said, rather than returning an empty list that reads as a run
-            # nobody integrated.
+            # The run gets an empty list, which alone would read as a run
+            # nobody integrated, so the read says why it is empty.
             warnings.warn(
                 f"rainbow does not read integrated peaks from Waters data; "
                 f"{os.path.basename(path)} is read without them.")

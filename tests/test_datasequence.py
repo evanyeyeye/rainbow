@@ -250,6 +250,14 @@ def test_read_peaks_on_one_injection_matches_the_sequence(tmp_path):
     assert rb.read(os.path.join(seq_dir, other), peaks=True).peaks == []
 
 
+def test_read_peaks_finds_the_sequence_from_a_relative_path(
+        tmp_path, monkeypatch):
+    seq_dir = _make_sequence_with_peaks(tmp_path)
+    monkeypatch.chdir(seq_dir)
+    datadir = rb.read("008-D1F-A1-sample_01.D", peaks=True)
+    assert datadir.peaks and datadir.peaks[0]["peaks"][0]["area"] == 100.0
+
+
 def test_read_peaks_falls_back_to_the_injections_own_document(tmp_path):
     seq_dir = _make_sequence(tmp_path)
     name = INJECTION_NAMES[1]
