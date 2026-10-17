@@ -166,14 +166,17 @@ rides the absorbance cube [#interim]_.
 Where peaks meet measures: REC/2026/06 attaches a processed-data peak list to
 absorbance in ``mAU`` and to the chromatography detectors' own measures, each in
 one unit: electric current in ``pA``, intensity in ``RLU``, voltage in ``mV``,
-fluorescence in ``RFU``. A channel in one of these keeps its faithful cube when
+fluorescence in ``RFU``, count in ``Counts``. A channel in one of these keeps its faithful cube when
 it carries integrated peaks, and its peaks are written in its unit: an FID's
 area in ``pA.s``, its height in ``pA``. (A vendor's peak table states no unit;
 its values are the channel's.) A channel in a measure the schema gives no peak
 list (a current in ``nA``, a voltage in ``V``) is relabeled to
 ``absorbance``/``mAU`` to keep its peaks, rather than emit them against a
 measure the schema forbids and fail validation. The device type stays truthful,
-and a measurement note records the real quantity, so nothing is silently lost.
+and a measurement note records the real quantity, both as a sentence and as the
+``reported measure concept`` and ``reported measure unit`` custom fields, so
+nothing is silently lost: :func:`rainbow.from_asm` reads them back and returns
+the channel, and its peaks, in their real unit.
 
 MS
 --

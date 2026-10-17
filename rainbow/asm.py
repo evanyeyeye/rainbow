@@ -1434,8 +1434,8 @@ def _build_measurements(datafile, metadata, options, has_peaks=False,
     return []
 
 
-# The measure a non-absorbance channel is relabeled to so its peak list can be
-# carried (the schema models a peak list only on an absorbance measurement).
+# The measure a channel is relabeled to so its peak list can be carried, when
+# the schema gives its own measure no peak list (see _PEAK_MEASURES).
 _ABSORBANCE_DESCRIPTOR = {"concept": "absorbance", "unit": "mAU"}
 
 
@@ -1705,18 +1705,65 @@ def _custom_information_document(fields, options):
     return {"custom information document": entries}
 
 
+# The custom information labels a relabeled channel's real measure is written
+# under, beside the sentence a person reads, so from_asm can put the channel
+# back in the quantity its values are in.
+_REPORTED_CONCEPT = "reported measure concept"
+_REPORTED_UNIT = "reported measure unit"
+
+
 def _note_relabeled_measure(measurement, descriptor):
     """Records the real quantity of a channel relabeled to absorbance."""
     measurement["custom information aggregate document"] = {
         "custom information document": [{
+            "@index": 1,
             "datum label": "reported measure",
             "scalar string datum": (
                 "This channel measures {} (in {}); its values are reported as "
                 "absorbance in mAU so the integrated peak list can be carried, "
-                "which the schema models only on an absorbance measurement."
+                "which the schema does not model on that measure."
                 .format(descriptor["concept"], descriptor["unit"])),
+        }, {
+            "@index": 2,
+            "datum label": _REPORTED_CONCEPT,
+            "scalar string datum": descriptor["concept"],
+        }, {
+            "@index": 3,
+            "datum label": _REPORTED_UNIT,
+            "scalar string datum": descriptor["unit"],
         }],
     }
+
+
+# The sentence 1.5.4 wrote as its only record of a relabel. Its documents
+# carry nothing else, so it is read for the concept and unit it names.
+_REPORTED_MEASURE_RE = re.compile(
+    r"This channel measures (.+?) \(in ([^)]+)\); its values are reported as "
+    r"absorbance in mAU")
+
+
+def _reported_measure(measurement):
+    """The real ``(concept, unit)`` of a relabeled channel, or None.
+
+    Read from the structured note rainbow writes, else from the sentence an
+    older export wrote alone. A measurement no one relabeled has neither.
+    """
+    entries = _as_documents(_first(measurement.get(
+        "custom information aggregate document")).get(
+            "custom information document"))
+    found = {}
+    for entry in entries:
+        if isinstance(entry, dict):
+            label = _text(entry.get("datum label"))
+            value = _text(entry.get("scalar string datum"))
+            if label and value:
+                found.setdefault(label, value)
+    if found.get(_REPORTED_CONCEPT) and found.get(_REPORTED_UNIT):
+        return found[_REPORTED_CONCEPT], found[_REPORTED_UNIT]
+    match = _REPORTED_MEASURE_RE.match(found.get("reported measure") or "")
+    if match:
+        return match.group(1), match.group(2)
+    return None
 
 
 def _mass_chromatogram_measurements(datafile, metadata, options):
@@ -2059,12 +2106,21 @@ def _asm_peak(index, peak, options=None, unit="mAU"):
         value = peak.get(source)
         if isinstance(value, str) and value:
             entry[target] = value
-    area_unit = peak.get("area_unit")
-    if not (isinstance(area_unit, str) and area_unit):
-        area_unit = unit + ".s"
-    height_unit = peak.get("height_unit")
-    if not (isinstance(height_unit, str) and height_unit):
-        height_unit = unit
+    # Always the cube's: the schema pins a peak list's units to the measure it
+    # sits on, so a peak read in another unit cannot be written in its own
+    # beside this cube and still validate. Said once, since the values go out
+    # relabeled and not converted.
+    area_unit, height_unit = unit + ".s", unit
+    for key, expected in (("area_unit", area_unit),
+                          ("height_unit", height_unit)):
+        stated = peak.get(key)
+        if isinstance(stated, str) and stated and stated != expected \
+                and options is not None:
+            _warn_once_per_run(
+                options, "peak-unit:{}:{}".format(stated, expected),
+                "a peak read in {!r} is written beside a cube in {!r}, as "
+                "{!r}, relabeled and not converted.".format(
+                    stated, unit, expected))
     mapping = (
         ("retention_time", "retention time", "s", _SECONDS_PER_MINUTE),
         ("start_time", "peak start", "s", _SECONDS_PER_MINUTE),
@@ -3133,7 +3189,9 @@ def _detector_of(measurement):
             # A charged-aerosol detector, or the analog input Chemstation
             # brings one in on. rainbow names those channels CAD on read.
             return "CAD"
-    concept, _ = _measure_of(measurement)
+    reported = _reported_measure(measurement)
+    concept = reported[0].strip().lower() if reported \
+        else _measure_of(measurement)[0]
     return _MEASURE_DETECTORS.get(concept)
 
 
@@ -3209,6 +3267,11 @@ def _channel_metadata(measurement):
     if label:
         metadata["description"] = label
     concept, unit = _measure_of(measurement)
+    reported = _reported_measure(measurement)
+    if reported is not None:
+        # The cube says absorbance in mAU only because the export relabeled
+        # it to carry peaks; the values are in the real unit, unconverted.
+        concept, unit = reported[0].strip().lower(), reported[1]
     if concept:
         metadata["measure"] = concept
     if unit:
@@ -3285,6 +3348,7 @@ def _peak_lists(measurement, said=None):
     not ordered by date, so the caller has to be able to see all of them.
     """
     processed = _first(measurement.get(_PROCESSED_DATA))
+    reported = _reported_measure(measurement)
     lists = []
     for document in _as_documents(processed.get("processed data document")):
         if not isinstance(document, dict):
@@ -3294,9 +3358,24 @@ def _peak_lists(measurement, said=None):
                          _first(document.get("peak list")).get("peak"))
                      if isinstance(peak, dict)]
         if asm_peaks:
-            lists.append((_processing_document(document),
-                          [_peak_from_asm(peak, said) for peak in asm_peaks]))
+            peaks = [_peak_from_asm(peak, said) for peak in asm_peaks]
+            if reported is not None:
+                _restore_peak_units(peaks, reported[1])
+            lists.append((_processing_document(document), peaks))
     return lists
+
+
+def _restore_peak_units(peaks, unit):
+    """Puts a relabeled channel's peaks back in the unit their values are in.
+
+    The relabel wrote them in mAU and mAU.s beside the absorbance cube without
+    converting them, so the numbers are the channel's own.
+    """
+    for peak in peaks:
+        if peak["area_unit"] == "mAU.s":
+            peak["area_unit"] = unit + ".s"
+        if peak["height_unit"] == "mAU":
+            peak["height_unit"] = unit
 
 
 def peaks_from_asm(measurement):
@@ -3517,9 +3596,11 @@ def _peak_measure(quantity, per=""):
 def _edge_height(quantity, height_unit):
     """A peak's height at one edge, in its height's unit, or None.
 
-    The edge heights carry no unit key of their own, so they are read in the
-    peak height's. One written in another unit, which no peak should do, has
-    no unit to be reported in and reads as None.
+    An edge height is converted like the height (absorbance to mAU) and
+    reported in the height's unit, as the peak has one unit key for both. One
+    written in another unit than the height's, which no peak should do, has
+    no unit to be reported in and reads as None. One with no unit is taken as
+    written.
     """
     number, unit = _peak_measure(quantity)
     if unit is not None and height_unit is not None and unit != height_unit:

@@ -245,6 +245,47 @@ def test_a_current_in_na_with_peaks_relabels_and_conforms_to_lc_schema():
     _assert_conforms(_lc_validator(), datadir.to_asm(utc_offset=_TZ))
 
 
+def test_a_relabeled_channel_re_exports_to_a_valid_document():
+    # Export, read, export: the relabel note restores the channel's real unit,
+    # and the second document validates.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.get_file("ADC1A.CH").metadata["unit"] = "nA"
+    datadir.peaks = _peaks_on("ADC1A.CH")
+    first = datadir.to_asm(utc_offset=_TZ)
+    _assert_conforms(_lc_validator(), first)
+    again = rb.from_asm(first, name=datadir.name).to_asm(utc_offset=_TZ)
+    _assert_conforms(_lc_validator(), again)
+
+
+def test_a_1_5_4_relabeled_channel_re_exports_to_a_valid_document():
+    # 1.5.4 relabeled a CAD channel in pA and recorded the real measure only
+    # as a sentence. Read back, it is a pA channel again, its peaks in pA.s.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.peaks = _peaks_on("ADC1A.CH")
+    document = datadir.to_asm(utc_offset=_TZ)
+    measurements = (document["liquid chromatography aggregate document"]
+                    ["liquid chromatography document"][0]
+                    ["measurement aggregate document"]["measurement document"])
+    cad = next(m for m in measurements
+               if m["measurement identifier"] == "ADC1A.CH")
+    cad["chromatogram data cube"]["cube-structure"]["measures"][0].update(
+        concept="absorbance", unit="mAU")
+    for peak in (cad["processed data aggregate document"]
+                 ["processed data document"][0]["peak list"]["peak"]):
+        peak["peak area"]["unit"] = "mAU.s"
+        peak["peak height"]["unit"] = "mAU"
+    cad["custom information aggregate document"] = {
+        "custom information document": [{
+            "datum label": "reported measure",
+            "scalar string datum": (
+                "This channel measures electric current (in pA); its values "
+                "are reported as absorbance in mAU so the integrated peak "
+                "list can be carried, which the schema models only on an "
+                "absorbance measurement.")}]}
+    again = rb.from_asm(document, name=datadir.name).to_asm(utc_offset=_TZ)
+    _assert_conforms(_lc_validator(), again)
+
+
 def test_a_fluorescence_channel_read_from_asm_conforms_to_lc_schema():
     # An FLD channel rebuilt by from_asm exports as a fluorescence cube in RFU
     # with its peaks in RFU.s and RFU, the schema's fluorescence detector.
