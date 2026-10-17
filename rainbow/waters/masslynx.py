@@ -9,6 +9,7 @@ import re
 import numpy as np
 from rainbow.datafile import DataFile
 from rainbow._binning import bin_datapairs
+from rainbow._optics import excitation_emission
 # pandas is imported where it is used, not here. It is the single largest cost
 # in importing rainbow, and only this module's transition table needs it, so
 # paying for it on every import would tax every read that never touches one.
@@ -770,15 +771,22 @@ def parse_chrodat(path, name, units=None):
 
     # A `detector` value of None corresponds to miscellaneous analog data.
     detector = None
+    ylabels = np.array([''])
+    metadata = {'signal': name}
+    pair = excitation_emission(name)
     if "CAD" in name:
         detector = 'CAD'
     elif "ELSD" in name:
         detector = 'ELSD'
+    elif pair:
+        # A fluorescence channel ("ACQUITY FLR ChA Ex280,Em340 nm") is FLD,
+        # labelled by its emission like every other reader's.
+        detector = 'FLD'
+        metadata['excitation_wavelength'], metadata['emission_wavelength'] = \
+            pair
+        ylabels = np.array([pair[1]])
     elif "nm@" in name:
         detector = 'UV'
-
-    ylabels = np.array([''])
-    metadata = {'signal': name}
     if units:
         metadata['unit'] = units
 

@@ -18,6 +18,8 @@ import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
 
+import numpy as np
+
 from rainbow.agilent import chemstation
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
@@ -139,8 +141,13 @@ def _parse_member(tmppath, name, ext, signal):
         data = datafile.data
         detector = _classify(signal)
 
+    ylabels = datafile.ylabels
+    if detector == 'FLD' and signal.get('emission_wavelength') is not None:
+        # Labelled by its emission, as the .ch reader and from_asm label a
+        # fluorescence channel, whatever the payload's own header says.
+        ylabels = np.array([signal['emission_wavelength']])
     return DataFile(
-        name, detector, datafile.xlabels, datafile.ylabels, data,
+        name, detector, datafile.xlabels, ylabels, data,
         _file_metadata(signal))
 
 
@@ -229,6 +236,11 @@ def _classify(signal):
     if encoding.startswith('Agilent.OpenLab.Rawdata/InstrumentTrace'):
         return None
     device = signal.get('device', '').upper()
+    # Before the absorbance test: a fluorescence detector is named by its
+    # device or by the Ex=/Em= clause parse_optics reads from its description,
+    # and whatever its unit, it does not measure absorbance.
+    if device.startswith('FLD') or 'emission_wavelength' in signal:
+        return 'FLD'
     if device[:3] in ('DAD', 'MWD', 'VWD') or signal.get('unit') == 'mAU':
         return 'UV'
     if device.startswith('FID'):
@@ -264,7 +276,8 @@ def _file_metadata(signal):
         if value:
             metadata[key] = value
     for key in ('wavelength', 'bandwidth',
-                'reference_wavelength', 'reference_bandwidth'):
+                'reference_wavelength', 'reference_bandwidth',
+                'excitation_wavelength', 'emission_wavelength'):
         if key in signal:
             metadata[key] = signal[key]
     return metadata

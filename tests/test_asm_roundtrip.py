@@ -168,15 +168,24 @@ def test_envelope_fields_round_trip():
         original.metadata["injection_volume"]
 
 
-def test_only_absorbance_channels_are_reconstructed():
-    # red.D has a CAD channel (an electric-current cube, export-only) alongside
-    # its UV channels. from_asm reconstructs only the absorbance (UV) cubes, so
-    # the CAD channel is dropped rather than mislabeled back into a UV trace.
+def test_a_cad_channel_comes_back_as_cad():
+    # red.D has a CAD channel (an electric-current cube) alongside its UV
+    # channels. It is rebuilt with the detector it was exported from and the
+    # unit its cube states, never as a UV trace.
     original = rb.read("tests/inputs/red.D")
     assert any(d.detector == "CAD" for d in original.datafiles)
     back = rb.from_asm(original.to_asm())
-    assert all(d.detector == "UV" for d in back.datafiles)
-    assert not any(d.name == "ADC1A.CH" for d in back.datafiles)
+    cad = back.get_file("ADC1A.CH")
+    assert cad.detector == "CAD"
+    # Its unit as red.D records it: published as pA, which the schema needs,
+    # with the note that restores it.
+    assert cad.metadata["unit"] == "mAu"
+    assert cad.metadata["unit"] == original.get_file("ADC1A.CH").metadata[
+        "unit"]
+    assert cad.metadata["measure"] == "electric current"
+    assert cad.data[:, 0].tolist() \
+        == original.get_file("ADC1A.CH").data[:, 0].tolist()
+    assert {d.detector for d in back.datafiles} == {"UV", "CAD"}
 
 
 def test_multiple_channels_keep_separate_peak_lists():
@@ -373,13 +382,12 @@ def test_documented_idempotence_holds_for_an_absorbance_run():
     assert again == first
 
 
-def test_a_non_absorbance_channel_is_export_only():
-    """ The documented exception: a CAD cube does not survive re-export. """
+def test_a_non_absorbance_channel_survives_re_export():
+    """ A CAD cube is read back, so a second export still carries it. """
     datadir = rb.read(os.path.join(INPUTS, "red.D"))
     assert "CAD" in datadir.detectors
     first = datadir.to_asm()
     again = rb.from_asm(first, name=datadir.name).to_asm()
-    assert again != first
 
     def labels(document):
         aggregate = document["liquid chromatography aggregate document"]
@@ -389,8 +397,7 @@ def test_a_non_absorbance_channel_is_export_only():
                                     ["measurement document"])
                 for key, cube in measurement.items() if key.endswith("cube")}
 
-    dropped = labels(first) - labels(again)
-    assert dropped == {"ADC1A.CH"}
+    assert labels(first) == labels(again)
 
 
 def test_rid_rides_the_absorbance_cube_and_returns():
@@ -900,7 +907,8 @@ def test_a_peaks_compound_name_survives_a_round_trip():
 
 def _empower_peak(**fields):
     """A peak shaped the way an Empower export writes one."""
-    return dict({"peak start": {"value": 90.0, "unit": "s"},
+    return dict({"@index": 1,
+                 "peak start": {"value": 90.0, "unit": "s"},
                  "peak end": {"value": 120.0, "unit": "s"},
                  "peak baseline start code": "B",
                  "peak baseline end code": "v",
@@ -944,8 +952,7 @@ def test_a_peaks_heights_and_area_convert_to_mau_by_their_unit():
 
     The export labels heights mAU and areas mAU.s, and the edge heights are
     subtracted from a trace in mAU, so a value left in its own unit is a
-    thousand times off. A unit rainbow does not know cannot be converted and
-    reads as None; a value with no unit is taken to be in the schema's mAU.
+    thousand times off. Any other unit is kept as written (see below).
     """
     peak = asm._peak_from_asm(_empower_peak(**{
         "peak height": {"value": 0.03, "unit": "AU"},
@@ -957,15 +964,39 @@ def test_a_peaks_heights_and_area_convert_to_mau_by_their_unit():
     assert peak["start_height"] == 2.0
     assert peak["end_height"] == 1.25
 
+    assert peak["height_unit"] == "mAU"
+    assert peak["area_unit"] == "mAU.s"
+
+
+def test_a_peak_in_another_unit_keeps_its_value_and_unit_as_written():
+    """ A fluorescence peak is in RFU, an FID peak in pA: neither is mAU.
+
+    Converting only absorbance and reading every other unit as None lost every
+    peak of an Empower study's fluorescence channels, three in four of its
+    peaks. Only a value the document gave no unit has none.
+    """
     peak = asm._peak_from_asm(_empower_peak(**{
         "peak height": {"value": 3.0, "unit": "RFU"},
-        "peak area": {"value": 5.0, "unit": "mAU"},
+        "peak area": {"value": 5.0, "unit": "RFU.s"},
         "peak value at start": {"value": 1.0, "unit": "RFU"},
         "peak value at end": 1.25}))
-    assert peak["height"] is None
-    assert peak["area"] is None
-    assert peak["start_height"] is None
+    assert (peak["height"], peak["height_unit"]) == (3.0, "RFU")
+    assert (peak["area"], peak["area_unit"]) == (5.0, "RFU.s")
+    assert peak["start_height"] == 1.0
     assert peak["end_height"] == 1.25
+
+    # An absorbance area in a height's unit has no time to convert from.
+    peak = asm._peak_from_asm(_empower_peak(**{
+        "peak area": {"value": 5.0, "unit": "mAU"}, "peak height": 2.0}))
+    assert (peak["area"], peak["area_unit"]) == (None, None)
+    assert (peak["height"], peak["height_unit"]) == (2.0, None)
+
+    # An edge height in a unit other than the height's has no unit to be
+    # reported in.
+    peak = asm._peak_from_asm(_empower_peak(**{
+        "peak height": {"value": 3.0, "unit": "RFU"},
+        "peak value at start": {"value": 1.0, "unit": "pA"}}))
+    assert peak["start_height"] is None
 
 
 def test_a_microvolt_document_reads_and_exports_in_mau():
@@ -1182,7 +1213,7 @@ def test_the_extra_integrations_survive_a_re_export():
     ("DAD.0.0, DAD: Signal A, 246.0 nm/Bw:4.0 nm", 246.0),
     ("DAD.0.1, DAD: Signal B, 220.0 nm/Bw:4.0 nm Ref 360.0 nm/Bw:100.0 nm",
      220.0),
-    ("DAD1A, Sig=254,4 Ref=off", None),
+    ("DAD1A, Sig=254,4 Ref=off", 254.0),
     ("no wavelength here", None),
 ])
 def test_the_cube_label_supplies_a_missing_wavelength(label, expected):
@@ -1350,7 +1381,7 @@ def test_an_integer_too_large_for_a_float_is_dropped_on_read():
 
 def test_a_datum_type_rainbow_does_not_read_warns_rather_than_guesses():
     document = _lc(_sample(**{"sample identifier": "s", **_custom(
-        _datum("Odd", "scalar integer datum", 3))}))
+        _datum("Odd", "scalar float datum", 3))}))
     with pytest.warns(UserWarning, match="Odd.*does not read"):
         datadir = rb.from_asm(document)
     assert "sample_custom" not in datadir.metadata
@@ -1929,7 +1960,7 @@ def test_a_read_side_complaint_is_said_once_for_one_sample_document():
     about it was made once per candidate channel."""
     import warnings as w
 
-    bad = _custom(_datum("Odd", "scalar integer datum", 3))
+    bad = _custom(_datum("Odd", "scalar float datum", 3))
     document = _lc(*[_with_cube(**{"measurement identifier": "uv%d" % n,
                                    "sample document": dict(bad)})
                      for n in range(4)])
@@ -2026,3 +2057,1250 @@ def test_each_unlabelled_custom_field_is_reported_separately():
         w.simplefilter("always")
         rb.from_asm(document)
     assert len([c for c in caught if "datum label" in str(c.message)]) == 3
+
+
+# --- Every measurement is read: peaks, detectors, optics, envelope ---
+
+
+def _cube(concept, unit, label=None, data=True):
+    """A chromatogram cube measuring ``concept`` in ``unit``."""
+    cube = {"cube-structure": {
+        "dimensions": [{"concept": "retention time", "unit": "s"}],
+        "measures": [{"concept": concept, "unit": unit}]}}
+    if label is not None:
+        cube["label"] = label
+    if data:
+        cube["data"] = {"dimensions": [[0.0, 60.0]],
+                        "measures": [[1.0, 2.0]]}
+    return cube
+
+
+def _control(**settings):
+    return {"device control aggregate document": {
+        "device control document": [dict({"@index": 1}, **settings)]}}
+
+
+def _fluorescence(data=True, **measurement):
+    """An Empower fluorescence measurement with one RFU peak."""
+    return dict({
+        "measurement identifier": "128288",
+        "chromatogram data cube": _cube(
+            "fluorescence", "RFU", "ACQUITY FLR ChA Ex280,Em340 nm", data),
+        **_control(**{"device type": "fluorescence detector",
+                      "device acquisition method": "V175 Long SEC Method"}),
+        **_processed(_peak_list(
+            _empower_peak(**_rt(105.0), **{
+                "peak height": {"value": 3.0, "unit": "RFU"},
+                "peak area": {"value": 50.0, "unit": "RFU.s"},
+                "peak value at start": {"value": 0.0, "unit": "RFU"},
+                "peak value at end": {"value": 0.5, "unit": "RFU"}}),
+            **{"processed data identifier": "247109",
+               "group identifier": "246987",
+               "processed data description": "FLR ChA Ex280,Em340 nm"}))},
+        **measurement)
+
+
+def test_a_fluorescence_channel_is_rebuilt_as_fld_with_its_wavelengths():
+    datadir = rb.from_asm(_lc(_fluorescence()))
+    datafile = datadir.get_file("128288")
+    assert datafile.detector == "FLD"
+    assert datafile.metadata["unit"] == "RFU"
+    assert datafile.metadata["measure"] == "fluorescence"
+    assert datafile.metadata["excitation_wavelength"] == 280.0
+    assert datafile.metadata["emission_wavelength"] == 340.0
+    # Not an absorbance wavelength: the label's last "340 nm" is the emission.
+    assert "wavelength" not in datafile.metadata
+    assert datafile.ylabels.tolist() == [340.0]
+    assert datafile.metadata["device_type"] == "fluorescence detector"
+    assert datafile.metadata["acq_method"] == "V175 Long SEC Method"
+
+
+def test_a_fluorescence_channels_peaks_are_read_in_rfu():
+    group = rb.from_asm(_lc(_fluorescence())).peaks[0]
+    assert group["detector"] == "FLD"
+    assert group["wavelength"] is None
+    assert group["metadata"]["emission_wavelength"] == 340.0
+    peak = group["peaks"][0]
+    assert (peak["area"], peak["area_unit"]) == (50.0, "RFU.s")
+    assert (peak["height"], peak["height_unit"]) == (3.0, "RFU")
+    assert peak["end_height"] == 0.5
+
+
+def test_peaks_are_read_from_a_cube_with_no_values():
+    """ An index document carries a cube's structure and none of its data.
+
+    The trace cannot be rebuilt, but the integration is the measurement's,
+    and it used to be read only beside a rebuilt trace.
+    """
+    datadir = rb.from_asm(_lc(_fluorescence(data=False)))
+    assert datadir.datafiles == [] and datadir.analog == []
+    group = datadir.peaks[0]
+    assert group["channel_file"] == "128288"
+    assert group["detector"] == "FLD"
+    assert group["peaks"][0]["retention_time"] == 1.75
+
+
+def test_peaks_are_read_on_a_channel_rainbow_has_no_detector_for():
+    measurement = {
+        "measurement identifier": "1779",
+        "chromatogram data cube": _cube("electric conductance", "S", "CD_1"),
+        **_control(**{"device type": "electric conductivity detector"}),
+        **_processed(_peak_list(_rt(90.0), **{
+            "processed data identifier": "1"}))}
+    datadir = rb.from_asm(_lc(measurement))
+    # No rainbow detector name, so the trace is one of the analog ones.
+    assert datadir.datafiles == []
+    trace, = datadir.analog
+    assert trace.detector is None
+    assert trace.metadata["unit"] == "S"
+    assert trace.metadata["measure"] == "electric conductance"
+    assert datadir.peaks[0]["peaks"][0]["retention_time"] == 1.5
+
+
+@pytest.mark.parametrize("measurement,detector", [
+    ({"chromatogram data cube": _cube("electric current", "pA",
+                                      "GC.0.0, Front Signal"),
+      **_control(**{"device type": "Flame Ionization Detector"})}, "FID"),
+    ({"chromatogram data cube": _cube("electric current", "pA", "ADC1A.CH"),
+      **_control(**{"device type": "liquid chromatography detector"})},
+     "CAD"),
+    # The identifier is a key, not a claim: a GUID segment is not a detector.
+    ({"chromatogram data cube": _cube("electric current", "pA"),
+      "measurement identifier": "9e1f-adc4-77b2"}, None),
+    ({"chromatogram data cube": _cube("intensity", "RLU"),
+      **_control(**{"device type": "evaporative light scattering detector"})},
+     "ELSD"),
+    ({"chromatogram data cube": _cube("absorbance", "mAU"),
+      **_control(**{"device type": "refractive index detector"})}, "RID"),
+    # rainbow's own relabel of a channel's measure leaves its device type
+    # truthful, so the device type, not the measure, names the detector.
+    ({"chromatogram data cube": _cube("absorbance", "mAU"),
+      **_control(**{"device type": "flame ionization detector"})}, "FID"),
+    ({"chromatogram data cube": _cube("absorbance", "mAU")}, "UV"),
+    ({"chromatogram data cube": _cube("electric current", "pA")}, None),
+])
+def test_the_device_type_names_the_detector(measurement, detector):
+    measurement.setdefault("measurement identifier", "channel")
+    datafile, = rb.from_asm(_lc(measurement)).by_name.values()
+    assert datafile.detector == detector
+    assert datafile.metadata["unit"] == \
+        measurement["chromatogram data cube"]["cube-structure"][
+            "measures"][0]["unit"]
+
+
+@pytest.mark.parametrize("label,expected", [
+    ("DAD.0.0, DAD: Signal A, 210.0 nm/Bw:4.0 nm Ref 380.0 nm/Bw:100.0 nm",
+     {"wavelength": 210.0, "bandwidth": 4.0, "reference_wavelength": 380.0,
+      "reference_bandwidth": 100.0}),
+    ("DAD1A,Sig=254,4  Ref=off",
+     {"wavelength": 254.0, "bandwidth": 4.0, "reference_wavelength": None}),
+    ("DAD1A,Sig=210.0,4.0  Ref=360.0,100.0",
+     {"wavelength": 210.0, "bandwidth": 4.0, "reference_wavelength": 360.0,
+      "reference_bandwidth": 100.0}),
+    ("PDA Ch1 280nm@4.8nm", {"wavelength": 280.0, "bandwidth": 4.8}),
+    ("ACQUITY TUV ChA 214nm", {"wavelength": 214.0}),
+    ("VWD.0.0, VWD: Signal A, 233 nm", {"wavelength": 233.0}),
+    ("ACQUITY FLR ChA Ex280,Em340 nm",
+     {"excitation_wavelength": 280.0, "emission_wavelength": 340.0}),
+    ("CD_1", {}),
+])
+def test_a_cube_label_names_the_channels_optics(label, expected):
+    assert asm._optics_from_label(label) == expected
+
+
+def test_a_device_control_setting_outranks_the_label():
+    measurement = _with_cube(**{
+        "measurement identifier": "uv",
+        **_control(**{
+            "detector wavelength setting": {"value": 254.0, "unit": "nm"},
+            "detector bandwidth setting": {"value": 8.0, "unit": "nm"},
+            "electronic absorbance reference wavelength setting":
+                {"value": 360.0, "unit": "nm"}})})
+    measurement["chromatogram data cube"]["label"] = \
+        "DAD1A,Sig=210,4  Ref=off"
+    metadata = rb.from_asm(_lc(measurement)).datafiles[0].metadata
+    assert metadata["wavelength"] == 254.0
+    assert metadata["bandwidth"] == 8.0
+    assert metadata["reference_wavelength"] == 360.0
+
+
+def test_the_signal_description_names_a_channel_its_label_does_not():
+    measurement = _with_cube(**{
+        "measurement identifier": "uv",
+        **_processed(_peak_list(_rt(90.0), **{
+            "processed data description":
+                "DAD: Signal A, 246.0 nm/Bw:4.0 nm"}))})
+    datadir = rb.from_asm(_lc(measurement))
+    assert datadir.datafiles[0].metadata["wavelength"] == 246.0
+    assert datadir.peaks[0]["wavelength"] == 246.0
+
+
+def test_the_injection_and_sample_fields_are_read():
+    measurement = _fluorescence(**{
+        "measurement time": "2026-04-10T18:46:20-04:00",
+        "injection document": {
+            "injection identifier": "128283",
+            "injection time": "2026-04-10T18:46:25-04:00"},
+        "sample document": {
+            "sample identifier": "128282",
+            "sample role type": "standard sample role",
+            "well plate identifier": "Plate23",
+            "location identifier": "1:A,1"}})
+    metadata = rb.from_asm(_lc(measurement)).metadata
+    assert metadata["injection_time"] == "2026-04-10T18:46:25-04:00"
+    assert metadata["date"] == "2026-04-10T18:46:20-04:00"
+    assert metadata["sample_role"] == "standard sample role"
+    assert metadata["well_plate_id"] == "Plate23"
+    assert metadata["vialpos"] == "1:A,1"
+    assert metadata["acq_method"] == "V175 Long SEC Method"
+
+
+def test_the_sample_fields_are_written_back():
+    metadata = {"sample": "s", "sample_role": "blank role",
+                "well_plate_id": "Plate23"}
+    datadir = rb.from_asm(_lc(_sample(**{
+        "sample identifier": "s", "sample role type": "blank role",
+        "well plate identifier": "Plate23"})))
+    assert {key: datadir.metadata[key] for key in metadata} == metadata
+    sample = next(_asm_measurements(datadir.to_asm()))["sample document"]
+    assert sample["sample role type"] == "blank role"
+    # Not a sample document property in REC/2026/06: custom information.
+    assert "well plate identifier" not in sample
+    entries = (sample["custom information aggregate document"]
+               ["custom information document"])
+    assert {"datum label": "well plate identifier",
+            "scalar string datum": "Plate23"}.items() <= entries[-1].items()
+    again = rb.from_asm(datadir.to_asm())
+    assert again.metadata["well_plate_id"] == "Plate23"
+    assert "sample_custom" not in again.metadata
+
+
+_RECORDS = {
+    "data system document": {
+        "ASM converter name": "Agilent OpenLab ECM Allotrope Export",
+        "ASM converter version": "1.2.1.203",
+        "software name": "Empower 3 Software"},
+    "analysis sequence document": {
+        "written name": "NB_23737_0005_10APR2026", "identifier": "128268",
+        "start time": "2026-04-10T18:11:45-04:00"},
+    "electronic project record": {
+        "written name": "VPD_WP\\MRL_MultiRes", "description": "3rd Level"},
+}
+
+
+def test_the_once_per_file_records_are_read_as_written():
+    document = _lc(_fluorescence())
+    document["liquid chromatography aggregate document"].update(_RECORDS)
+    for read in (rb.from_asm, rb.sequence_from_asm):
+        metadata = read(document).metadata
+        assert metadata["data_system"] == _RECORDS["data system document"]
+        assert metadata["analysis_sequence"] \
+            == _RECORDS["analysis sequence document"]
+        assert metadata["project"] == _RECORDS["electronic project record"]
+
+
+def test_a_record_keeps_a_quantitys_unit_and_drops_nested_documents():
+    assert asm._record({"run time": {"value": 900.0, "unit": "s"},
+                        "name": {"value": "x"},
+                        "nested": {"a": 1}, "items": [1, 2]}) \
+        == {"run time": {"value": 900.0, "unit": "s"}, "name": "x"}
+    assert asm._record({}) is None
+
+
+def test_a_scalar_integer_datum_reads_as_an_int():
+    datadir = _read_custom(_datum("Injections", "scalar integer datum", 3),
+                           _datum("Vial", "scalar integer datum", 4.0))
+    assert datadir.metadata["sample_custom"] == {"Injections": 3, "Vial": 4}
+    assert isinstance(datadir.metadata["sample_custom"]["Vial"], int)
+
+
+def test_a_scalar_integer_datum_that_is_not_whole_is_dropped():
+    with pytest.warns(UserWarning, match="Half.*cannot read"):
+        datadir = _read_custom(_datum("Half", "scalar integer datum", 2.5))
+    assert "sample_custom" not in datadir.metadata
+
+
+def test_every_integration_is_read_in_order_with_its_provenance():
+    measurement = _fluorescence()
+    documents = measurement["processed data aggregate document"][
+        "processed data document"]
+    documents.append(_peak_list(_rt(95.0), _rt(110.0), **{
+        "processed data identifier": "250001",
+        "group identifier": "246987",
+        "processed data description": "FLR ChA Ex280,Em340 nm",
+        "data processing time": "2026-04-12T09:00:00-04:00"}))
+    with pytest.warns(UserWarning, match="2 processed data documents"):
+        group = rb.from_asm(_lc(measurement)).peaks[0]
+    assert group["processing"]["identifier"] == "247109"
+    assert group["processing"]["group_identifier"] == "246987"
+    assert group["processing"]["description"] == "FLR ChA Ex280,Em340 nm"
+    alternate, = group["alternates"]
+    assert alternate["processing"]["identifier"] == "250001"
+    assert [p["retention_time"] for p in alternate["peaks"]] \
+        == pytest.approx([95.0 / 60, 110.0 / 60])
+
+
+def test_a_peaks_identifier_and_index_are_read():
+    peak = asm._peak_from_asm(dict(_rt(90.0), **{
+        "@index": 7, "identifier": "d5c1-peak"}))
+    assert peak["index"] == 7
+    assert peak["identifier"] == "d5c1-peak"
+    assert asm._asm_peak(1, peak)["identifier"] == "d5c1-peak"
+
+
+def test_peaks_from_asm_reads_one_measurement():
+    measurement = _fluorescence(data=False)
+    group = asm.peaks_from_asm(measurement)
+    assert group == rb.from_asm(_lc(_fluorescence(data=False))).peaks[0]
+    assert asm.peaks_from_asm({"measurement identifier": "x"}) is None
+    with pytest.raises(TypeError, match="measurement must be a dict"):
+        asm.peaks_from_asm([measurement])
+
+
+def test_a_fluorescence_channel_round_trips_with_its_peaks():
+    first = rb.from_asm(_lc(_fluorescence()), name="run")
+    document = first.to_asm()
+    measurement, = _measurements(document)
+    cube = measurement["chromatogram data cube"]
+    assert cube["cube-structure"]["measures"][0]["concept"] == "fluorescence"
+    assert cube["cube-structure"]["measures"][0]["unit"] == "RFU"
+    control = (measurement["device control aggregate document"]
+               ["device control document"][0])
+    assert control["device type"] == "fluorescence detector"
+    assert control["excitation wavelength setting"]["value"] == 280.0
+    assert control["detector wavelength setting"]["value"] == 340.0
+    document_peaks = (measurement["processed data aggregate document"]
+                      ["processed data document"][0])
+    # REC/2026/06's name for what 2025/03 called processed data description.
+    assert "processed data description" not in document_peaks
+    assert document_peaks["description"] == "FLR ChA Ex280,Em340 nm"
+    peak = document_peaks["peak list"]["peak"][0]
+    assert peak["peak area"] == {"value": 50.0, "unit": "RFU.s"}
+    assert peak["peak height"] == {"value": 3.0, "unit": "RFU"}
+    again = rb.from_asm(document, name="run")
+    assert again.peaks[0]["peaks"] == first.peaks[0]["peaks"]
+    assert again.get_file("128288").detector == "FLD"
+
+
+# --- A relabeled channel comes back in its real unit ---
+
+
+def _relabeled_cad():
+    """red.D with peaks on its CAD channel, recorded in nA (relabeled)."""
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    datadir.get_file("ADC1A.CH").metadata["unit"] = "nA"
+    datadir.peaks = [{"signal": "ADC1A", "channel_file": "ADC1A.CH",
+                      "peaks": [{"retention_time": 1.5, "area": 100.0,
+                                 "height": 10.0}]}]
+    return datadir
+
+
+def _cad_measurement(document):
+    return next(m for m in _asm_measurements(document)
+                if m["measurement identifier"] == "ADC1A.CH")
+
+
+def test_a_relabeled_channel_reads_back_in_its_real_unit():
+    back = rb.from_asm(_relabeled_cad().to_asm(), name="red.D")
+    cad = back.get_file("ADC1A.CH")
+    assert cad.detector == "CAD"
+    assert (cad.metadata["measure"], cad.metadata["unit"]) \
+        == ("electric current", "nA")
+    group = next(g for g in back.peaks if g["channel_file"] == "ADC1A.CH")
+    peak = group["peaks"][0]
+    assert (peak["area_unit"], peak["height_unit"]) == ("nA.s", "nA")
+
+
+def test_a_relabeled_channel_re_exports_relabeled_again():
+    again = rb.from_asm(_relabeled_cad().to_asm(), name="red.D").to_asm()
+    measurement = _cad_measurement(again)
+    cube = measurement["chromatogram data cube"]["cube-structure"]
+    assert cube["measures"][0]["unit"] == "mAU"
+    peak = (measurement["processed data aggregate document"]
+            ["processed data document"][0]["peak list"]["peak"][0])
+    assert peak["peak area"]["unit"] == "mAU.s"
+    labels = {entry["datum label"]: entry["scalar string datum"]
+              for entry in measurement["custom information aggregate document"]
+              ["custom information document"]}
+    assert labels["reported measure unit"] == "nA"
+
+
+def _old_relabel_document():
+    """A CAD channel the way 1.5.4 relabeled it: absorbance, a sentence."""
+    measurement = {
+        "measurement identifier": "ADC1A.CH",
+        "chromatogram data cube": _cube("absorbance", "mAU", "ADC1A.CH"),
+        **_control(**{"device type": "liquid chromatography detector"}),
+        "custom information aggregate document": {
+            "custom information document": [{
+                "datum label": "reported measure",
+                "scalar string datum": (
+                    "This channel measures electric current (in pA); its "
+                    "values are reported as absorbance in mAU so the "
+                    "integrated peak list can be carried, which the schema "
+                    "models only on an absorbance measurement.")}]},
+        **_processed(_peak_list(dict(_rt(30.0), **{
+            "peak area": {"value": 5.0, "unit": "mAU.s"},
+            "peak height": {"value": 2.0, "unit": "mAU"}})))}
+    return _lc(measurement)
+
+
+def test_a_1_5_4_relabel_reads_back_from_its_sentence():
+    back = rb.from_asm(_old_relabel_document())
+    cad = back.get_file("ADC1A.CH")
+    assert cad.detector == "CAD"
+    assert cad.metadata["unit"] == "pA"
+    peak = back.peaks[0]["peaks"][0]
+    assert (peak["area"], peak["area_unit"]) == (5.0, "pA.s")
+    measurement = _cad_measurement(back.to_asm())
+    assert measurement["chromatogram data cube"]["cube-structure"][
+        "measures"][0] == {"concept": "electric current", "unit": "pA",
+                           "@componentDatatype": "double"}
+    peak = (measurement["processed data aggregate document"]
+            ["processed data document"][0]["peak list"]["peak"][0])
+    assert peak["peak area"] == {"value": 5.0, "unit": "pA.s"}
+    assert peak["peak height"] == {"value": 2.0, "unit": "pA"}
+
+
+def test_a_peak_in_another_unit_is_written_in_the_cubes_and_said():
+    import warnings as w
+    options = asm._Options()
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        entry = asm._asm_peak(1, {"area": 1.0, "area_unit": "RFU.s",
+                                  "height": 1.0, "height_unit": "RFU"},
+                              options, "pA")
+    assert entry["peak area"]["unit"] == "pA.s"
+    assert entry["peak height"]["unit"] == "pA"
+    assert any("relabeled and not converted" in str(c.message)
+               for c in caught)
+
+
+def test_peaks_no_exported_channel_carries_are_warned_about():
+    # An index document's peaks have no rebuilt trace to ride on.
+    datadir = rb.from_asm(_lc(_fluorescence(data=False),
+                              _with_cube(**{"measurement identifier": "uv"})))
+    with pytest.warns(UserWarning, match="1 peaks on 128288 .* are not in"):
+        datadir.to_asm()
+
+
+def test_an_fld_channel_read_from_asm_exports_without_a_relabel_warning():
+    import warnings as w
+    datadir = rb.from_asm(_lc(_fluorescence()))
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        datadir.to_asm(utc_offset="+00:00")
+    assert not [c for c in caught if "relabeled" in str(c.message)]
+
+
+# --- Review round 2 ---
+
+
+def test_an_elsd_peak_in_microvolts_stays_in_microvolts():
+    """ Empower's microvolt is a microabsorbance unit only on a UV channel.
+
+    On an ELSD channel the trace is in µV, and converting its peaks to mAU
+    put them a thousand times below the trace they were integrated on.
+    """
+    measurement = {
+        "measurement identifier": "elsd",
+        "chromatogram data cube": _cube("intensity", "\u00b5V"),
+        **_control(**{"device type": "evaporative light scattering detector"}),
+        **_processed(_peak_list(_empower_peak(**_rt(105.0), **{
+            "peak height": {"value": 3000.0, "unit": "\u00b5V"},
+            "peak area": {"value": 9000.0, "unit": "\u00b5V.s"},
+            "peak value at start": {"value": 0.0, "unit": "\u00b5V"},
+            "peak value at end": {"value": 50.0, "unit": "\u00b5V"}})))}
+    peak = rb.from_asm(_lc(measurement)).peaks[0]["peaks"][0]
+    assert (peak["height"], peak["height_unit"]) == (3000.0, "\u00b5V")
+    assert (peak["area"], peak["area_unit"]) == (9000.0, "\u00b5V.s")
+    assert peak["end_height"] == 50.0
+
+
+def test_agilents_fluorescence_label_is_read():
+    assert asm._optics_from_label("FLD1 A, Ex=230, Em=310") == {
+        "excitation_wavelength": 230.0, "emission_wavelength": 310.0}
+
+
+def test_a_fluorescence_setting_outranks_its_label():
+    measurement = _fluorescence(**_control(**{
+        "device type": "fluorescence detector",
+        "detector wavelength setting": {"value": 350.0, "unit": "nm"},
+        "excitation wavelength setting": {"value": 285.0, "unit": "nm"}}))
+    metadata = rb.from_asm(_lc(measurement)).get_file("128288").metadata
+    assert metadata["emission_wavelength"] == 350.0
+    assert metadata["excitation_wavelength"] == 285.0
+    assert "wavelength" not in metadata
+
+
+def test_a_relabeled_channel_re_exports_without_peak_unit_warnings():
+    import warnings as w
+    first = rb.from_asm(_relabeled_cad().to_asm(utc_offset="+00:00"),
+                        name="red.D")
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        first.to_asm(utc_offset="+00:00")
+    assert not [c for c in caught if "a peak read in" in str(c.message)]
+
+
+def test_only_measures_rainbow_exports_are_listed_as_carrying_peaks():
+    # The schema gives conductance a peak list too, but no rainbow detector
+    # exports one, so the exporter does not claim it.
+    assert not asm._admits_peaks({asm._CHROMATOGRAM_CUBE: {"cube-structure": {
+        "measures": [{"concept": "electric conductance", "unit": "S"}]}}})
+
+
+# --- Review round 3 ---
+
+
+def test_the_processing_time_is_written_where_the_schema_puts_it():
+    processing = {"identifier": "1", "time": "2026-04-12T09:00:00-04:00",
+                  "method_name": "m", "description": "Signal A"}
+    document = asm._asm_processed_data(1, processing, [{"area": 1.0}],
+                                       asm._Options())
+    assert "data processing time" not in document
+    assert document["data processing document"]["data processing time"] \
+        == "2026-04-12T09:00:00-04:00"
+    # And it reads back, with the description, from where it was written.
+    assert asm._processing_document(document) == dict(
+        processing, group_identifier=None, method_version=None, type=None)
+
+
+def test_an_absorbance_trace_in_au_is_rebuilt_in_mau():
+    """ The peaks convert to mAU, so the trace has to as well, or the trace
+    minus an edge height is a thousand times off. """
+    measurement = {
+        "measurement identifier": "uv",
+        "chromatogram data cube": _cube("absorbance", "AU"),
+        **_processed(_peak_list(_empower_peak(**_rt(30.0), **{
+            "peak height": {"value": 0.0015, "unit": "AU"},
+            "peak value at start": {"value": 0.0005, "unit": "AU"}})))}
+    datadir = rb.from_asm(_lc(measurement))
+    datafile = datadir.datafiles[0]
+    assert datafile.metadata["unit"] == "mAU"
+    assert datafile.data[:, 0].tolist() == [1000.0, 2000.0]
+    peak = datadir.peaks[0]["peaks"][0]
+    assert peak["height"] == pytest.approx(1.5)
+    assert peak["start_height"] == pytest.approx(0.5)
+
+
+def test_a_trace_in_another_measure_keeps_its_unit():
+    measurement = {"measurement identifier": "elsd",
+                   "chromatogram data cube": _cube("intensity", "\u00b5V")}
+    datafile, = rb.from_asm(_lc(measurement)).by_name.values()
+    assert datafile.metadata["unit"] == "\u00b5V"
+    assert datafile.data[:, 0].tolist() == [1.0, 2.0]
+
+
+@pytest.mark.parametrize("unit,area", [
+    ("mAU", "mAU.s"), ("pA", "pA.s"), ("RFU", "RFU.s"), ("nA", "nA.s")])
+def test_a_peak_area_takes_the_unit_its_schema_names(unit, area):
+    entry = asm._asm_peak(1, {"area": 1.0, "height": 1.0}, None, unit)
+    assert entry["peak area"]["unit"] == area
+    assert entry["peak height"]["unit"] == unit
+
+
+def test_the_peak_unit_warning_names_its_channel():
+    with pytest.warns(UserWarning, match="^ADC1A: a peak read in 'RFU.s'"):
+        asm._asm_peak(1, {"area": 1.0, "area_unit": "RFU.s"},
+                      asm._Options(), "pA", channel="ADC1A")
+
+
+# --- Review round 4 ---
+
+
+def test_a_processing_time_without_an_offset_takes_the_callers():
+    processing = {"time": "2025-09-18T11:42:38", "method_name": "m"}
+    stamped = asm._asm_processed_data(
+        1, processing, [{"area": 1.0}], asm._Options(utc_offset="+00:00"))
+    assert stamped["data processing document"]["data processing time"] \
+        == "2025-09-18T11:42:38+00:00"
+    assert "custom information aggregate document" not in stamped
+
+
+def test_a_processing_time_with_no_offset_at_all_is_custom_information():
+    processing = {"time": "2025-09-18T11:42:38", "method_name": "m"}
+    with pytest.warns(UserWarning, match="no UTC offset"):
+        document = asm._asm_processed_data(
+            1, processing, [{"area": 1.0}], asm._Options())
+    assert "data processing time" not in document["data processing document"]
+    entry, = (document["custom information aggregate document"]
+              ["custom information document"])
+    assert entry["datum label"] == "data processing time"
+    assert asm._processing_document(document)["time"] \
+        == "2025-09-18T11:42:38"
+
+
+@pytest.mark.parametrize("unit", ["mV", "pA"])
+def test_an_fld_channel_in_another_unit_keeps_its_emission(unit):
+    import numpy as np
+    from rainbow.datadirectory import DataDirectory
+    from rainbow.datafile import DataFile
+
+    fld = DataFile("FLD1A", "FLD", np.array([0.0, 1.0]), np.array([310.0]),
+                   np.array([[1.0], [2.0]]),
+                   {"unit": unit, "excitation_wavelength": 230.0,
+                    "emission_wavelength": 310.0})
+    back = rb.from_asm(DataDirectory("run", [fld], {}).to_asm())
+    metadata = back.get_file("FLD1A").metadata
+    assert back.get_file("FLD1A").detector == "FLD"
+    assert metadata["emission_wavelength"] == 310.0
+    assert metadata["excitation_wavelength"] == 230.0
+    assert "wavelength" not in metadata
+
+
+_PEAK_KEYS = {"identifier", "index", "area_unit", "height_unit"}
+
+
+def test_an_asm_peak_and_a_vendor_peak_have_the_same_keys():
+    vendor = rb.read(os.path.join(INPUTS, "red.D"), peaks=True)
+    vendor_group = vendor.peaks[0]
+    vendor_peak = vendor_group["peaks"][0]
+    assert vendor_peak["identifier"] is None and vendor_peak["index"] is None
+    asm_group = rb.from_asm(vendor.to_asm()).peaks[0]
+    assert set(asm_group["peaks"][0]) == set(vendor_peak)
+    assert set(asm_group) == set(vendor_group)
+    assert vendor_group["alternates"] == []
+    # And one read from an Empower export, with every key it can carry.
+    empower = rb.from_asm(_lc(_fluorescence())).peaks[0]
+    assert set(empower["peaks"][0]) == set(vendor_peak)
+    assert set(empower) == set(vendor_group)
+
+
+def test_a_sample_role_outside_the_schema_is_custom_information():
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["sample_role"] = "system suitability"
+    sample = next(_asm_measurements(datadir.to_asm()))["sample document"]
+    assert "sample role type" not in sample
+    entries = (sample["custom information aggregate document"]
+               ["custom information document"])
+    assert entries[-1]["datum label"] == "sample role type"
+    back = rb.from_asm(datadir.to_asm())
+    assert back.metadata["sample_role"] == "system suitability"
+    assert "sample_custom" not in back.metadata
+
+
+def test_the_injection_time_and_records_are_written_back():
+    measurement = _fluorescence(**{
+        "measurement time": "2026-04-10T18:46:20-04:00",
+        "injection document": {
+            "injection identifier": "128283",
+            "injection time": "2026-04-10T18:46:25-04:00"}})
+    document = _lc(measurement)
+    records = {
+        "data system document": {
+            "ASM file identifier": "A.JSON",
+            "data system instance identifier": "DB ID: 1",
+            "database primary key": "1",
+            "software name": "Empower 3 Software",
+            "Odd Field": "kept"},
+        "analysis sequence document": {"written name": "SET_1"},
+        "electronic project record": {"written name": "P"}}
+    document["liquid chromatography aggregate document"].update(records)
+    again = rb.from_asm(document).to_asm()
+    aggregate = again["liquid chromatography aggregate document"]
+    # No injection volume, so no LC injection document: the time rides the
+    # measurement's custom information, and reads back.
+    measurement = next(_asm_measurements(again))
+    assert "injection document" not in measurement
+    assert rb.from_asm(again).metadata["injection_time"] \
+        == "2026-04-10T18:46:25-04:00"
+    data_system = aggregate["data system document"]
+    assert data_system["software name"] == "Empower 3 Software"
+    assert "Odd Field" not in data_system
+    labels = [entry["datum label"] for entry
+              in data_system["custom information aggregate document"]
+              ["custom information document"]]
+    assert "Odd Field" in labels and "source ASM file identifier" in labels
+    assert data_system["ASM converter name"] == "rainbow-api"
+    assert aggregate["analysis sequence document"] == {"written name": "SET_1"}
+    assert aggregate["electronic project record"] == {"written name": "P"}
+    assert rb.from_asm(again).metadata["data_system"]["software name"] \
+        == "Empower 3 Software"
+
+
+def test_a_record_missing_a_required_field_is_not_written():
+    datadir = rb.from_asm(_lc(_sample(**{"sample identifier": "s"})))
+    datadir.metadata["data_system"] = {"software name": "x"}
+    with pytest.warns(UserWarning, match="data system instance identifier"):
+        document = datadir.to_asm()
+    assert "data system document" not in \
+        document["liquid chromatography aggregate document"]
+
+
+_RAINBOW_1_5_4 = os.path.join(INPUTS, "rainbow_1_5_4.asm.json")
+
+
+def test_a_document_rainbow_1_5_4_wrote_reads_back_in_real_units():
+    """ Written by rainbow 1.5.4 (ff716a7) from red.D: its CAD channel was
+    relabeled to absorbance to carry peaks, with only the sentence to say
+    so. """
+    with open(_RAINBOW_1_5_4) as f:
+        document = json.load(f)
+    back = rb.from_asm(document, name="red.D")
+    cad = back.get_file("ADC1A.CH")
+    assert cad.detector == "CAD"
+    assert (cad.metadata["measure"], cad.metadata["unit"]) \
+        == ("electric current", "pA")
+    group = next(g for g in back.peaks if g["channel_file"] == "ADC1A.CH")
+    assert group["peaks"][0]["area_unit"] == "pA.s"
+    again = _cad_measurement(back.to_asm())
+    assert again["chromatogram data cube"]["cube-structure"]["measures"][0][
+        "unit"] == "pA"
+    peak = (again["processed data aggregate document"]
+            ["processed data document"][0]["peak list"]["peak"][0])
+    assert peak["peak area"]["unit"] == "pA.s"
+
+
+def test_an_injection_time_with_a_volume_goes_in_the_injection_document():
+    datadir = rb.from_asm(_lc(_fluorescence(**{
+        "measurement time": "2026-04-10T18:46:20-04:00",
+        "injection document": {
+            "injection identifier": "128283",
+            "injection time": "2026-04-10T18:46:25-04:00",
+            "autosampler injection volume setting (chromatography)":
+                {"value": 5.0, "unit": "mm^3"}}})))
+    injection = next(_asm_measurements(datadir.to_asm()))["injection document"]
+    assert injection["injection time"] == "2026-04-10T18:46:25-04:00"
+
+
+# --- Review round 5 ---
+
+
+def _records_document():
+    document = _lc(_fluorescence())
+    document["liquid chromatography aggregate document"].update({
+        "data system document": {
+            "ASM converter name": "Agilent OpenLab ECM Allotrope Export",
+            "ASM converter version": "1.2.1.203",
+            "ASM conversion time": "2026-04-11T17:55:39-04:00",
+            "ASM file identifier": "SOURCE.JSON",
+            "data system instance identifier": "DB ID: 508927282",
+            "database primary key": "128283",
+            "software name": "Empower 3 Software",
+            "software version": "Build 3471"},
+        "analysis sequence document": {
+            "written name": "SET_1", "start time": "2026-04-10T18:11:45"}})
+    return document
+
+
+def test_a_re_exported_data_system_names_rainbow_and_keeps_its_source():
+    from datetime import datetime
+    datadir = rb.from_asm(_records_document(), name="NB5-P2A1")
+    data_system = datadir.to_asm(utc_offset="+00:00")[
+        "liquid chromatography aggregate document"]["data system document"]
+    assert data_system["ASM converter name"] == "rainbow-api"
+    assert data_system["ASM converter version"] == asm._rainbow_version()
+    assert data_system["ASM file identifier"] == "NB5-P2A1.asm.json"
+    assert datetime.fromisoformat(
+        data_system["ASM conversion time"]).tzinfo is not None
+    # Where the data came from is kept.
+    assert data_system["software name"] == "Empower 3 Software"
+    assert data_system["data system instance identifier"] \
+        == "DB ID: 508927282"
+    assert data_system["database primary key"] == "128283"
+    source = {entry["datum label"]: entry.get(
+        "scalar string datum", entry.get("scalar timestamp datum"))
+              for entry in data_system["custom information aggregate document"]
+              ["custom information document"]}
+    assert source["source ASM conversion time"] == "2026-04-11T17:55:39-04:00"
+    assert source["source ASM converter name"] \
+        == "Agilent OpenLab ECM Allotrope Export"
+    assert source["source ASM file identifier"] == "SOURCE.JSON"
+
+
+def test_each_per_injection_file_is_its_own_file_identifier(tmp_path):
+    sequence = rb.sequence_from_asm(_records_document())
+    paths = asm.sequence_export_asm_per_injection(
+        sequence, str(tmp_path), utc_offset="+00:00")
+    for path in paths:
+        with open(path) as f:
+            data_system = json.load(f)[
+                "liquid chromatography aggregate document"][
+                    "data system document"]
+        assert data_system["ASM file identifier"] == os.path.basename(path)
+
+
+def test_a_records_times_take_the_callers_offset():
+    datadir = rb.from_asm(_records_document())
+    sequence = datadir.to_asm(utc_offset="+00:00")[
+        "liquid chromatography aggregate document"][
+            "analysis sequence document"]
+    assert sequence["start time"] == "2026-04-10T18:11:45+00:00"
+
+
+def test_the_description_is_read_from_every_place_it_has_been_written():
+    for document in ({"description": "A"},
+                     {"processed data description": "A"},
+                     {"custom information aggregate document": {
+                         "custom information document": [{
+                             "datum label": "processed data description",
+                             "scalar string datum": "A"}]}}):
+        assert asm._processing_document(document)["description"] == "A"
+
+
+def test_a_waters_fluorescence_channel_is_fld(tmp_path):
+    from rainbow.waters import masslynx
+    path = tmp_path / "_CHRO001.DAT"
+    path.write_bytes(b"\x00" * 0x80 + b"\x00" * 8 * 4)
+    datafile = masslynx.parse_chrodat(
+        str(path), "ACQUITY FLR ChA Ex280,Em340 nm", "EU")
+    assert datafile.detector == "FLD"
+    assert datafile.ylabels.tolist() == [340.0]
+    assert datafile.metadata["excitation_wavelength"] == 280.0
+    assert datafile.metadata["emission_wavelength"] == 340.0
+
+
+def test_one_parser_reads_every_fluorescence_spelling():
+    from rainbow import _optics
+    from rainbow.agilent import chemstation
+    for text in ("FLD1 A, Ex=230, Em=310", "ACQUITY FLR ChA Ex230,Em310 nm",
+                 "Ex: 230 nm / Em: 310"):
+        assert _optics.excitation_emission(text) == (230.0, 310.0)
+        assert chemstation.parse_optics(text)["emission_wavelength"] == 310.0
+        assert asm._optics_from_label(text)["excitation_wavelength"] == 230.0
+
+
+# --- Review round 6 ---
+
+
+@pytest.mark.parametrize("run", ["red.D", "blue.raw"])
+def test_rainbows_own_cad_reads_back_as_cad_and_re_exports(run):
+    original = rb.read(os.path.join(INPUTS, run))
+    assert "CAD" in original.detectors
+    first = original.to_asm()
+    back = rb.from_asm(first, name=original.name)
+    assert "CAD" in back.detectors
+    cads = [d for d in back.datafiles if d.detector == "CAD"]
+    assert cads and all(not d.name.endswith(".ms") for d in cads)
+
+    def labels(document):
+        return {m["measurement identifier"]
+                for m in _asm_measurements(document)}
+
+    assert labels(back.to_asm()) == labels(first)
+
+
+def test_an_lc_acquisition_method_is_written_back():
+    datadir = rb.from_asm(_lc(_fluorescence()))
+    assert datadir.metadata["acq_method"] == "V175 Long SEC Method"
+    again = rb.from_asm(datadir.to_asm())
+    assert again.metadata["acq_method"] == "V175 Long SEC Method"
+    assert again.get_file("128288").metadata["acq_method"] \
+        == "V175 Long SEC Method"
+
+
+def test_the_electronic_absorbance_wavelength_setting_is_read():
+    measurement = _with_cube(**{
+        "measurement identifier": "uv",
+        **_control(**{"electronic absorbance wavelength setting":
+                      {"value": 254.0, "unit": "nm"}})})
+    datafile = rb.from_asm(_lc(measurement)).datafiles[0]
+    assert datafile.metadata["wavelength"] == 254.0
+
+
+@pytest.mark.parametrize("run", ["red.D", "brown.D", "teal.dx"])
+def test_a_uv_channels_optics_survive_a_round_trip(run):
+    keys = ("wavelength", "bandwidth", "reference_wavelength",
+            "reference_bandwidth")
+    original = rb.read(os.path.join(INPUTS, run))
+    back = rb.from_asm(original.to_asm(), name=original.name)
+    checked = 0
+    for datafile in original.datafiles:
+        if datafile.detector != "UV" or datafile.data.shape[1] != 1:
+            continue
+        optics = {key: datafile.metadata[key] for key in keys
+                  if key in datafile.metadata}
+        rebuilt = back.get_file(datafile.name).metadata
+        assert {key: rebuilt[key] for key in optics
+                if key in rebuilt} == optics, datafile.name
+        checked += 1
+    assert checked
+
+
+def test_a_vendor_peak_group_names_its_channels_detector():
+    datadir = rb.read(os.path.join(INPUTS, "red.D"), peaks=True)
+    by_channel = {g["channel_file"].upper(): g for g in datadir.peaks}
+    assert by_channel["ADC1A.CH"]["detector"] == "CAD"
+    assert by_channel["ADC1A.CH"]["metadata"]["unit"] \
+        == datadir.get_file("ADC1A.CH").metadata["unit"]
+    uv = [g for g in datadir.peaks if g["detector"] == "UV"]
+    assert uv
+
+
+# --- Review round 7 ---
+
+
+def test_a_channel_published_in_another_unit_reads_back_with_its_peaks():
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    assert datadir.get_file("ADC1A.CH").metadata["unit"] == "mAu"
+    datadir.peaks = [{"signal": "ADC1A", "channel_file": "ADC1A.CH",
+                      "peaks": [{"retention_time": 1.5, "area": 100.0,
+                                 "height": 10.0}]}]
+    back = rb.from_asm(datadir.to_asm(), name="red.D")
+    assert back.get_file("ADC1A.CH").metadata["unit"] == "mAu"
+    peak = next(g for g in back.peaks
+                if g["channel_file"] == "ADC1A.CH")["peaks"][0]
+    assert (peak["area_unit"], peak["height_unit"]) == ("mAu.s", "mAu")
+    # And a second lap publishes it the same way, under its note.
+    again = rb.from_asm(back.to_asm(), name="red.D")
+    assert again.get_file("ADC1A.CH").metadata["unit"] == "mAu"
+
+
+def test_peaks_from_asm_refuses_a_whole_document():
+    with pytest.raises(ValueError, match="whole ASM document"):
+        asm.peaks_from_asm(_lc(_fluorescence()))
+
+
+def test_the_version_an_export_names_is_pyprojects():
+    import re
+    pyproject = os.path.join(os.path.dirname(__file__), "..",
+                             "pyproject.toml")
+    with open(pyproject) as f:
+        declared = re.search(r'^version\s*=\s*"([^"]+)"', f.read(),
+                             re.MULTILINE).group(1)
+    assert rb.__version__ == declared
+    assert asm._rainbow_version() == declared
+
+
+@pytest.mark.parametrize("unit,absorbance,expected", [
+    ("mAU.min", True, (6.0, "mAU.s")),
+    ("RFU.min", False, (6.0, "RFU.s")),
+    ("mAU.s", True, (0.1, "mAU.s")),
+    ("mAU.h", True, (None, None))])
+def test_an_area_per_minute_is_converted_and_an_unknown_time_is_none(
+        unit, absorbance, expected):
+    value, read_unit = asm._peak_measure({"value": 0.1, "unit": unit}, ".s",
+                                         absorbance)
+    assert read_unit == expected[1]
+    assert value == pytest.approx(expected[0]) if expected[0] is not None \
+        else value is None
+
+
+def test_a_records_source_survives_a_second_round_trip():
+    first = rb.from_asm(_records_document()).to_asm(utc_offset="+00:00")
+    second = rb.from_asm(first).to_asm(utc_offset="+00:00")
+    data_system = second["liquid chromatography aggregate document"][
+        "data system document"]
+    entries = {entry["datum label"]: entry for entry
+               in data_system["custom information aggregate document"]
+               ["custom information document"]}
+    assert entries["source ASM converter name"]["scalar string datum"] \
+        == "Agilent OpenLab ECM Allotrope Export"
+    assert entries["source ASM file identifier"]["scalar string datum"] \
+        == "SOURCE.JSON"
+    assert entries["source ASM conversion time"]["scalar timestamp datum"] \
+        == "2026-04-11T17:55:39-04:00"
+
+
+# --- Review round 8 ---
+
+
+def test_an_fld_in_mv_keeps_its_excitation_as_custom_information():
+    import numpy as np
+    from rainbow.datadirectory import DataDirectory
+    from rainbow.datafile import DataFile
+
+    fld = DataFile("FLD1A", "FLD", np.array([0.0, 1.0]), np.array([310.0]),
+                   np.array([[1.0], [2.0]]),
+                   {"unit": "mV", "excitation_wavelength": 230.0,
+                    "excitation_bandwidth": 10.0,
+                    "emission_wavelength": 310.0})
+    document = DataDirectory("run", [fld], {}).to_asm()
+    control = (next(_asm_measurements(document))
+               ["device control aggregate document"]
+               ["device control document"][0])
+    assert "excitation wavelength setting" not in control
+    assert control["detector wavelength setting"]["value"] == 310.0
+    labels = {entry["datum label"] for entry in
+              control["custom information aggregate document"]
+              ["custom information document"]}
+    assert labels == {"excitation wavelength setting",
+                      "excitation bandwidth setting", "rainbow detector"}
+    metadata = rb.from_asm(document).get_file("FLD1A").metadata
+    assert metadata["excitation_wavelength"] == 230.0
+    assert metadata["excitation_bandwidth"] == 10.0
+    assert metadata["emission_wavelength"] == 310.0
+
+
+def test_vendor_peaks_take_their_channels_unit():
+    datadir = rb.read(os.path.join(INPUTS, "red.D"), peaks=True)
+    for group in datadir.peaks:
+        unit = datadir.get_file(group["channel_file"]).metadata["unit"]
+        peak = group["peaks"][0]
+        assert (peak["height_unit"], peak["area_unit"]) \
+            == (unit, unit + ".s")
+
+
+def test_a_non_dict_chromatography_document_does_not_hide_a_later_record():
+    document = _lc(_sample(**{"sample identifier": "s"}))
+    aggregate = document["liquid chromatography aggregate document"]
+    aggregate["liquid chromatography document"].insert(0, "not a document")
+    aggregate["liquid chromatography document"][1][
+        "electronic project record"] = {"written name": "P"}
+    metadata = rb.from_asm(document).metadata
+    assert metadata["project"] == {"written name": "P"}
+
+
+# --- Review round 9 ---
+
+
+@pytest.mark.parametrize("area_unit,height_unit,area_scale,height_scale", [
+    ("AU.s", "AU", 1000.0, 1000.0),
+    ("\u00b5V.s", "\u00b5V", 0.001, 0.001),
+    ("mAU.min", "mAU", 60.0, 1.0)])
+def test_a_peak_beside_an_absorbance_cube_is_converted_on_export(
+        area_unit, height_unit, area_scale, height_scale):
+    import warnings as w
+    peak = {"area": 0.5, "area_unit": area_unit, "height": 0.03,
+            "height_unit": height_unit, "start_height": 0.01}
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        entry = asm._asm_peak(1, peak, asm._Options(), "mAU")
+    assert entry["peak area"] == {"value": pytest.approx(0.5 * area_scale),
+                                  "unit": "mAU.s"}
+    assert entry["peak height"]["value"] == pytest.approx(0.03 * height_scale)
+    assert entry["peak value at start"]["value"] == pytest.approx(
+        0.01 * height_scale)
+    assert not [c for c in caught if "relabeled" in str(c.message)]
+
+
+def test_a_peak_in_an_unconvertible_unit_is_still_said():
+    with pytest.warns(UserWarning, match="relabeled and not converted"):
+        asm._asm_peak(1, {"area": 1.0, "area_unit": "RFU.s"},
+                      asm._Options(), "mAU")
+
+
+def test_an_au_channels_group_says_mau_like_its_trace():
+    measurement = {
+        "measurement identifier": "uv",
+        "chromatogram data cube": _cube("absorbance", "AU"),
+        **_processed(_peak_list(_empower_peak(**_rt(30.0), **{
+            "peak height": {"value": 0.0015, "unit": "AU"}})))}
+    datadir = rb.from_asm(_lc(measurement))
+    assert datadir.datafiles[0].metadata["unit"] == "mAU"
+    group = datadir.peaks[0]
+    assert group["metadata"]["unit"] == "mAU"
+    assert group["peaks"][0]["height_unit"] == "mAU"
+    # And re-exported, the peak is the same height beside the same cube.
+    again = rb.from_asm(datadir.to_asm()).peaks[0]["peaks"][0]
+    assert again["height"] == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize("device_type", [
+    "thermal conductivity detector", "electron capture detector"])
+def test_a_detector_rainbow_cannot_name_is_not_named_from_its_label(
+        device_type):
+    measurement = {"measurement identifier": "x",
+                   "chromatogram data cube": _cube(
+                       "electric current", "pA", "ADC1A, uv 254 nm"),
+                   **_control(**{"device type": device_type})}
+    datafile, = rb.from_asm(_lc(measurement)).by_name.values()
+    assert datafile.detector is None
+
+
+def test_a_gc_document_without_an_fid_re_exports_as_gc():
+    document = {"gas chromatography aggregate document": {
+        "gas chromatography document": [{"measurement aggregate document": {
+            "measurement document": [_with_cube(**{
+                "measurement identifier": "uv"})]}}]}}
+    for read in (rb.from_asm, rb.sequence_from_asm):
+        run = read(document)
+        assert run.metadata["technique"] == "GC"
+        assert "gas chromatography aggregate document" in run.to_asm()
+    sequence = rb.sequence_from_asm(document)
+    assert "gas chromatography aggregate document" in \
+        sequence.injections[0].to_asm()
+
+
+# --- Review round 10 ---
+
+
+def _data_system(document):
+    return document["liquid chromatography aggregate document"][
+        "data system document"]
+
+
+def test_a_second_round_trip_does_not_invent_source_fields():
+    # Like the gc_peaks sweep fixture: the source data system records no
+    # conversion time.
+    document = _records_document()
+    del document["liquid chromatography aggregate document"][
+        "data system document"]["ASM conversion time"]
+    exports = [document]
+    for _ in range(3):
+        exports.append(rb.from_asm(exports[-1], name="run").to_asm(
+            utc_offset="+00:00"))
+    second, third = _data_system(exports[2]), _data_system(exports[3])
+    labels = {entry["datum label"] for entry
+              in second["custom information aggregate document"]
+              ["custom information document"]}
+    assert "source ASM conversion time" not in labels
+    assert "source ASM converter name" in labels
+
+    def without_time(record):
+        return {k: v for k, v in record.items()
+                if k != "ASM conversion time"}
+
+    assert without_time(second) == without_time(third)
+
+
+def test_a_data_system_naming_a_file_and_a_row_keeps_the_row():
+    document = _records_document()
+    document["liquid chromatography aggregate document"][
+        "data system document"].update(
+            {"UNC path": "\\\\server\\share", "file name": "A.JSON"})
+    data_system = _data_system(rb.from_asm(document).to_asm(
+        utc_offset="+00:00"))
+    assert data_system["database primary key"] == "128283"
+    assert "UNC path" not in data_system and "file name" not in data_system
+    custom = {entry["datum label"]: entry["scalar string datum"]
+              for entry in data_system["custom information aggregate document"]
+              ["custom information document"]
+              if "scalar string datum" in entry}
+    assert custom["file name"] == "A.JSON"
+    assert custom["UNC path"] == "\\\\server\\share"
+
+
+def test_an_elsd_in_a_forced_gc_document_reads_back_as_elsd():
+    original = rb.read(os.path.join(INPUTS, "orange.D"))
+    assert "ELSD" in original.detectors
+    back = rb.from_asm(original.to_asm(technique="GC"), name=original.name)
+    assert "ELSD" in back.detectors
+
+
+# --- Review round 11 ---
+
+
+def test_a_uv_channel_in_microvolts_keeps_trace_and_peaks_together():
+    """ A UV channel in µV is published as mAU unconverted, under a note.
+
+    Reading it back scaled the trace by 0.001 and left the peaks in µV, so
+    the trace minus an edge height moved a thousandfold on every lap.
+    """
+    import numpy as np
+    from rainbow.datadirectory import DataDirectory
+    from rainbow.datafile import DataFile
+
+    uv = DataFile("UV1", "UV", np.array([0.0, 1.0, 2.0]), np.array([254.0]),
+                  np.array([[0.0], [3000.0], [0.0]]),
+                  {"unit": "µV", "wavelength": 254.0})
+    run = DataDirectory("run", [uv], {})
+    run.peaks = [{"signal": "UV1", "channel_file": "UV1", "peaks": [{
+        "retention_time": 1.0, "height": 2900.0, "start_height": 100.0}]}]
+
+    def apex_minus_edge(run):
+        datafile = run.get_file("UV1")
+        peak = run.peaks[0]["peaks"][0]
+        return datafile.data[1, 0] - peak["start_height"], peak["height"]
+
+    expected = apex_minus_edge(run)
+    for _ in range(2):
+        run = rb.from_asm(run.to_asm(), name="run")
+        assert apex_minus_edge(run) == pytest.approx(expected)
+        assert run.get_file("UV1").metadata["unit"] == "µV"
+
+
+def test_a_guid_does_not_make_an_absorbance_channel_cad():
+    measurement = {"measurement identifier": "x",
+                   "chromatogram data cube": _cube("absorbance", "mAU"),
+                   **_control(**{"device identifier": "9e1f-adc4-77b2"})}
+    assert rb.from_asm(_lc(measurement)).datafiles[0].detector == "UV"
+
+
+def test_an_area_per_minute_beside_a_current_cube_is_converted():
+    entry = asm._asm_peak(1, {"area": 0.5, "area_unit": "pA.min"},
+                          asm._Options(), "pA")
+    assert entry["peak area"] == {"value": pytest.approx(30.0),
+                                  "unit": "pA.s"}
+
+
+@pytest.mark.parametrize("unit", ["µV*sec", "µV.s", "µV s",
+                                  "AU*min"])
+def test_an_area_unit_is_read_however_its_product_is_spelled(unit):
+    value, read = asm._peak_measure({"value": 1000.0, "unit": unit}, ".s")
+    assert read == "mAU.s"
+    assert value == pytest.approx(
+        1000.0 * 60 * 1000 if unit.startswith("AU") else 1.0)
+
+
+def test_the_source_conversion_time_is_kept_as_written():
+    document = _records_document()
+    written = "2026-04-11T17:55:39.2722453-04:00"
+    document["liquid chromatography aggregate document"][
+        "data system document"]["ASM conversion time"] = written
+    first = rb.from_asm(document).to_asm(utc_offset="+00:00")
+    second = rb.from_asm(first).to_asm(utc_offset="+00:00")
+    for export in (first, second):
+        entries = {entry["datum label"]: entry for entry
+                   in _data_system(export)
+                   ["custom information aggregate document"]
+                   ["custom information document"]}
+        assert entries["source ASM conversion time"] == {
+            "@index": entries["source ASM conversion time"]["@index"],
+            "datum label": "source ASM conversion time",
+            "scalar timestamp datum": written}
+
+
+# --- Review round 12 ---
+
+
+def _empower_channel(device_identifier, device_type, cube):
+    return {"measurement identifier": "m",
+            "chromatogram data cube": cube,
+            **_control(**{"device identifier": device_identifier,
+                          "device type": device_type})}
+
+
+@pytest.mark.parametrize("identifier,device_type,cube,detector", [
+    ("DAD", "diode array uv detector", _cube("absorbance", "mAU"), "UV"),
+    ("ACQ-FLR", "fluorescence detector", _cube("fluorescence", "RFU"), "FLD"),
+])
+def test_the_sources_device_identifier_is_written_back(
+        identifier, device_type, cube, detector):
+    back = rb.from_asm(_lc(_empower_channel(identifier, device_type, cube)))
+    datafile = back.datafiles[0]
+    assert datafile.detector == detector
+    assert datafile.metadata["device_identifier"] == identifier
+    control = (next(_asm_measurements(back.to_asm()))
+               ["device control aggregate document"]
+               ["device control document"][0])
+    assert control["device identifier"] == identifier
+    named = {entry["datum label"]: entry["scalar string datum"]
+             for entry in control["custom information aggregate document"]
+             ["custom information document"]}
+    assert named["rainbow detector"] == detector
+
+
+def test_rainbows_detector_name_reads_back_without_a_device_identifier():
+    # A vendor CAD has no source identifier, so rainbow names it there too,
+    # and in its own custom information, which is what reads it back.
+    original = rb.read(os.path.join(INPUTS, "blue.raw"))
+    control = next(m for m in _asm_measurements(original.to_asm())
+                   if m["measurement identifier"] == "_CHRO001.DAT")[
+        "device control aggregate document"]["device control document"][0]
+    assert control["device identifier"] == "CAD"
+    del control["device identifier"]
+    measurement = {"measurement identifier": "c",
+                   "chromatogram data cube": _cube("voltage", "mV"),
+                   "device control aggregate document": {
+                       "device control document": [control]}}
+    assert rb.from_asm(_lc(measurement)).datafiles[0].detector == "CAD"
+
+
+def test_a_source_with_no_converter_fields_gains_none_on_a_second_lap():
+    document = _records_document()
+    data_system = document["liquid chromatography aggregate document"][
+        "data system document"]
+    for field in ("ASM converter name", "ASM converter version",
+                  "ASM conversion time", "ASM file identifier"):
+        del data_system[field]
+    first = rb.from_asm(document).to_asm(utc_offset="+00:00")
+    second = rb.from_asm(first).to_asm(utc_offset="+00:00")
+    for export in (first, second):
+        record = _data_system(export)
+        labels = {entry["datum label"] for entry in
+                  (record.get("custom information aggregate document") or {})
+                  .get("custom information document", [])}
+        assert not any(label.startswith("source ") for label in labels)
+        assert record["ASM converter name"] == "rainbow-api"

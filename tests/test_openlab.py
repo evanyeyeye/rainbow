@@ -68,11 +68,13 @@ def test_parse_optics_full():
 
 
 def test_parse_optics_integer_values_and_no_reference():
-    # Integer-style values still parse as floats; "Ref=off" has no numbers,
-    # so the reference fields are omitted rather than guessed.
+    # Integer-style values still parse as floats. "Ref=off" states that the
+    # channel has no reference: the wavelength is present and None, and there
+    # is no reference bandwidth to state.
     assert chemstation.parse_optics("VWD1A,Sig=254,4  Ref=off") == {
         'wavelength': 254.0,
         'bandwidth': 4.0,
+        'reference_wavelength': None,
     }
 
 
@@ -213,12 +215,53 @@ _TELEMETRY = 'Agilent.OpenLab.Rawdata/InstrumentTrace179'
     ('VWD', _SIGNAL, 'mAU', 'UV'),
     ('FID', _SIGNAL, 'pA', 'FID'),
     ('RID', _SIGNAL, 'nRIU', 'RID'),
+    ('FLD', _SIGNAL, 'LU', 'FLD'),
+    ('FLD', _SIGNAL, 'mAU', 'FLD'),     # a fluorescence unit is not mAU
     ('PMP', _TELEMETRY, 'bar', None),   # telemetry is analog
     ('XYZ', _SIGNAL, '', None),         # unknown device
 ])
 def test_classify(device, encoding, unit, expected):
     signal = {'device': device, 'encoding': encoding, 'unit': unit}
     assert openlab._classify(signal) == expected
+
+
+def test_parse_optics_reads_a_fluorescence_clause():
+    assert chemstation.parse_optics("FLD1 A, Ex=230, Em=310") == {
+        'excitation_wavelength': 230.0, 'emission_wavelength': 310.0}
+
+
+def test_a_dx_fluorescence_signal_is_read_as_fld(tmp_path):
+    """ teal.dx with one DAD signal's manifest entry rewritten as an FLD's. """
+    import os
+    import re
+    import zipfile
+
+    import rainbow as rb
+
+    source = zipfile.ZipFile(
+        os.path.join(os.path.dirname(__file__), "inputs", "teal.dx"))
+    target = tmp_path / "fld.dx"
+    with zipfile.ZipFile(target, "w") as out:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "injection.acmd":
+                text = data.decode("utf-8-sig")
+                block = re.search(
+                    r"<Signal>(?:(?!</Signal>).)*ff77c051(?:(?!</Signal>).)*"
+                    r"</Signal>", text, re.S).group(0)
+                fld = (block.replace("<DeviceName>DAD", "<DeviceName>FLD")
+                       .replace("DAD1H,Sig=330.0,4.0  Ref=360.0,100.0",
+                                "FLD1A,Ex=230, Em=310")
+                       .replace("<Units>mAU</Units>", "<Units>LU</Units>"))
+                data = text.replace(block, fld).encode("utf-8")
+            out.writestr(item, data)
+
+    datafile = rb.read(str(target)).get_file("FLD1A.CH")
+    assert datafile.detector == "FLD"
+    assert datafile.ylabels.tolist() == [310.0]
+    assert datafile.metadata["excitation_wavelength"] == 230.0
+    assert datafile.metadata["emission_wavelength"] == 310.0
+    assert "wavelength" not in datafile.metadata
 
 
 def test_a_dx_injection_volume_reaches_the_asm_document(tmp_path):

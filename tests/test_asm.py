@@ -410,12 +410,29 @@ def test_cad_exports_as_electric_current_with_truthful_type():
     assert "detector wavelength setting" not in control
 
 
-def test_peaks_on_a_non_absorbance_channel_relabel_to_absorbance_with_a_note():
-    # The schema models a peak list only on an absorbance measurement, so a CAD
-    # channel (electric current) that carries integrated peaks is relabeled to
-    # absorbance to keep the peaks, with a note recording the real quantity and a
-    # device type that stays truthful. A relabel happens only when there are
-    # peaks: without them the channel keeps its faithful electric-current cube.
+def _relabeled(measurement):
+    """Whether a measurement's cube was relabeled to absorbance."""
+    measure = measurement[_CHROM_KEY]["cube-structure"]["measures"][0]
+    return measure["concept"] == "absorbance" and any(
+        entry["datum label"] == "reported measure"
+        for entry in (measurement.get("custom information aggregate document")
+                      or {}).get("custom information document") or [])
+
+
+def _reported_unit(measurement):
+    """The unit a measurement's relabel note records, or None."""
+    for entry in (measurement.get("custom information aggregate document")
+                  or {}).get("custom information document") or []:
+        if entry["datum label"] == "reported measure unit":
+            return entry["scalar string datum"]
+    return None
+
+
+def test_peaks_on_a_current_channel_ride_its_own_cube_in_its_own_unit():
+    # REC/2026/06 gives an electric current in pA its own peak list, so a CAD
+    # channel that carries integrated peaks keeps its faithful cube, and its
+    # peaks are written in the channel's unit: an area in pA.s, not the mAU.s
+    # every peak used to be labelled with.
     datadir = rb.read("tests/inputs/red.D")
     datadir.peaks = [{
         "signal": "ADC1A", "wavelength": None, "description": None,
@@ -423,7 +440,27 @@ def test_peaks_on_a_non_absorbance_channel_relabel_to_absorbance_with_a_note():
         "peaks": [{"retention_time": 1.5, "area": 100.0, "height": 10.0}],
     }]
     cad = _by_label(datadir.to_asm())["ADC1A.CH"]
-    # The peak itself survives, on an absorbance cube, device type still truthful.
+    peak = (cad["processed data aggregate document"]["processed data document"]
+            [0]["peak list"]["peak"][0])
+    assert peak["peak area"] == {"value": 100.0, "unit": "pA.s"}
+    assert peak["peak height"] == {"value": 10.0, "unit": "pA"}
+    assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
+        == "electric current"
+    assert not _relabeled(cad)
+
+
+def test_peaks_on_a_measure_without_a_peak_list_relabel_with_a_note():
+    # A current in nA has no peak list in the schema, so a channel in nA that
+    # carries peaks is relabeled to absorbance to keep them, with a note
+    # recording the real quantity and a device type that stays truthful.
+    datadir = rb.read("tests/inputs/red.D")
+    datadir.get_file("ADC1A.CH").metadata["unit"] = "nA"
+    datadir.peaks = [{
+        "signal": "ADC1A", "wavelength": None, "description": None,
+        "channel_file": "ADC1A.CH",
+        "peaks": [{"retention_time": 1.5, "area": 100.0, "height": 10.0}],
+    }]
+    cad = _by_label(datadir.to_asm())["ADC1A.CH"]
     peak = (cad["processed data aggregate document"]["processed data document"]
             [0]["peak list"]["peak"][0])
     assert peak["peak area"] == {"value": 100.0, "unit": "mAU.s"}
@@ -431,7 +468,6 @@ def test_peaks_on_a_non_absorbance_channel_relabel_to_absorbance_with_a_note():
         == "absorbance"
     assert (cad["device control aggregate document"]["device control document"]
             [0]["device type"]) == "liquid chromatography detector"
-    # A note records the real quantity.
     note = (cad["custom information aggregate document"]
             ["custom information document"][0])
     assert note["datum label"] == "reported measure"
@@ -449,13 +485,14 @@ def test_uv_channel_with_peaks_is_not_relabeled():
     }]
     uv = _by_label(datadir.to_asm())["DAD1B.ch"]
     assert "processed data aggregate document" in uv
-    assert "custom information aggregate document" not in uv
+    assert not _relabeled(uv)
 
 
-def test_fid_with_peaks_relabels_with_an_electric_current_note():
-    # A GC-FID channel with integrated peaks (the common GC case) relabels to
-    # absorbance, keeping the peaks, with a note naming the real quantity and a
-    # device type that stays the flame ionization detector.
+def test_fid_peaks_are_written_in_pa():
+    # A GC-FID channel with integrated peaks (the common GC case) keeps its
+    # electric-current cube, and the FID's peak table, which states no unit, is
+    # written in the channel's: pA.s and pA. It used to be relabeled to
+    # absorbance with every area written as mAU.s.
     datadir = rb.read("tests/inputs/yellow.D")
     datadir.peaks = [{
         "signal": "FID1A", "wavelength": None, "description": None,
@@ -467,9 +504,12 @@ def test_fid_with_peaks_relabels_with_an_electric_current_note():
     control = (fid["device control aggregate document"]
                ["device control document"][0])
     assert control["device type"] == "flame ionization detector"
-    note = (fid["custom information aggregate document"]
-            ["custom information document"][0]["scalar string datum"])
-    assert "electric current" in note
+    assert fid[_CHROM_KEY]["cube-structure"]["measures"][0]["unit"] == "pA"
+    peak = (fid["processed data aggregate document"]["processed data document"]
+            [0]["peak list"]["peak"][0])
+    assert peak["peak area"]["unit"] == "pA.s"
+    assert peak["peak height"]["unit"] == "pA"
+    assert not _relabeled(fid)
 
 
 def test_non_absorbance_channel_without_peaks_stays_faithful():
@@ -477,7 +517,10 @@ def test_non_absorbance_channel_without_peaks_stays_faithful():
     cad = _by_label(rb.read("tests/inputs/red.D").to_asm())["ADC1A.CH"]
     assert cad[_CHROM_KEY]["cube-structure"]["measures"][0]["concept"] \
         == "electric current"
-    assert "custom information aggregate document" not in cad
+    assert not _relabeled(cad)
+    # red.D records the channel in mAu, which the schema has no current for,
+    # so the values go out as pA unconverted and the note records mAu.
+    assert _reported_unit(cad) == "mAu"
 
 
 def test_elsd_exports_as_intensity_with_truthful_type():
@@ -1370,18 +1413,22 @@ def test_a_json_integer_is_not_turned_into_a_float():
     assert asm._number(10 ** 400) is None
 
 
-def test_only_an_absorbance_cube_can_carry_a_peak_list():
-    # The schema models processed data only on an absorbance measurement, so
-    # this decides whether peaks are attached or the channel is relabeled.
+def test_only_a_measure_the_schema_gives_a_peak_list_can_carry_one():
+    # The schema models processed data on absorbance in mAU and on the
+    # chromatography detectors' own measures, each in one unit, so this
+    # decides whether peaks are attached or the channel is relabeled.
     from rainbow import asm
 
-    def cube(concept):
-        return {asm._CHROMATOGRAM_CUBE:
-                {"cube-structure": {"measures": [{"concept": concept}]}}}
+    def cube(concept, unit):
+        return {asm._CHROMATOGRAM_CUBE: {"cube-structure": {
+            "measures": [{"concept": concept, "unit": unit}]}}}
 
-    assert asm._admits_peaks(cube("absorbance"))
-    assert not asm._admits_peaks(cube("electric current"))
-    assert not asm._admits_peaks(cube("voltage"))
+    assert asm._admits_peaks(cube("absorbance", "mAU"))
+    assert asm._admits_peaks(cube("electric current", "pA"))
+    assert asm._admits_peaks(cube("voltage", "mV"))
+    assert asm._admits_peaks(cube("fluorescence", "RFU"))
+    assert not asm._admits_peaks(cube("electric current", "nA"))
+    assert not asm._admits_peaks(cube("voltage", "V"))
     assert not asm._admits_peaks({})
     assert not asm._admits_peaks(
         {asm._CHROMATOGRAM_CUBE: {"cube-structure": {"measures": []}}})

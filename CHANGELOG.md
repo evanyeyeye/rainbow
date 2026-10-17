@@ -3,6 +3,139 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.5.5] - 2026-10-17
+
+### Added
+- **`rb.from_asm` and `rb.sequence_from_asm` read every measurement's peaks.**
+  They read a measurement's peaks only beside a rebuilt trace, and rebuilt
+  only absorbance cubes with inline data, so the peaks of every fluorescence
+  channel, of an FID run, and of every measurement in an index document
+  (whose cubes carry no values) were dropped. Over 531 local Empower and
+  OpenLab exports, 1.5.4 read 15,503 of 20,026 peaks; 1.5.5 reads all of them.
+  Each peak group also carries the channel's `detector` and `metadata`, so a
+  group with no trace beside it still says which channel it was integrated on.
+- **Peaks carry their units, identifier and index.** `area_unit` and
+  `height_unit` say what each value is in; `identifier` and `index` are the
+  peak's own; each integration's `processing` gains its `description`.
+- **More of the envelope.** `injection_time`, `sample_role`, `well_plate_id`
+  and `acq_method`, and the `data_system`, `analysis_sequence` and `project`
+  records, field by field as written; all are written back on export (see the
+  round-trip guide for where). A `scalar integer datum` reads as an `int`.
+- **`rb.read(path, peaks=True)`** attaches one injection's integrated peaks,
+  found as `read_sequence(peaks=True)` finds them: the `sequence.acaml` beside
+  the .D, else its own `sequence.acam_`.
+- **`rb.peaks_from_asm(measurement)`** reads one ASM measurement document's
+  peaks. **`rb.sniff_vendor(path)`** is the content check `rb.read` falls back
+  to for an unsuffixed folder, and **`rb.asm_technique(run)`** is the `"LC"` or
+  `"GC"` the export will use.
+- **`rainbow.__version__`**, the version an export names as its converter.
+
+### Changed
+- **Every chromatogram cube is rebuilt, not only absorbance.** Fluorescence,
+  electric current, intensity, refractive index and conductivity channels come
+  back as DataFiles with `metadata["unit"]` as written and
+  `metadata["measure"]`. The detector is named from the device type, then the
+  device identifier, then the cube label, then the measure: `UV`, `RID`, `FLD`
+  (new), `ELSD`, `FID`, or `CAD`; a channel rainbow has no name for, such as a
+  conductivity detector, is detector `None` and joins the directory's
+  `analog` traces. The channel metadata also holds `device_type` and
+  `acq_method`, and the optics from the device control settings, the cube
+  label, or the processed data description: `wavelength`, `bandwidth`,
+  `reference_wavelength`, `reference_bandwidth`, and a fluorescence channel's
+  `excitation_wavelength`, `excitation_bandwidth` and `emission_wavelength`.
+- **A peak's `height` and `area` on a non-absorbance channel are kept as
+  written.** 1.5.4 read any unit it could not convert to mAU as `None`, which
+  lost every fluorescence peak, and converted µV to mAU whatever the channel
+  measured. An RFU, pA or ELSD µV value now comes back with its unit. Only on
+  an absorbance channel is AU or Empower's µV converted to mAU; the edge
+  heights are in the height's unit.
+- **`Ref=off` reads as `reference_wavelength` None**, present, in the vendor
+  readers and in `from_asm`, so a channel without a reference is told apart
+  from one whose reference was not recorded. Code that reads
+  `metadata["reference_wavelength"]` may now find the key with the value
+  `None`, where it used to be absent.
+
+### Fixed
+- **`to_asm` wrote every peak area as `mAU.s`**, an FID's or CAD's pA.s
+  included. A peak's area and height are now written in the unit of the cube
+  it was integrated on. REC/2026/06 gives electric current (pA), intensity
+  (RLU), voltage (mV) and fluorescence (RFU) their own peak lists, so such
+  a channel keeps its faithful cube when it carries peaks; only
+  a measure with no peak list in the schema (nA, V) is still relabeled to
+  absorbance. The relabel note now also records the real concept and unit as
+  structured custom information, and `from_asm` reads it (or the sentence
+  1.5.4 wrote alone) to put the channel and its peaks back in their real
+  unit, so a relabeled channel re-exports to a valid document.
+- **A fluorescence signal is FLD in every Agilent reader.** "FLD1 A, Ex=230,
+  Em=310" was typed UV at 230 nm in a ChemStation .ch; it is now an `FLD`
+  channel with `excitation_wavelength` and `emission_wavelength`, labelled by
+  its emission, in the .ch, OpenLab .dx and MassHunter .cg readers alike, and
+  `parse_optics` reads the `Ex=`/`Em=` clause. In the 179/181 .ch container
+  1.5.4 typed it FID instead, which also exported the whole run as gas
+  chromatography.
+- **`from_asm` scales an absorbance trace to mAU.** A cube in AU (or Empower's
+  µV) was rebuilt in its own unit while its peaks' heights and areas were
+  converted to mAU, so the trace minus an edge height was a thousand times
+  off. The trace is now scaled to mAU too, the unit rainbow holds UV data in
+  and to_asm writes, and `metadata["unit"]` says so.
+- **The processing time and description are where REC/2026/06 puts them.**
+  `data processing time` is written in the data processing document, stamped
+  with `utc_offset=` (as custom information when it has no offset), and the
+  description under `description`, the name REC/2026/06 gave the 2025/03
+  `processed data description`; both are read from any of those places. A
+  sample role outside the schema's list is written as custom information.
+- **Every peak and peak group has the same keys, whatever it was read from.**
+  A peak read from a vendor result document carries `identifier`, `index`,
+  `area_unit`, `height_unit`, `start_height`, `end_height` and the four
+  baseline keys too, as None, and its group `detector`, `metadata` and
+  `processing` as None and `alternates` as an empty list.
+- **A unit published under another's name reads back as itself.** A
+  channel whose unit the schema has no term for (red.D's CAD in mAu) is
+  published under its detector's default unit, as before, and now with the
+  structured note a peak relabel writes, so `from_asm` restores its unit and
+  its peaks'. A peak area in a unit per minute is converted to per second,
+  and an absorbance area per an unknown time reads as None.
+- **A re-exported data system record names rainbow as its converter.**
+  `ASM converter name` and `version` are rainbow-api's, `ASM conversion time`
+  is the time of the export (so two exports differ there), and `ASM file
+  identifier` is the file written, else one named for the run; the source
+  converter's are kept as the record's custom information, prefixed
+  `source`, and a second round trip keeps them as they were (the source
+  conversion time exactly as written). A record naming both a file and a
+  database row keeps the row and carries the file as custom information. The
+  record's times take `utc_offset=`. Every chromatogram channel's device
+  control keeps the source's device identifier (read into
+  `metadata["device_identifier"]`), names the detector there only when the
+  source had none, and names rainbow's detector in its custom information
+  (`rainbow detector`), which is what reads it back.
+- **Bandwidth, reference and acquisition method survive a round trip.** A UV
+  channel's bandwidth and reference are written as their device control
+  settings (Ref=off as custom information), an FLD's excitation bandwidth
+  too, and the acquisition method as the measurement's custom information.
+  A CAD's device control names it in its device identifier, so rainbow's
+  own export reads back as CAD.
+- **A vendor peak group names its detector and its peaks' units.**
+  `rb.read(peaks=True)` and `read_sequence(peaks=True)` fill each group's
+  `detector` and `metadata` from the channel's DataFile, and each peak's
+  `height_unit` and `area_unit` from its unit (the peak table is in the
+  channel's unit, per second for an area, and does not say so).
+- **The detector is not read from a measurement identifier.** It is a key
+  (often a GUID), and a segment such as `adc4` typed a channel CAD.
+- **A gas chromatography document re-exports as one.** `from_asm` records
+  the document's technique in `metadata["technique"]`, which the export
+  follows; one with no FID channel used to come back as liquid
+  chromatography.
+- **A peak in AU or µV beside an absorbance cube is converted to mAU on
+  export**, as the cube is, rather than relabeled 1000 times off; a peak
+  group's `metadata["unit"]` is mAU when its trace is.
+- **A ChemStation FLD channel is FLD by its name too**, as OpenLab's is by
+  its device, when its wavelengths are not numbers.
+- **A Waters fluorescence channel is FLD.** One fluorescence parser serves
+  the Agilent readers, the Waters reader and `from_asm`.
+- **`to_asm` dropped peak groups no exported channel carries** (peaks read from
+  an index document, or on an analog channel) without a word. It warns once
+  per group.
+
 ## [1.5.4] - 2026-10-17
 
 ### Added

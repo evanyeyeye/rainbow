@@ -1,11 +1,13 @@
 import os
 import re
+from rainbow._version import __version__
 from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
 from rainbow import agilent, waters
 from rainbow._binning import MZ_FLOORS
-from rainbow.asm import from_asm, iso_timestamp, sequence_from_asm
+from rainbow.asm import (asm_technique, from_asm, iso_timestamp,
+                         peaks_from_asm, sequence_from_asm)
 
 
 # `debug` is listed although it is not imported above: __getattr__ fetches it on
@@ -15,7 +17,8 @@ __all__ = [
     'DataFile', 'DataDirectory', 'DataSequence',
     'agilent', 'waters', 'debug',
     'read', 'read_sequence', 'read_metadata', 'mz_resolution',
-    'from_asm', 'sequence_from_asm', 'iso_timestamp',
+    'from_asm', 'sequence_from_asm', 'peaks_from_asm', 'iso_timestamp',
+    'asm_technique', 'sniff_vendor',
     'VENDORS', 'MZ_FLOORS',
 ]
 
@@ -114,19 +117,22 @@ def _warn_bin_width_floor(datafiles, bin_width, vendor):
         f"{described}; it only inserts empty bins.")
 
 
-def _sniff_vendor(path):
+def sniff_vendor(path):
     """
     Identifies the vendor of a directory from its contents.
 
-    Used as a fallback when a directory's name lacks the conventional vendor
-    suffix (e.g. a Waters .raw folder renamed to ``Caffeine 3``). Returns
-    'agilent', 'waters', or None if no signature matches.
+    :func:`read` falls back to this when a directory's name lacks the
+    conventional vendor suffix (e.g. a Waters .raw folder renamed to
+    ``Caffeine 3``), so a caller deciding whether a folder is a run rainbow
+    can read asks the same question :func:`read` will. The name is not
+    consulted, so a ``.D`` folder holding nothing rainbow recognizes is None.
 
     Args:
         path (str): Path of the directory.
 
     Returns:
-        Vendor name, or None.
+        'agilent', 'waters', or None if no signature matches (or the path is
+        not a directory).
 
     """
     try:
@@ -147,6 +153,10 @@ def _sniff_vendor(path):
         return 'agilent'
 
     return None
+
+
+# The name it had while it was private, kept for callers that reached for it.
+_sniff_vendor = sniff_vendor
 
 
 def _detect_vendor(path):
@@ -176,7 +186,7 @@ def _detect_vendor(path):
     if ext == '.raw':
         return 'waters'
     if os.path.isdir(path):
-        return _sniff_vendor(path)
+        return sniff_vendor(path)
     return None
 
 
@@ -229,7 +239,7 @@ def _unreadable(path, what="read"):
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,
          telemetry=False, centroid=False, format=None, bin_width=None,
-         _labels_only=False, **removed):
+         peaks=False, _labels_only=False, **removed):
     """
     Reads a chromatogram data directory. Main method of the package.
 
@@ -282,6 +292,13 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             default) to keep the per-scan representation, or pass a width to
             project the scans onto one shared m/z grid (see
             :ref:`hrms-data-model`).
+        peaks (bool, optional): Flag for reading the run's integrated peaks
+            into ``DataDirectory.peaks``, as :func:`read_sequence` does for a
+            whole sequence. For Agilent they come from the result document of
+            the sequence the run sits in (``sequence.acaml`` beside it), or
+            else from the run's own (``sequence.acam_`` inside it); a run with
+            neither has none. Waters results and a .dx archive's are not
+            read; asking for them warns.
 
     Returns:
         DataDirectory representing the directory.
@@ -308,6 +325,9 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
 
     if not isinstance(telemetry, bool):
         raise Exception("The telemetry flag must be a boolean.")
+
+    if not isinstance(peaks, bool):
+        raise Exception("The peaks flag must be a boolean.")
 
     # display_precision is a label precision (decimals for the reported m/z),
     # and is cosmetic: it rounds the labels, never the data. 'auto' is finalized
@@ -337,10 +357,18 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     if vendor == 'agilent':
         datadir = agilent.read(
             path, display_precision, hrms, requested_files, telemetry, centroid,
-            bin_width, _labels_only)
+            bin_width, peaks=peaks, _labels_only=_labels_only)
     elif vendor == 'waters':
         datadir = waters.read(
             path, display_precision, requested_files, bin_width, _labels_only)
+        if peaks and datadir is not None:
+            import warnings
+            # The run gets an empty list, which alone would read as a run
+            # nobody integrated, so the read says why it is empty.
+            warnings.warn(
+                f"rainbow does not read integrated peaks from Waters data; "
+                f"{os.path.basename(path)} is read without them.")
+            datadir.peaks = []
 
     if datadir is None:
         raise _unreadable(path, "read")
@@ -626,7 +654,7 @@ def read_sequence(path, display_precision='auto', hrms=False,
     """
     Reads a multi-injection sequence directory.
 
-    Where :func:`read` reads a single injection, this reads the whole run: a
+    Where :func:`read` reads a single run, this reads the whole sequence: a
     directory holding one injection subdirectory per sample, plus the
     sequence-level method and metadata. Each injection is read with
     :func:`read`, and the injections are returned in sorted-name order, which is

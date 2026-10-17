@@ -3,14 +3,14 @@
 Sequences
 =========
 
-A chromatography run rarely produces a single injection. It produces a
-**sequence**: dozens or hundreds of injections acquired back to back on one
-instrument, with one shared method. The vendor stores all of it in a directory
+A chromatography study rarely produces a single run. It produces a
+**sequence**: dozens or hundreds of runs, one injection each, acquired back to
+back on one instrument, with one shared method. The vendor stores all of it in a directory
 tree, with the data in one place, the method in another, and the integrated
 peaks in a third.
 
 This guide shows how rainbow reads a whole sequence into one object, what that
-object gives you that a single read cannot, and how to move the whole run into
+object gives you that a single read cannot, and how to move the whole sequence into
 (and back out of) the open Allotrope Simple Model. Sequence reading is
 currently implemented for Agilent: a directory of ``.D`` injection
 subdirectories, whether ChemStation or OpenLab wrote them. A directory of
@@ -18,11 +18,11 @@ OpenLab ``.dx`` archives is not a sequence directory to rainbow, since the
 injections are files rather than subdirectories; read those one at a time with
 :code:`rb.read`.
 
-A run is more than a single injection
--------------------------------------
+A sequence is more than a single run
+------------------------------------
 
 With :code:`rb.read` you read one :code:`.D` directory. A sequence directory
-holds many of those, plus the run-level files that describe the instrument, the
+holds many of those, plus the sequence-level files that describe the instrument, the
 method, and the data-analysis results.
 
 .. code-block:: text
@@ -57,7 +57,7 @@ The result is a **DataSequence**. The key idea: a DataSequence is a *container*,
 not a new kind of DataDirectory and not a superset of :code:`rb.read`. Each
 injection inside it is an ordinary DataDirectory, exactly what :code:`rb.read`
 returns for that :code:`.D`. The sequence simply holds them all and adds the
-run-level information.
+sequence-level information.
 
 .. code-block:: text
 
@@ -69,7 +69,7 @@ run-level information.
    |     +-- .peaks     : list                 only with peaks=True (below)
    |
    |-- .metadata : dict                  instrument, operator, injection_count
-   +-- .to_asm() / .export_asm()         the whole run as one ASM document
+   +-- .to_asm() / .export_asm()         the whole sequence as one ASM document
 
 Because each injection is a DataDirectory, everything you already know still
 works, one injection at a time:
@@ -121,13 +121,13 @@ drops). It is the same conversion the ASM export uses, so an exported document
 orders the same way.
 
 Internally :code:`rb.read_sequence` just calls :code:`rb.read` on each injection
-subdirectory and layers the run-level metadata on top, so the per-injection
+subdirectory and layers the sequence-level metadata on top, so the per-injection
 data is identical to reading each :code:`.D` by hand.
 
-What the run knows that one injection does not
-----------------------------------------------
+What the sequence knows that one run does not
+---------------------------------------------
 
-The :code:`metadata` attribute carries what is shared across the run. When the
+The :code:`metadata` attribute carries what is shared across the sequence. When the
 sequence has a top-level :code:`sequence.acaml`, that includes the instrument
 and its modules, with part numbers, serial numbers, and firmware:
 
@@ -189,10 +189,17 @@ retention time (in minutes), area, area percent, height, height percent, start
 and end times, symmetry, and the :code:`name` of the compound the processing
 method identified it as, which is :code:`None` when it identified none.
 
-Peaks come from the run's :code:`sequence.acaml`, or, for any injection that
+Peaks come from the sequence's :code:`sequence.acaml`, or, for any injection that
 file does not cover, that injection's own :code:`sequence.acam_`. They are off
 by default, like the :code:`hrms` and :code:`centroid` flags, because reading
 them parses the full result document.
+
+One injection read on its own takes the same flag, and gets the same peaks:
+:code:`rb.read("Caffeine_Stability/001-A1_01.D", peaks=True)` reads them from
+the :code:`sequence.acaml` beside the .D, or else from its own
+:code:`sequence.acam_`, into :code:`datadir.peaks`. A run neither covers has
+an empty list. Waters results and an OpenLab ``.dx`` archive's are not read,
+and saying :code:`peaks=True` for either warns so.
 
 Exporting a sequence to ASM
 ---------------------------
@@ -233,12 +240,14 @@ Quick reference
      - a DataSequence (many injections)
    * - ``rb.read_sequence(path, peaks=True)``
      - the same, with integrated peaks attached
+   * - ``rb.read(injection, peaks=True)``
+     - one injection, with its integrated peaks attached
    * - ``sequence.injections``
      - the injections, in sorted-name order
    * - ``sequence.metadata``
      - instrument, operator, injection count
    * - ``sequence.to_asm()`` / ``.export_asm(path)``
-     - the run as one ASM document
+     - the sequence as one ASM document
    * - ``rb.sequence_from_asm(document)``
      - a DataSequence rebuilt from ASM
 

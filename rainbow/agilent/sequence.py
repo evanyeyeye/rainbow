@@ -2,7 +2,7 @@
 Read the sequence-level document of an Agilent sequence directory.
 
 A sequence directory holds, alongside the injection .D subdirectories, a
-``sequence.acaml`` describing the run as a whole: the instrument and its
+``sequence.acaml`` describing the sequence as a whole: the instrument and its
 modules (with serial numbers and firmware), the operator, the sample setups,
 and the data-analysis results. This module reads the header part of that
 document, the instrument and operator, which read_sequence merges onto a
@@ -45,6 +45,20 @@ _PEAK_MEASURES = {
     "end_time": "EndTime",
     "symmetry": "Symmetry",
 }
+
+
+# Keys every peak rainbow returns has, which a result document's peak table
+# does not state; see rainbow.asm._peak_from_asm. Present as None, so a peak
+# read here and one read from ASM have the same keys.
+_UNSTATED = ("identifier", "index", "area_unit", "height_unit",
+             "start_height", "end_height",
+             "baseline_start_code", "baseline_end_code",
+             "baseline_start_time", "baseline_end_time")
+
+# The same for a signal group: what rainbow.asm.peaks_from_asm says of the
+# channel and the integration, which this reader does not read. A document
+# here holds one integration per signal, so there are no alternates.
+_GROUP_UNSTATED = {"detector": None, "metadata": None, "processing": None}
 
 
 def _local(tag):
@@ -261,6 +275,8 @@ def parse_peaks(path):
             "description": signal.get("description"),
             "channel_file": signal.get("channel_file"),
             "peaks": peaks,
+            **_GROUP_UNSTATED,
+            "alternates": [],
         })
     return by_injection
 
@@ -307,6 +323,11 @@ def _peak(element):
     for key, tag in _PEAK_MEASURES.items():
         child = values.get(tag)
         peak[key] = _value(child) if child is not None else None
+    # The keys a peak read from ASM carries and a result document does not
+    # state, present as None so the two have one shape. The values are in the
+    # channel's unit, which the peak table does not name.
+    for key in _UNSTATED:
+        peak[key] = None
     return peak
 
 

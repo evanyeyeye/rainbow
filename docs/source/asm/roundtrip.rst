@@ -19,11 +19,14 @@ a DataDirectory or DataSequence.
    document = json.load(open("Caffeine_Stability.asm.json"))
    sequence = rb.sequence_from_asm(document)       # a DataSequence
 
-Each UV cube becomes a ``DataFile`` again: retention time converts back from
-seconds to minutes, and the measure array reshapes back into the data grid. The
-device system document becomes the instrument metadata, and any processed-data
-peak list becomes the channel's peaks. A measurement from some other tool that
-rainbow's exporter would not have written is skipped rather than guessed at.
+Each chromatogram cube becomes a ``DataFile`` again: retention time converts
+back from seconds to minutes, and the measure array reshapes back into the data
+grid. The device system document becomes the instrument metadata, and any
+processed-data peak list becomes the channel's peaks. Peaks are read from every
+measurement, whether or not its trace could be rebuilt, so an index document
+whose cubes carry no values still yields its integrations.
+:code:`rb.peaks_from_asm(measurement)` reads one measurement document's peaks
+the same way, for a caller walking a document itself.
 
 Documents from other tools are read a little more generously than rainbow's own
 need. Three habits of an Agilent OpenLab or Empower export are worth knowing
@@ -39,19 +42,28 @@ about:
   such a channel warns. Pick a different one by its
   :code:`processing["identifier"]`, :code:`["group_identifier"]`, or
   :code:`["time"]`.
-* **The wavelength may only be in the cube label.** rainbow reads the device
-  control document's :code:`detector wavelength setting` first, then falls back
-  to the wavelength named in the cube label (:code:`"DAD.0.0, DAD: Signal A,
-  246.0 nm/Bw:4.0 nm"`). The label is kept whole as the channel's and the peak
-  group's :code:`description`.
+* **The optics may only be in the cube label.** rainbow reads the device
+  control document's settings first (:code:`detector wavelength setting`,
+  :code:`detector bandwidth setting`, the reference and excitation settings),
+  then what the cube label names (:code:`"DAD.0.0, DAD: Signal A, 246.0
+  nm/Bw:4.0 nm Ref 360.0 nm/Bw:100.0 nm"`, :code:`"DAD1A,Sig=254,4 Ref=off"`,
+  :code:`"PDA Ch1 280nm@4.8nm"`, :code:`"ACQUITY FLR ChA Ex280,Em340 nm"`),
+  then the processed data's description of the signal. They land in the
+  channel's metadata under the keys the vendor readers use:
+  :code:`wavelength`, :code:`bandwidth`, :code:`reference_wavelength` and
+  :code:`reference_bandwidth`, plus :code:`excitation_wavelength`,
+  :code:`excitation_bandwidth` and :code:`emission_wavelength` for a
+  fluorescence channel. :code:`Ref=off`
+  reads as a :code:`reference_wavelength` of :code:`None`, present. The label
+  is kept whole as the channel's and the peak group's :code:`description`.
 * **A peak records the baseline it was integrated from.** Empower writes the
   integration type at each edge, read into :code:`baseline_start_code` and
   :code:`baseline_end_code` (:code:`B`, :code:`V`, :code:`S`, :code:`T`, ...,
   lowercase for an edge moved by hand, and a group's :code:`Gp` split into
   :code:`G` and :code:`p`). Its Start and End Height, how far the trace sits
   above the baseline at each edge, are read into :code:`start_height` and
-  :code:`end_height` in mAU (from mAU, AU or µV; any other unit reads as
-  :code:`None`), so the line runs from :code:`(start_time, trace -
+  :code:`end_height` in the peak height's unit, so the line runs from
+  :code:`(start_time, trace -
   start_height)` to :code:`(end_time, trace - end_height)`. Empower fills
   :code:`baseline value at start of peak` (and :code:`end`) with the time the
   baseline under the peak's cluster begins (and ends), read into
@@ -60,17 +72,30 @@ about:
   times, so rainbow writes them as the peak's custom information, under the
   same labels, and reads them from either place. All are :code:`None` when the
   document does not carry them.
+* **A peak's height and area are in the detector's unit.** An absorbance in
+  AU, mAU or Empower's µV is converted to mAU (mAU.s for an area); any other
+  unit, a fluorescence channel's RFU or an FID's pA, is kept as written. The
+  unit is in the peak's :code:`height_unit` and :code:`area_unit`, which are
+  :code:`None` only when the document wrote none. The peak's own
+  :code:`identifier` and :code:`index` (its :code:`@index`) are read too, and
+  each integration's :code:`processing` records its :code:`description`
+  beside its identifier, group identifier, time and method.
 
-Import is narrower than export: only the absorbance (UV) cubes are reconstructed,
-both the single-wavelength chromatogram and the DAD spectrum, as a ``DataFile``
-(RID too, since it rides the absorbance cube). Everything else is export-only and
-skipped on the way back: the generic detector cubes (CAD, ELSD, FID) and the mass
-chromatograms (SIM or extracted ions). The one exception is a CAD, ELSD, or FID
-channel that carried integrated peaks: on export it is relabeled to absorbance so
-the schema can hold its peak list, so on import it returns as a UV ``DataFile``
-(its faithful detector kind is lost). A
-gas-chromatography document is still read for its UV channels, if any. So the
-round trip is exact for UV; the other cubes are a one-way, open-format export.
+Every chromatogram cube is reconstructed, whatever it measures, with its unit as
+the document writes it in the channel's :code:`metadata["unit"]` and the
+measure concept in :code:`metadata["measure"]`. The detector is named from the
+device type (:code:`metadata["device_type"]`, as written), then from the
+device control's device identifier, then from the cube label, then from the
+measure: a diode-array or
+ultraviolet detector is ``UV``, a refractive-index detector ``RID``, a
+fluorescence detector ``FLD``, an evaporative light scattering detector
+``ELSD``, a flame ionization detector ``FID``, and a charged-aerosol detector or
+the analog input Chemstation brings one in on ``CAD``. A channel rainbow has no
+detector name for (a conductivity detector, an electric current from a detector
+it cannot name) has detector :code:`None` and joins the directory's
+:code:`analog` traces rather than being given a name it would be guessing at.
+The DAD spectrum cube is reconstructed as UV. The mass chromatograms (SIM or
+extracted ions) are export-only.
 
 What survives the round trip
 ----------------------------
@@ -107,11 +132,9 @@ fidelity:
        ``metadata["sample_custom"]``, and written back when present. Normally
        only a foreign document carries them -- see :ref:`asm-custom-fields`.
    * - **Export-only**
-     - non-absorbance cubes
-     - Import rebuilds absorbance channels. A CAD, ELSD, or FID cube, and a
-       mass chromatogram, are written but not read back, so they survive the
-       export and are dropped at import. RID is not among them: it rides the
-       absorbance cube, so it returns (as a UV ``DataFile``, per above).
+     - mass chromatograms
+     - A SIM or extracted-ion mass chromatogram is written but not read back:
+       one ion's trace has no m/z axis to give a ``DataFile``.
    * - **Lossy**
      - run name, unexported method fields
      - :func:`rainbow.from_asm` names a run ``asm`` unless you pass ``name=``.
@@ -140,12 +163,30 @@ the run name, which import otherwise replaces with its default:
    first = datadir.to_asm()
    again = rb.from_asm(first, name=datadir.name).to_asm()
 
-Two caveats keep this from being ``again == first`` in general.
+Three caveats keep this from being ``again == first`` in general.
 
-A run that carries a non-absorbance detector does **not** re-export identically:
-those cubes are export-only, so the second document is missing them. A run with
-UV and CAD channels comes back with its absorbance channels and without its CAD
-channel. Compare the cubes you care about rather than the whole document.
+A document that carries a data system record (one :func:`rainbow.from_asm`
+read from another writer's export) gets rainbow's ``ASM conversion time`` on
+every export, which is the time of that export, so two exports of the same run
+differ there. Everything else in the record is stable from the second export
+on.
+
+A run that carries MS channels does **not** re-export identically: the mass
+chromatograms are export-only, so the second document is missing them. Nor
+does a channel with peaks but no rebuilt trace: a peak list rides the
+measurement of its channel, so peaks read from an index document (whose cubes
+carry no values) or on an analog channel (detector :code:`None`) have nowhere
+to go on export, and :code:`to_asm` warns once for each such group rather than
+drop it in silence. Compare the cubes you care about rather than the whole
+document.
+
+A document rainbow 1.5.4 wrote reads back as faithfully as its contents
+allow. One case it cannot: a Waters CAD, which 1.5.4 exported under the
+generic detector class with its filename as the cube label (``_CHRO001.DAT``)
+and no device identifier, so nothing in the document names a charged-aerosol
+detector, and it reads back as an analog trace. rainbow now writes the
+detector's name as the device identifier, so its own exports read back as
+CAD.
 
 Retention times can also differ in their last floating-point digit, because the
 seconds-to-minutes conversion is not always exactly reversible. Whether any
@@ -286,11 +327,68 @@ opening injection that records only a name does not suppress the identifier a
 later one carries. :func:`rainbow.sequence_from_asm` builds one directory per
 injection and so keeps each sample with its own.
 
-Two things this gives up, both deliberate. A document whose channels split the
+The same document supplies the vial position, the ``well plate identifier``
+(``metadata["well_plate_id"]``) and the ``sample role type``
+(``metadata["sample_role"]``, as written, ``"unknown sample role"`` included),
+and the last two are written back on export. REC/2026/06 has no sample document
+property for the plate, so rainbow writes it as the sample's custom information
+under the label ``well plate identifier``; a role outside the schema's list of
+roles goes there too, under ``sample role type``. Both are read from either
+place into their keys, not into ``sample_custom``.
+
+One thing this gives up, deliberately. A document whose channels split the
 fields between them -- the identifier on one, the custom fields on another --
-yields only the chosen one's, because a mixture is the thing being avoided. And
-``description``, ``sample role type`` and ``blank`` are still dropped: rainbow
-has no concept of any of them, so reading one would create a key a re-export
-discards. All three are present on every sample document an Empower export
-writes, so a sample document does not round trip whole -- only the identifier,
-the name, the vial position and the custom fields do.
+yields only the chosen one's, because a mixture is the thing being avoided.
+``description`` and ``blank`` are still dropped.
+
+Peaks without an exported channel
+---------------------------------
+
+:func:`rainbow.from_asm` reads every measurement's peaks, but :code:`to_asm`
+can write a peak list only on a measurement it writes. Two kinds of group read
+from ASM therefore do not survive a re-export, and each is warned about once:
+
+* peaks of a measurement whose cube carried no values (an index document),
+  since no trace was rebuilt to export;
+* peaks on a channel rainbow has no detector name for (a conductivity
+  detector, an unnamed current), which joins :code:`analog` and is not
+  exported.
+
+The rest of the envelope
+------------------------
+
+A measurement's ``injection time`` is read into ``metadata["injection_time"]``,
+beside the ``measurement time`` in ``metadata["date"]``, and its device
+control's ``device acquisition method`` (or the measurement's custom
+information of that name, where rainbow writes it, REC/2026/06 having no
+device control property for it) into ``metadata["acq_method"]`` (a gas
+chromatography document's ``device method identifier`` too). The records a
+document carries once, beside the device system, are read field by field as
+written: the ``data system document`` (which software wrote the data, and
+which converter made the ASM) into ``metadata["data_system"]``, the ``analysis
+sequence document`` (the sample set) into ``metadata["analysis_sequence"]``,
+and the ``electronic project record`` into ``metadata["project"]``. For
+:func:`rainbow.sequence_from_asm` they are the sequence's metadata. A custom
+field's ``scalar integer datum``, which converters write for a count though the
+schema does not list it, reads as an ``int``.
+
+All of these are written back on export. The injection time goes in the
+injection document, which a liquid chromatography run without an injection
+volume does not have; there it is the measurement's custom information, under
+``injection time``. The three records go beside the device system document,
+each field the schema defines for it as read and any other as the record's
+custom information; the project record has no custom information, so a field
+the schema does not define for it is dropped, and said. A record missing a
+field the schema requires (a data system document needs its instance
+identifier, and either a UNC path and file name or a database primary key) is
+not written, and said. A data system document is written as
+the new document's: ``rainbow-api`` is its converter, with its version, the
+export's time its conversion time and the file written (else one named for
+the run) its file identifier,
+while the fields naming where the data came from are kept and the source
+converter's go under its custom information, prefixed ``source``. The
+records' times are stamped with ``utc_offset=``. An integration's ``data processing
+time`` is written in its data processing document, stamped with
+``utc_offset=`` like every other timestamp; one that still has no offset is
+written as the processed data document's custom information instead, since
+the schema requires an offset there.

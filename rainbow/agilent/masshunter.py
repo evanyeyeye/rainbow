@@ -3,6 +3,7 @@ Methods for parsing Agilent Masshunter files.
  
 """
 import os
+import re
 import struct
 import warnings
 import numpy as np
@@ -348,8 +349,14 @@ _SD_WAVELENGTH_END = 56     # f64, nm
 # spectrum with its wavelengths, a .cg chromatogram with its retention times.
 _AXIS_PREFIX_SIZE = 16      # f64 start + f64 step
 
-# Devices that produce absorbance signals, matching the Chemstation naming.
-_DAD_DEVICES = ('DAD', 'MWD', 'VWD')
+# Devices whose .cd/.cg chromatograms are read as detector signals, matching
+# the Chemstation naming: the absorbance detectors, and a fluorescence
+# detector, which writes the same pair. The pumps and column compartments,
+# whose pairs hold only telemetry, are not among them.
+_DAD_DEVICES = ('DAD', 'MWD', 'VWD', 'FLD')
+
+# A description naming an excitation or emission, numeric or not.
+_NAMES_EX_EM_RE = re.compile(r'\b(?:Ex|Em)\b', re.IGNORECASE)
 
 
 def parse_dadfiles(path, telemetry=False, requested_files=None, listing=None):
@@ -414,7 +421,10 @@ def parse_dadfiles(path, telemetry=False, requested_files=None, listing=None):
         # The spectra are one file under one name, so unlike the chromatograms
         # they match a request exactly - a name that is merely similar is not a
         # file anyone asked for.
-        if (os.path.isfile(spectra_path) and os.path.isfile(desc_path)
+        # Only an absorbance detector's spectra are absorbance spectra; a
+        # fluorescence detector's would be read as UV.
+        if (stem[:3].upper() != 'FLD'
+                and os.path.isfile(spectra_path) and os.path.isfile(desc_path)
                 and (not requested_files
                      or os.path.basename(spectra_path).lower() in requested_files)):
             spectra = parse_dadspectra(spectra_path, desc_path)
@@ -569,14 +579,26 @@ def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
 
     for signal in signals:
         # An absorbance signal is named the Chemstation way ("Sig=254.0,..."),
-        # and carries mAU; the detector's telemetry traces have neither.
-        is_absorbance = (signal['unit'].lower() == 'mau'
-                         or signal['description'].startswith('Sig='))
+        # and carries mAU; the detector's telemetry traces have neither. A
+        # fluorescence signal names its excitation and emission ("Ex=230,
+        # Em=310") in any unit.
+        optics = parse_optics(signal['description'])
+        # In an FLD's own file, a signal that names an excitation or emission
+        # in any form ("Ex=Scan"), or reads in its luminescence units, is a
+        # fluorescence signal too, not one of the detector's telemetry traces.
+        is_fluorescence = 'emission_wavelength' in optics or (
+            stem[:3].upper() == 'FLD'
+            and (_NAMES_EX_EM_RE.search(signal['description'])
+                 or signal['unit'].strip().upper() == 'LU'))
+        is_absorbance = not is_fluorescence and (
+            signal['unit'].lower() == 'mau'
+            or signal['description'].startswith('Sig='))
         signal_name = f"{stem}{signal['letter']}.cg".lower()
         requested = bool(requested_files) and signal_name in requested_files
         # Naming a telemetry trace explicitly parses it whether or not the flag
         # is set, as it does for .dx telemetry.
-        if not is_absorbance and not telemetry and not requested:
+        if not (is_absorbance or is_fluorescence) and not telemetry \
+                and not requested:
             continue
         if requested_files and not (requested or filename in requested_files):
             continue
@@ -599,11 +621,16 @@ def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
         # filename (DAD1A.ch), keeping this format's own extension: here all
         # the signals share one file, so the letter is what tells them apart.
         name = os.path.join(os.path.dirname(path), f"{stem}{signal['letter']}.cg")
+        if is_fluorescence:
+            detector, ylabel = 'FLD', optics.get('emission_wavelength', '')
+        else:
+            detector = 'UV' if is_absorbance else None
+            ylabel = _signal_wavelength(signal['description'])
         datafiles.append(DataFile(
             name,
-            'UV' if is_absorbance else None,
+            detector,
             times,
-            np.array([_signal_wavelength(signal['description'])]),
+            np.array([ylabel]),
             values.reshape(-1, 1).copy(),
             # The description follows the Chemstation convention, so its optics
             # are surfaced by the same parser the .ch and .dx readers use. A
@@ -611,7 +638,7 @@ def parse_dadchroms(path, signals, telemetry=False, requested_files=None):
             # is what lets an export record the channel's wavelength setting
             # rather than leaving it to be inferred from the ylabel.
             {'signal': signal['description'], 'unit': signal['unit'],
-             **parse_optics(signal['description'])}))
+             **optics}))
 
     return datafiles
 

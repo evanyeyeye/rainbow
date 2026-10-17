@@ -18,6 +18,7 @@ except ImportError:
     import xml.etree.ElementTree as etree
 from rainbow.datafile import DataFile
 from rainbow._binning import bin_datapairs
+from rainbow._optics import excitation_emission
 
 # Optional compiled accelerators for the delta decode loops.
 # Falls back to the pure-Python implementations below if not built.
@@ -42,6 +43,10 @@ _MS_INT_POW8 = np.array([1, 8, 64, 512], dtype=np.uint32)
 # and other detectors have no Sig= clause. Shared with the OpenLab .dx parser.
 _SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
 _REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
+_REF_OFF_RE = re.compile(r'Ref=off\b', re.IGNORECASE)
+
+# A fluorescence detector names its channels FLD1A, "FLD1 A", ...
+_FLD_SIGNAL_RE = re.compile(r'\s*FLD\d', re.IGNORECASE)
 
 # Not every single-wavelength channel writes a Sig= clause. A variable- or
 # multi-wavelength detector often spells the same setting out, e.g.
@@ -55,12 +60,23 @@ def parse_optics(description):
 
     Returns a dict with any of ``wavelength``, ``bandwidth``,
     ``reference_wavelength``, and ``reference_bandwidth`` (in nm), parsed from
-    the ``Sig=``/``Ref=`` clause of a single-wavelength channel. Descriptions
-    without such a clause (spectra, FID, telemetry, ``Ref=off``) yield an
-    empty or reference-free dict.
+    the ``Sig=``/``Ref=`` clause of a single-wavelength channel. ``Ref=off``
+    gives a ``reference_wavelength`` of None: the channel states that it has
+    no reference, which is not the same as stating nothing about one, and two
+    channels at one wavelength differ by it. A fluorescence channel's
+    ``Ex=``/``Em=`` clause gives ``excitation_wavelength`` and
+    ``emission_wavelength`` instead. Descriptions without such a clause
+    (spectra, FID, telemetry) yield an empty dict.
 
     """
     optics = {}
+    # A fluorescence channel names its excitation and emission instead, e.g.
+    # "FLD1 A, Ex=230, Em=310". Its first number is the excitation, so reading
+    # it as a UV wavelength put a fluorescence trace at 230 nm absorbance.
+    pair = excitation_emission(description)
+    if pair:
+        optics['excitation_wavelength'], optics['emission_wavelength'] = pair
+        return optics
     sig = _SIG_RE.search(description)
     if sig:
         optics['wavelength'] = float(sig.group(1))
@@ -69,6 +85,8 @@ def parse_optics(description):
     if ref:
         optics['reference_wavelength'] = float(ref.group(1))
         optics['reference_bandwidth'] = float(ref.group(2))
+    elif _REF_OFF_RE.search(description):
+        optics['reference_wavelength'] = None
     return optics
 
 """
@@ -205,6 +223,17 @@ def _detector_from_signal(metadata, default=None, uv_only=False):
         return 'UV', sig.group(1)
     if 'ADC' in signal:
         return ('ELSD' if 'CHANNEL' in signal else 'CAD'), ''
+    optics = parse_optics(signal)
+    if 'emission_wavelength' in optics:
+        # The y-axis label is the emission, the wavelength the detector
+        # measures at, as rb.from_asm labels a fluorescence channel.
+        metadata.update(optics)
+        return 'FLD', str(optics['emission_wavelength'])
+    if _FLD_SIGNAL_RE.match(signal):
+        # A fluorescence detector's own channel whose wavelengths are not
+        # spelled as numbers (a scan, a program): still FLD, as OpenLab types
+        # it by its device, rather than falling through to the FID default.
+        return 'FLD', ''
     if uv_only:
         # The 130/30 container holds no flame ionization channel, so the
         # ambiguity that forces the Sig= clause on 179/181 does not arise here:

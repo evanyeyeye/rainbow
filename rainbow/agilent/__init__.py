@@ -8,8 +8,8 @@ from rainbow.datasequence import DataSequence
 
 
 def read(path, display_precision='auto', hrms=False, requested_files=None,
-         telemetry=False, centroid=False, bin_width=None, _labels_only=False,
-         **removed):
+         telemetry=False, centroid=False, bin_width=None, peaks=False,
+         _labels_only=False, **removed):
     """
     Reads an Agilent .D directory or .dx archive.
 
@@ -32,6 +32,8 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             representation (one
             :class:`~rainbow.agilent.masshunter.ProfileDataFile` per flight-time
             grid), or pass a width to project onto the shared m/z grid.
+        peaks (bool, optional): Flag for reading the run's integrated peaks
+            into ``DataDirectory.peaks`` (see :func:`injection_peaks`).
 
     Returns:
         DataDirectory representing the Agilent data.
@@ -46,8 +48,19 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     validate_bin_width(bin_width)
     if os.path.splitext(path)[1].lower() == '.dx':
         from rainbow.agilent import openlab
-        return openlab.read(
+        datadir = openlab.read(
             path, display_precision, requested_files, telemetry, bin_width)
+        if peaks and datadir is not None:
+            # An archive's results are not read. The run gets an empty list,
+            # which alone would read as a run nobody integrated, so the read
+            # says why it is empty.
+            import warnings
+            warnings.warn(
+                "rainbow does not read integrated peaks from an OpenLab .dx "
+                "archive; {} is read without them.".format(
+                    os.path.basename(path)))
+            datadir.peaks = []
+        return datadir
 
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(
@@ -92,7 +105,49 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             os.path.join(path, "AcqData", "MSPeak.bin")):
         metadata['centroid_available'] = True
 
-    return DataDirectory(path, datafiles, metadata)
+    datadir = DataDirectory(path, datafiles, metadata)
+    if peaks:
+        datadir.peaks = _with_channels(datadir, injection_peaks(path))
+    return datadir
+
+
+def injection_peaks(path):
+    """
+    Reads the integrated peaks of one injection .D directory.
+
+    The same peaks :func:`read_sequence` attaches to the injection, found the
+    same way: from the ``sequence.acaml`` of the sequence directory the .D
+    sits in, matched by the .D's folder name, or failing that from the .D's
+    own ``sequence.acam_``.
+
+    Each call parses the whole result document, which for a sequence holds
+    every injection's results. To read the peaks of many injections of one
+    sequence, ``read_sequence(path, peaks=True)`` parses it once for all of
+    them and is the efficient path.
+
+    Args:
+        path (str): Path of the .D directory.
+
+    Returns:
+        list: The injection's signal groups (see
+        :func:`rainbow.agilent.sequence.parse_peaks`), or ``[]`` when no
+        result document covers it.
+
+    """
+    from rainbow.agilent import sequence
+    # Absolute, so a relative path such as "run.D" still has a parent
+    # directory to look for the sequence.acaml in.
+    path = os.path.abspath(path)
+    name = os.path.basename(path)
+    sequence_acaml = sequence.find(os.path.dirname(path) or os.curdir)
+    groups = None
+    if sequence_acaml is not None:
+        groups = {injection.lower(): found for injection, found
+                  in sequence.parse_peaks(sequence_acaml).items()
+                  }.get(name.lower())
+    if not groups:
+        groups = _own_peaks(name, path)
+    return groups or []
 
 
 def injection_dirs(path):
@@ -167,7 +222,7 @@ def read_sequence(path, display_precision='auto', hrms=False,
     metadata = {'injection_count': len(injections)}
 
     # Merge the sequence-level document (instrument, operator), and let its
-    # run-wide operator fill any injection that lacked one.
+    # sequence-wide operator fill any injection that lacked one.
     from rainbow.agilent import sequence
     sequence_acaml = sequence.find(path)
     if sequence_acaml is not None:
@@ -213,11 +268,49 @@ def _attach_peaks(injections, injection_paths, sequence_acaml):
     for injection, injection_path in zip(injections, injection_paths):
         groups = folded.get(injection.name.lower())
         if not groups:
-            groups = _injection_peaks(injection, injection_path)
-        injection.peaks = groups or []
+            groups = _own_peaks(injection.name, injection_path)
+        injection.peaks = _with_channels(injection, groups or [])
 
 
-def _injection_peaks(injection, injection_path):
+def _with_channels(datadir, groups):
+    """``groups`` with each one's detector and metadata from its DataFile.
+
+    A result document names the channel a signal was integrated on but not
+    its detector, which the run's own file for that channel does say. A
+    group whose channel the run did not read keeps None.
+    """
+    by_key = {os.path.splitext(datafile.name)[0].upper(): datafile
+              for datafile in datadir.datafiles + datadir.analog}
+    for group in groups:
+        channel = group.get("channel_file") or group.get("signal") or ""
+        datafile = by_key.get(
+            os.path.splitext(channel)[0].replace(" ", "").upper())
+        if datafile is not None:
+            group["detector"] = datafile.detector
+            group["metadata"] = dict(datafile.metadata)
+            _fill_units(group, datafile.metadata.get("unit"))
+    return groups
+
+
+def _fill_units(group, unit):
+    """Gives a group's peaks the channel's unit where they state none.
+
+    ChemStation's peak table is in the channel's unit, a height in it and an
+    area in it per second, but does not say so.
+    """
+    if not unit:
+        return
+    lists = [group["peaks"]] + [alternate["peaks"] for alternate
+                                in group.get("alternates") or []]
+    for peaks in lists:
+        for peak in peaks:
+            if peak.get("height_unit") is None:
+                peak["height_unit"] = unit
+            if peak.get("area_unit") is None:
+                peak["area_unit"] = unit + ".s"
+
+
+def _own_peaks(injection_name, injection_path):
     """Peaks from an injection's own result document (sequence.acam_)."""
     from rainbow.agilent import sequence
     document = sequence.find_result_document(injection_path)
@@ -227,7 +320,7 @@ def _injection_peaks(injection, injection_path):
     if not by_injection:
         return None
     folded = {name.lower(): groups for name, groups in by_injection.items()}
-    groups = folded.get(injection.name.lower())
+    groups = folded.get(injection_name.lower())
     if groups is None and len(by_injection) == 1:
         # A per-injection document holds exactly this injection's peaks.
         groups = next(iter(by_injection.values()))

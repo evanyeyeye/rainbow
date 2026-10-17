@@ -74,7 +74,8 @@
                 "unit": "mAU",
                 "signal": "DAD1B, Sig=280.0,4.0  Ref=off",
                 "wavelength": 280.0,
-                "bandwidth": 4.0
+                "bandwidth": 4.0,
+                "reference_wavelength": null
             }
         },
         "DAD1C.ch": {
@@ -91,7 +92,8 @@
                 "unit": "mAU",
                 "signal": "DAD1C, Sig=220.0,4.0  Ref=off",
                 "wavelength": 220.0,
-                "bandwidth": 4.0
+                "bandwidth": 4.0,
+                "reference_wavelength": null
             }
         },
         "ADC1A.CH": {
