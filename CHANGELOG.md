@@ -75,11 +75,23 @@ to [Semantic Versioning](https://semver.org/).
 - **The processing time and description are where REC/2026/06 puts them.**
   `data processing time` is written in the data processing document, stamped
   with `utc_offset=` (as custom information when it has no offset), and the
-  2025/03 `processed data description` as the processed data document's
-  custom information; both are read from either place. A sample role outside
-  the schema's list is written as custom information.
-- **Every peak has the same keys.** A peak read from a vendor result document
-  carries `identifier`, `index`, `area_unit` and `height_unit` too, as None.
+  description under `description`, the name REC/2026/06 gave the 2025/03
+  `processed data description`; both are read from any of those places. A
+  sample role outside the schema's list is written as custom information.
+- **Every peak and peak group has the same keys, whatever it was read from.**
+  A peak read from a vendor result document carries `identifier`, `index`,
+  `area_unit`, `height_unit`, `start_height`, `end_height` and the four
+  baseline keys too, as None, and its group `detector`, `metadata` and
+  `processing` as None and `alternates` as an empty list.
+- **A re-exported data system record names rainbow as its converter.**
+  `ASM converter name` and `version` are rainbow-api's, `ASM conversion time`
+  is the export's, and `ASM file identifier` is the file written; the source
+  converter's are kept as the record's custom information, prefixed
+  `source`. The record's times take `utc_offset=`.
+- **The detector is not read from a measurement identifier.** It is a key
+  (often a GUID), and a segment such as `adc4` typed a channel CAD.
+- **A Waters fluorescence channel is FLD.** One fluorescence parser serves
+  the Agilent readers, the Waters reader and `from_asm`.
 - **`to_asm` dropped peak groups no exported channel carries** (peaks read from
   an index document, or on an analog channel) without a word. It warns once
   per group.

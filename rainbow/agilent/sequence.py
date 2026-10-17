@@ -48,8 +48,17 @@ _PEAK_MEASURES = {
 
 
 # Keys every peak rainbow returns has, which a result document's peak table
-# does not state; see rainbow.asm._peak_from_asm.
-_UNSTATED = ("identifier", "index", "area_unit", "height_unit")
+# does not state; see rainbow.asm._peak_from_asm. Present as None, so a peak
+# read here and one read from ASM have the same keys.
+_UNSTATED = ("identifier", "index", "area_unit", "height_unit",
+             "start_height", "end_height",
+             "baseline_start_code", "baseline_end_code",
+             "baseline_start_time", "baseline_end_time")
+
+# The same for a signal group: what rainbow.asm.peaks_from_asm says of the
+# channel and the integration, which this reader does not read. A document
+# here holds one integration per signal, so there are no alternates.
+_GROUP_UNSTATED = {"detector": None, "metadata": None, "processing": None}
 
 
 def _local(tag):
@@ -266,6 +275,8 @@ def parse_peaks(path):
             "description": signal.get("description"),
             "channel_file": signal.get("channel_file"),
             "peaks": peaks,
+            **_GROUP_UNSTATED,
+            "alternates": [],
         })
     return by_injection
 

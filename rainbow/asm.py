@@ -66,6 +66,8 @@ import warnings
 
 import numpy as np
 
+from rainbow._optics import excitation_emission
+
 # Each ASM document declares the manifest for its technique and schema revision.
 # rainbow targets REC/2026/06: unlike 2023/09, its gas-chromatography ADM carries
 # cubes for FID, MS, and UV together, so a gas-chromatography run exports
@@ -345,7 +347,8 @@ def to_asm(datadir, *, export_dad_cube=True, wavelengths=None, ions=None,
         technique,
         _device_system(metadata, technique),
         [_injection_document(datadir, metadata, options, technique)],
-        _record_documents(metadata, options))
+        _record_documents(metadata, options,
+                          _injection_filename(datadir.name)))
 
 
 def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
@@ -397,7 +400,8 @@ def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
         _device_system(metadata, technique),
         [_injection_document(injection, injection.metadata, options, technique)
          for injection in datasequence.injections],
-        _record_documents(metadata, options))
+        _record_documents(metadata, options,
+                          _injection_filename(datasequence.name)))
 
 
 def _sequence_metadata(datasequence):
@@ -462,20 +466,62 @@ _RECORD_FIELDS = (
 )
 
 
-def _record_documents(metadata, options):
+# The data system fields that say who made the ASM document, as opposed to
+# where its data came from. A re-export is a new document made by rainbow, so
+# these are rainbow's own on the way out; the source's are kept beside them
+# as custom information under the same labels prefixed "source".
+_CONVERTER_FIELDS = ("ASM converter name", "ASM converter version",
+                     "ASM conversion time", "ASM file identifier")
+
+# The record fields typed as date-times, stamped like every other timestamp.
+_RECORD_TIMES = ("start time", "end time", "ASM conversion time")
+
+
+def _rainbow_version():
+    """The installed rainbow-api version, or "unknown"."""
+    from importlib import metadata
+    try:
+        return metadata.version("rainbow-api")
+    except metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def _record_documents(metadata, options, file_identifier=None):
     """The once-per-file records ``metadata`` holds, as aggregate entries.
 
     The inverse of :func:`_absorb_records`. A field the schema defines for the
-    record is written as read; any other goes under the record's custom
-    information (the project record has none, so there it is dropped, said).
-    A record missing a field the schema requires cannot validate, and is left
-    out, said, rather than written incomplete.
+    record is written as read, its times stamped with ``utc_offset`` like any
+    other; any other field goes under the record's custom information (the
+    project record has none, so there it is dropped, said). A record missing
+    a field the schema requires cannot validate, and is left out, said,
+    rather than written incomplete.
+
+    The data system document is rewritten as this document's: rainbow-api is
+    its converter, now its conversion time and ``file_identifier`` its file,
+    while the fields naming where the data came from (software, instance,
+    database key, UNC path, file name) are kept, and the source converter's
+    own go under its custom information.
     """
+    from datetime import datetime, timezone
+
     documents = {}
     for key, name, fields, required in _RECORD_FIELDS:
         record = metadata.get(key)
         if not isinstance(record, dict) or not record:
             continue
+        record = dict(record)
+        others = {}
+        if name == "data system document":
+            for field in _CONVERTER_FIELDS:
+                if field in record:
+                    others["source " + field] = record.pop(field)
+            record.update({
+                "ASM converter name": "rainbow-api",
+                "ASM converter version": _rainbow_version(),
+                "ASM conversion time": datetime.now(timezone.utc).isoformat(
+                    timespec="seconds"),
+                "ASM file identifier": file_identifier or "unknown",
+            })
         missing = [field for field in required if field not in record]
         if name == "data system document":
             # And exactly one way of naming the source: a file (both its UNC
@@ -493,10 +539,16 @@ def _record_documents(metadata, options):
                 "the record is not written.".format(
                     key, ", ".join(missing), name))
             continue
-        document = {field: value for field, value in record.items()
-                    if field in fields}
-        others = {field: value for field, value in record.items()
-                  if field not in fields}
+        document = {}
+        for field, value in record.items():
+            if field not in fields:
+                others[field] = value
+            elif field in _RECORD_TIMES:
+                stamped = options.timestamp(value)
+                if stamped is not None:
+                    document[field] = stamped
+            else:
+                document[field] = value
         if others and name == "electronic project record":
             _warn_once_per_run(
                 options, "record-dropped:{}".format(name),
@@ -626,7 +678,8 @@ def export_asm(datadir, fileobj, *, export_dad_cube=True, wavelengths=None,
     metadata = datadir.metadata
     technique = _technique(datadir.datafiles, metadata, technique)
     _stream_aggregate(fileobj, technique, _device_system(metadata, technique),
-                       [(datadir, metadata)], options, indent, metadata)
+                       [(datadir, metadata)], options, indent, metadata,
+                       _file_identifier(fileobj, datadir.name))
 
 
 def sequence_export_asm(datasequence, fileobj, *, export_dad_cube=True,
@@ -647,7 +700,8 @@ def sequence_export_asm(datasequence, fileobj, *, export_dad_cube=True,
     specs = [(injection, injection.metadata)
              for injection in datasequence.injections]
     _stream_aggregate(fileobj, technique, _device_system(metadata, technique),
-                       specs, options, indent, metadata)
+                       specs, options, indent, metadata,
+                       _file_identifier(fileobj, datasequence.name))
 
 
 def sequence_export_asm_per_injection(datasequence, directory, *,
@@ -681,7 +735,7 @@ def sequence_export_asm_per_injection(datasequence, directory, *,
         with open(path, "w", encoding="utf-8") as fileobj:
             _stream_aggregate(fileobj, technique, device_system,
                               [(injection, injection.metadata)], options,
-                              indent, metadata)
+                              indent, metadata, filename)
         paths.append(path)
     return paths
 
@@ -713,8 +767,16 @@ def _unique_filename(filename, taken):
     return "{}_{}.asm.json".format(stem, index)
 
 
+def _file_identifier(fileobj, name):
+    """The name of the file being written, else one made from ``name``."""
+    path = getattr(fileobj, "name", None)
+    if isinstance(path, str) and path:
+        return os.path.basename(path)
+    return _injection_filename(name)
+
+
 def _stream_aggregate(fileobj, technique, device_system, specs, options,
-                      indent, metadata=None):
+                      indent, metadata=None, file_identifier=None):
     """Writes the aggregate document, materializing one injection at a time.
 
     The envelope (manifest + device system) is rendered once with a placeholder
@@ -737,7 +799,7 @@ def _stream_aggregate(fileobj, technique, device_system, specs, options,
     ensure_ascii = not _handles_unicode(fileobj)
     envelope = _aggregate_document(
         technique, device_system, _DOCUMENTS_PLACEHOLDER,
-        _record_documents(metadata or {}, options))
+        _record_documents(metadata or {}, options, file_identifier))
     rendered = json.dumps(envelope, indent=indent, ensure_ascii=ensure_ascii,
                           allow_nan=False)
     # The placeholder is the injection-array slot, emitted after the device
@@ -2234,8 +2296,9 @@ _PROCESSING_METHOD_FIELDS = (
     ("type", "data processing type"),
     ("time", "data processing time"),
 )
-# The processed data description is a 2025/03 property REC/2026/06 dropped,
-# so it is written as the document's custom information, under its own name.
+# REC/2026/06 renamed the 2025/03 "processed data description" to
+# "description" (AFR_0000922). It is written under the new name and read
+# from the new one, the old one, or custom information.
 _PROCESSING_DESCRIPTION = "processed data description"
 
 
@@ -2270,7 +2333,7 @@ def _asm_processed_data(index, processing, peaks, options, unit="mAU",
         document["data processing document"] = method
     description = (processing or {}).get("description")
     if isinstance(description, str) and description:
-        custom.append((_PROCESSING_DESCRIPTION, description))
+        document["description"] = description
     if custom:
         document["custom information aggregate document"] = {
             "custom information document": [
@@ -3411,15 +3474,16 @@ def _detector_of(measurement):
     The device type says which detector made the measurement, and is read
     first: rainbow's own export relabels a channel's measure where the schema
     gives its peak list no other home, and a foreign one may do the same, but
-    neither changes the device type. The cube label and the measurement's
-    identifier name the module next (Waters' "ACQUITY FLR ChA", Chemstation's
-    "ADC1A"), and the measure concept last.
+    neither changes the device type. The cube label names the module next
+    (Waters' "ACQUITY FLR ChA", Chemstation's "ADC1A"), and the measure
+    concept last. The measurement identifier is not read: it is a key, often
+    a GUID or a database number, and a segment of one such as "adc4" is not a
+    claim about the detector.
     """
     control = _device_control(measurement)
     texts = [
         _text(control.get("device type")),
         _text(_first(measurement.get(_CHROMATOGRAM_CUBE)).get("label")),
-        _text(measurement.get("measurement identifier")),
     ]
     for text in texts:
         if not text:
@@ -3579,7 +3643,8 @@ def _processing_document(processed_data):
     custom = {}
     if "custom information aggregate document" in processed_data:
         custom = _custom_fields(processed_data, set())
-    description = _text(processed_data.get(_PROCESSING_DESCRIPTION)) \
+    description = _text(processed_data.get("description")) \
+        or _text(processed_data.get(_PROCESSING_DESCRIPTION)) \
         or _text(custom.get(_PROCESSING_DESCRIPTION))
     return {
         "identifier": _text(processed_data.get("processed data identifier")),
@@ -3727,10 +3792,6 @@ def _peaks_from_measurement(measurement, said=None):
 # label's leftmost bandwidth could be the reference's. A fluorescence label's
 # two wavelengths are its excitation and emission, never an absorbance one.
 _NUMBER = r"(\d+(?:\.\d+)?)"
-_LABEL_EXCITATION_EMISSION_RE = re.compile(
-    r"\bEx\s*[:=]?\s*" + _NUMBER + r"\s*(?:nm)?\s*[,/ ]\s*Em\s*[:=]?\s*"
-    + _NUMBER,
-    re.IGNORECASE)
 _LABEL_REFERENCE_RE = re.compile(
     r"\bRef\s*[=:]?\s*(?:(off)\b|" + _NUMBER
     + r"\s*(?:nm)?(?:\s*(?:,|/\s*Bw\s*:?)\s*" + _NUMBER + r")?)",
@@ -3752,10 +3813,9 @@ def _optics_from_label(label):
     optics = {}
     if not label:
         return optics
-    pair = _LABEL_EXCITATION_EMISSION_RE.search(label)
+    pair = excitation_emission(label)
     if pair:
-        optics["excitation_wavelength"] = float(pair.group(1))
-        optics["emission_wavelength"] = float(pair.group(2))
+        optics["excitation_wavelength"], optics["emission_wavelength"] = pair
         return optics
     reference = _LABEL_REFERENCE_RE.search(label)
     signal = label[:reference.start()] if reference else label

@@ -362,9 +362,14 @@ volume does not have; there it is the measurement's custom information, under
 each field the schema defines for it as read and any other as the record's
 custom information; the project record has no custom information, so a field
 the schema does not define for it is dropped, and said. A record missing a
-field the schema requires (a data system document needs its file identifier,
-its instance identifier, and either a UNC path and file name or a database
-primary key) is not written, and said. An integration's ``data processing
+field the schema requires (a data system document needs its instance
+identifier, and either a UNC path and file name or a database primary key) is
+not written, and said. A data system document is written as
+the new document's: ``rainbow-api`` is its converter, with its version, the
+export's time its conversion time and the file written its file identifier,
+while the fields naming where the data came from are kept and the source
+converter's go under its custom information, prefixed ``source``. The
+records' times are stamped with ``utc_offset=``. An integration's ``data processing
 time`` is written in its data processing document, stamped with
 ``utc_offset=`` like every other timestamp; one that still has no offset is
 written as the processed data document's custom information instead, since

@@ -2157,9 +2157,12 @@ def test_peaks_are_read_on_a_channel_rainbow_has_no_detector_for():
     ({"chromatogram data cube": _cube("electric current", "pA",
                                       "GC.0.0, Front Signal"),
       **_control(**{"device type": "Flame Ionization Detector"})}, "FID"),
+    ({"chromatogram data cube": _cube("electric current", "pA", "ADC1A.CH"),
+      **_control(**{"device type": "liquid chromatography detector"})},
+     "CAD"),
+    # The identifier is a key, not a claim: a GUID segment is not a detector.
     ({"chromatogram data cube": _cube("electric current", "pA"),
-      **_control(**{"device type": "liquid chromatography detector"}),
-      "measurement identifier": "ADC1A.CH"}, "CAD"),
+      "measurement identifier": "9e1f-adc4-77b2"}, None),
     ({"chromatogram data cube": _cube("intensity", "RLU"),
       **_control(**{"device type": "evaporative light scattering detector"})},
      "ELSD"),
@@ -2364,12 +2367,9 @@ def test_a_fluorescence_channel_round_trips_with_its_peaks():
     assert control["detector wavelength setting"]["value"] == 340.0
     document_peaks = (measurement["processed data aggregate document"]
                       ["processed data document"][0])
-    # Not a REC/2026/06 property: written as custom information.
+    # REC/2026/06's name for what 2025/03 called processed data description.
     assert "processed data description" not in document_peaks
-    assert (document_peaks["custom information aggregate document"]
-            ["custom information document"][0]) == {
-        "@index": 1, "datum label": "processed data description",
-        "scalar string datum": "FLR ChA Ex280,Em340 nm"}
+    assert document_peaks["description"] == "FLR ChA Ex280,Em340 nm"
     peak = document_peaks["peak list"]["peak"][0]
     assert peak["peak area"] == {"value": 50.0, "unit": "RFU.s"}
     assert peak["peak height"] == {"value": 3.0, "unit": "RFU"}
@@ -2650,11 +2650,17 @@ _PEAK_KEYS = {"identifier", "index", "area_unit", "height_unit"}
 
 def test_an_asm_peak_and_a_vendor_peak_have_the_same_keys():
     vendor = rb.read(os.path.join(INPUTS, "red.D"), peaks=True)
-    vendor_peak = vendor.peaks[0]["peaks"][0]
-    assert _PEAK_KEYS <= set(vendor_peak)
+    vendor_group = vendor.peaks[0]
+    vendor_peak = vendor_group["peaks"][0]
     assert all(vendor_peak[key] is None for key in _PEAK_KEYS)
-    asm_peak = rb.from_asm(vendor.to_asm()).peaks[0]["peaks"][0]
-    assert _PEAK_KEYS <= set(asm_peak)
+    asm_group = rb.from_asm(vendor.to_asm()).peaks[0]
+    assert set(asm_group["peaks"][0]) == set(vendor_peak)
+    assert set(asm_group) == set(vendor_group)
+    assert vendor_group["alternates"] == []
+    # And one read from an Empower export, with every key it can carry.
+    empower = rb.from_asm(_lc(_fluorescence())).peaks[0]
+    assert set(empower["peaks"][0]) == set(vendor_peak)
+    assert set(empower) == set(vendor_group)
 
 
 def test_a_sample_role_outside_the_schema_is_custom_information():
@@ -2698,8 +2704,11 @@ def test_the_injection_time_and_records_are_written_back():
     data_system = aggregate["data system document"]
     assert data_system["software name"] == "Empower 3 Software"
     assert "Odd Field" not in data_system
-    assert (data_system["custom information aggregate document"]
-            ["custom information document"][0]["datum label"]) == "Odd Field"
+    labels = [entry["datum label"] for entry
+              in data_system["custom information aggregate document"]
+              ["custom information document"]]
+    assert "Odd Field" in labels and "source ASM file identifier" in labels
+    assert data_system["ASM converter name"] == "rainbow-api"
     assert aggregate["analysis sequence document"] == {"written name": "SET_1"}
     assert aggregate["electronic project record"] == {"written name": "P"}
     assert rb.from_asm(again).metadata["data_system"]["software name"] \
@@ -2749,3 +2758,98 @@ def test_an_injection_time_with_a_volume_goes_in_the_injection_document():
                 {"value": 5.0, "unit": "mm^3"}}})))
     injection = next(_asm_measurements(datadir.to_asm()))["injection document"]
     assert injection["injection time"] == "2026-04-10T18:46:25-04:00"
+
+
+# --- Review round 5 ---
+
+
+def _records_document():
+    document = _lc(_fluorescence())
+    document["liquid chromatography aggregate document"].update({
+        "data system document": {
+            "ASM converter name": "Agilent OpenLab ECM Allotrope Export",
+            "ASM converter version": "1.2.1.203",
+            "ASM conversion time": "2026-04-11T17:55:39-04:00",
+            "ASM file identifier": "SOURCE.JSON",
+            "data system instance identifier": "DB ID: 508927282",
+            "database primary key": "128283",
+            "software name": "Empower 3 Software",
+            "software version": "Build 3471"},
+        "analysis sequence document": {
+            "written name": "SET_1", "start time": "2026-04-10T18:11:45"}})
+    return document
+
+
+def test_a_re_exported_data_system_names_rainbow_and_keeps_its_source():
+    from datetime import datetime
+    datadir = rb.from_asm(_records_document(), name="NB5-P2A1")
+    data_system = datadir.to_asm(utc_offset="+00:00")[
+        "liquid chromatography aggregate document"]["data system document"]
+    assert data_system["ASM converter name"] == "rainbow-api"
+    assert data_system["ASM converter version"] == asm._rainbow_version()
+    assert data_system["ASM file identifier"] == "NB5-P2A1.asm.json"
+    assert datetime.fromisoformat(
+        data_system["ASM conversion time"]).tzinfo is not None
+    # Where the data came from is kept.
+    assert data_system["software name"] == "Empower 3 Software"
+    assert data_system["data system instance identifier"] \
+        == "DB ID: 508927282"
+    assert data_system["database primary key"] == "128283"
+    source = {entry["datum label"]: entry["scalar string datum"]
+              for entry in data_system["custom information aggregate document"]
+              ["custom information document"]}
+    assert source["source ASM converter name"] \
+        == "Agilent OpenLab ECM Allotrope Export"
+    assert source["source ASM file identifier"] == "SOURCE.JSON"
+
+
+def test_each_per_injection_file_is_its_own_file_identifier(tmp_path):
+    sequence = rb.sequence_from_asm(_records_document())
+    paths = asm.sequence_export_asm_per_injection(
+        sequence, str(tmp_path), utc_offset="+00:00")
+    for path in paths:
+        with open(path) as f:
+            data_system = json.load(f)[
+                "liquid chromatography aggregate document"][
+                    "data system document"]
+        assert data_system["ASM file identifier"] == os.path.basename(path)
+
+
+def test_a_records_times_take_the_callers_offset():
+    datadir = rb.from_asm(_records_document())
+    sequence = datadir.to_asm(utc_offset="+00:00")[
+        "liquid chromatography aggregate document"][
+            "analysis sequence document"]
+    assert sequence["start time"] == "2026-04-10T18:11:45+00:00"
+
+
+def test_the_description_is_read_from_every_place_it_has_been_written():
+    for document in ({"description": "A"},
+                     {"processed data description": "A"},
+                     {"custom information aggregate document": {
+                         "custom information document": [{
+                             "datum label": "processed data description",
+                             "scalar string datum": "A"}]}}):
+        assert asm._processing_document(document)["description"] == "A"
+
+
+def test_a_waters_fluorescence_channel_is_fld(tmp_path):
+    from rainbow.waters import masslynx
+    path = tmp_path / "_CHRO001.DAT"
+    path.write_bytes(b"\x00" * 0x80 + b"\x00" * 8 * 4)
+    datafile = masslynx.parse_chrodat(
+        str(path), "ACQUITY FLR ChA Ex280,Em340 nm", "EU")
+    assert datafile.detector == "FLD"
+    assert datafile.ylabels.tolist() == [340.0]
+    assert datafile.metadata["excitation_wavelength"] == 280.0
+    assert datafile.metadata["emission_wavelength"] == 340.0
+
+
+def test_one_parser_reads_every_fluorescence_spelling():
+    from rainbow import _optics
+    from rainbow.agilent import chemstation
+    for text in ("FLD1 A, Ex=230, Em=310", "ACQUITY FLR ChA Ex230,Em310 nm",
+                 "Ex: 230 nm / Em: 310"):
+        assert _optics.excitation_emission(text) == (230.0, 310.0)
+        assert chemstation.parse_optics(text)["emission_wavelength"] == 310.0
+        assert asm._optics_from_label(text)["excitation_wavelength"] == 230.0
