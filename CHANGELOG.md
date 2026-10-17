@@ -3,7 +3,7 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.4] - 2026-10-17
 
 ### Added
 - **`rb.from_asm` peaks carry the baseline they were integrated from.** A
@@ -22,8 +22,9 @@ to [Semantic Versioning](https://semver.org/).
 
   A height in AU or in Empower's µV is converted to mAU (one with no unit is
   taken to be in mAU), and a baseline time in `s` or `min` to minutes; any
-  other unit reads as `None`, as do an absent field and a unitless time. The heights are written back on export as `peak value
-  at start` and `peak value at end`. The schema defines neither the codes nor
+  other unit reads as `None`, as do an absent field and a unitless time. The
+  heights are written back on export as `peak value at start` and `peak value
+  at end`. The schema defines neither the codes nor
   the baseline times, so they are written as the peak's custom information,
   under the labels Empower uses, and read from either place: an export keeps
   them and still validates.
