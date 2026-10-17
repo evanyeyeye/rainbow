@@ -1982,6 +1982,8 @@ def _asm_peak(index, peak, options=None):
         ("height_percent", "relative peak height", "%", 1.0),
         ("symmetry", "asymmetry factor measured at 5 % height",
          "(unitless)", 1.0),
+        ("start_height", "peak value at start", "mAU", 1.0),
+        ("end_height", "peak value at end", "mAU", 1.0),
     )
     for source, target, unit, scale in mapping:
         value = peak.get(source)
@@ -1989,7 +1991,43 @@ def _asm_peak(index, peak, options=None):
         # rather than fail the whole export.
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             entry[target] = _quantity(value * scale, unit, options)
+    custom = _peak_baseline_custom(peak, options)
+    if custom:
+        entry["custom information aggregate document"] = {
+            "custom information document": custom}
     return entry
+
+
+# A peak's baseline fields the schema has no place for, as ``(key, label)``.
+# Empower writes them on the peak itself under these labels; rainbow writes
+# them as custom information under the same labels, so a document it exports
+# validates, and reads them from either place.
+_PEAK_BASELINE_CODES = (
+    ("baseline_start_code", "peak baseline start code"),
+    ("baseline_end_code", "peak baseline end code"),
+)
+_PEAK_BASELINE_TIMES = (
+    ("baseline_start_time", "baseline value at start of peak"),
+    ("baseline_end_time", "baseline value at end of peak"),
+)
+
+
+def _peak_baseline_custom(peak, options):
+    """A peak's baseline codes and times as custom information documents."""
+    entries = []
+    for key, label in _PEAK_BASELINE_CODES:
+        code = peak.get(key)
+        if isinstance(code, str) and code.strip():
+            entries.append({"datum label": label,
+                            "scalar string datum": code.strip()})
+    for key, label in _PEAK_BASELINE_TIMES:
+        time = peak.get(key)
+        if isinstance(time, (int, float)) and not isinstance(time, bool):
+            seconds = _quantity(time * _SECONDS_PER_MINUTE, "s", options)
+            entries.append({"datum label": label,
+                            "scalar double datum": seconds["value"],
+                            "unit": "s"})
+    return [dict({"@index": i + 1}, **e) for i, e in enumerate(entries)]
 
 
 def _peak_groups_by_channel(peaks):
@@ -2184,8 +2222,10 @@ def from_asm(document, name="asm"):
     # view. Choosing per injection and keeping the first answer lost the
     # identifier whenever an earlier injection supplied only a name.
     _absorb_samples(_measurements_of(documents), metadata)
+    said = set()
     for lc_document in documents:
-        _absorb_lc_document(lc_document, metadata, datafiles, peak_groups)
+        _absorb_lc_document(lc_document, metadata, datafiles, peak_groups,
+                            said)
     return _directory(name, datafiles, metadata, peak_groups)
 
 
@@ -2344,13 +2384,14 @@ def sequence_from_asm(document, name="asm"):
 
     injections = []
     taken = set()
+    said = set()
     for index, lc_document in enumerate(documents):
         injection_metadata = {}
         datafiles = []
         peak_groups = []
         _absorb_samples(_measurements_of([lc_document]), injection_metadata)
         _absorb_lc_document(
-            lc_document, injection_metadata, datafiles, peak_groups)
+            lc_document, injection_metadata, datafiles, peak_groups, said)
         # The injection identifier is the name the injection was exported
         # under, so it restores the caller's own name. The sample identifier is
         # the fallback because a sequence's replicates share one, which used to
@@ -2412,8 +2453,13 @@ def _measurements_of(lc_documents):
     return measurements
 
 
-def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
-    """Reads one liquid chromatography document into datafiles and metadata."""
+def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups,
+                        said=None):
+    """Reads one liquid chromatography document into datafiles and metadata.
+
+    ``said`` collects the read's warnings about peaks' custom information, so
+    one complaint repeated across peaks and documents is made once.
+    """
     if not isinstance(lc_document, dict):
         return
     analyst = _text(lc_document.get("analyst"))
@@ -2439,7 +2485,7 @@ def _absorb_lc_document(lc_document, metadata, datafiles, peak_groups):
         if datafile is None:
             continue  # a measurement rainbow did not write (no UV cube)
         datafiles.append(datafile)
-        group = _peaks_from_measurement(measurement)
+        group = _peaks_from_measurement(measurement, said)
         if group:
             peak_groups.append(group)
 
@@ -2864,7 +2910,7 @@ def _processing_document(processed_data):
     }
 
 
-def _peak_lists(measurement):
+def _peak_lists(measurement, said=None):
     """Every non-empty ``(processing, peaks)`` a measurement carries, in order.
 
     A measurement may hold more than one processed data document: an Empower or
@@ -2884,13 +2930,13 @@ def _peak_lists(measurement):
                      if isinstance(peak, dict)]
         if asm_peaks:
             lists.append((_processing_document(document),
-                          [_peak_from_asm(peak) for peak in asm_peaks]))
+                          [_peak_from_asm(peak, said) for peak in asm_peaks]))
     return lists
 
 
-def _peaks_from_measurement(measurement):
+def _peaks_from_measurement(measurement, said=None):
     """Reconstructs a peak group from a measurement's processed data, or None."""
-    lists = _peak_lists(measurement)
+    lists = _peak_lists(measurement, said)
     if not lists:
         return None
     processing, peaks = lists[0]
@@ -2946,7 +2992,7 @@ def _wavelength_from_label(label):
     return float(match.group(1)) if match else None
 
 
-def _peak_from_asm(peak):
+def _peak_from_asm(peak, said=None):
     """Reconstructs a peak's measures, times back from seconds to minutes."""
     def value(key):
         # A foreign writer may spell a measure as text, or as something else
@@ -2967,12 +3013,94 @@ def _peak_from_asm(peak):
         "retention_time": minutes("retention time"),
         "start_time": minutes("peak start"),
         "end_time": minutes("peak end"),
-        "area": value("peak area"),
+        "area": _peak_measure_in_mau(peak.get("peak area"), ".s"),
         "area_percent": value("relative peak area"),
-        "height": value("peak height"),
+        "height": _peak_measure_in_mau(peak.get("peak height")),
         "height_percent": value("relative peak height"),
         "symmetry": value("asymmetry factor measured at 5 % height"),
+        # How the integration drew the baseline under this peak. A height is
+        # how far the trace sits above the baseline at that edge, in mAU, so
+        # the line runs from (start, trace - start height) to (end, trace - end
+        # height).
+        "start_height": _peak_measure_in_mau(
+            peak.get("peak value at start")),
+        "end_height": _peak_measure_in_mau(peak.get("peak value at end")),
+        **_peak_baseline_fields(peak, said),
     }
+
+
+# The units a peak's height, edge heights and area are read in, as mAU per
+# unit (an area's unit is one of these times seconds). Empower's own unit for a
+# UV height is the microvolt, one of which is one microabsorbance unit. Kept
+# apart from _ABSORBANCE_TO_MAU so that a cube labelled in microvolts exports
+# as it did before. The micro sign and the Greek mu are both in use.
+_PEAK_VALUE_TO_MAU = dict(_ABSORBANCE_TO_MAU, **{"\u00b5v": 0.001,
+                                                 "\u03bcv": 0.001})
+
+
+def _peak_measure_in_mau(quantity, per=""):
+    """
+    A peak's height (or, with ``per=".s"``, its area) in mAU, or None.
+
+    The export labels these mAU and mAU.s, so a value read in AU or microvolts
+    has to be converted to match, or it is written a thousand times off under
+    a unit it is not in. A unit rainbow does not know reads as None rather than
+    as a number in the wrong unit. A value with no unit at all is taken to be
+    in the schema's own mAU, as rainbow has always read it.
+
+    """
+    number = _number(quantity)
+    unit = quantity.get("unit") if isinstance(quantity, dict) else None
+    if number is None or unit is None:
+        return number
+    key = _absorbance_unit_key(unit) if isinstance(unit, str) else ""
+    scale = _PEAK_VALUE_TO_MAU.get(key[:len(key) - len(per)]) \
+        if key.endswith(per) else None
+    if scale is None:
+        return None
+    # Unscaled when already mAU, so an integer stays the integer it was.
+    return number if scale == 1.0 else number * scale
+
+
+# The units a baseline time is read in, as units per minute. Any other unit,
+# or none, gives None: the field's name reads as a signal value, and the unit
+# is the only thing that says a writer filled it with a time.
+_TIME_UNITS_PER_MINUTE = {"s": _SECONDS_PER_MINUTE, "min": 1.0}
+
+
+def _peak_baseline_fields(peak, said=None):
+    """
+    A peak's baseline codes and times, read from the peak or its custom
+    information.
+
+    A code is the integration type at each edge (B, V, S, T, ..., lowercase
+    where the edge was moved by hand; Empower splits a group's "Gp" into "G"
+    and "p"). A time is where the baseline under the peak's cluster begins or
+    ends, in minutes like the peak's other times. Empower writes both on the
+    peak, where the schema does not define them; rainbow writes them as custom
+    information, where it does.
+
+    """
+    custom = {}
+    if "custom information aggregate document" in peak:
+        custom = _custom_fields(peak, set() if said is None else said)
+
+    def field(label):
+        value = peak.get(label)
+        return value if value is not None else custom.get(label)
+
+    fields = {}
+    for key, label in _PEAK_BASELINE_CODES:
+        fields[key] = (_text(field(label)) or "").strip() or None
+    for key, label in _PEAK_BASELINE_TIMES:
+        quantity = field(label)
+        number = _number(quantity)
+        unit = quantity.get("unit") if isinstance(quantity, dict) else None
+        per_minute = _TIME_UNITS_PER_MINUTE.get(unit) \
+            if isinstance(unit, str) else None
+        fields[key] = number / per_minute \
+            if number is not None and per_minute else None
+    return fields
 
 
 def _instrument_from_device_system(device_system):

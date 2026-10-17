@@ -3,6 +3,41 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [1.5.4] - 2026-10-17
+
+### Added
+- **`rb.from_asm` peaks carry the baseline they were integrated from.** A
+  peak's area depends on the line it was measured above, and rainbow read the
+  area and dropped the line. An Empower export records it for every peak, and
+  each peak `from_asm` returns now has six more keys:
+  `baseline_start_code` and `baseline_end_code`, the integration type at each
+  edge (`B`, `V`, `S`, `T`, ..., lowercase for an edge moved by hand, a
+  group's `Gp` split into `G` and `p`); `start_height` and `end_height`, how
+  far the trace sits above the baseline at each edge, in mAU; and
+  `baseline_start_time` and `baseline_end_time`, where the baseline under the
+  peak's cluster begins and ends, in minutes. The line from
+  `(start_time, trace - start_height)` to `(end_time, trace - end_height)`
+  reproduces the reported area: within 1% for 99.6% of 11,040 peaks across
+  four Empower studies, the misses being edges moved by hand.
+
+  A height in AU or in Empower's µV is converted to mAU (one with no unit is
+  taken to be in mAU), and a baseline time in `s` or `min` to minutes; any
+  other unit reads as `None`, as do an absent field and a unitless time. The
+  heights are written back on export as `peak value at start` and `peak value
+  at end`. The schema defines neither the codes nor
+  the baseline times, so they are written as the peak's custom information,
+  under the labels Empower uses, and read from either place: an export keeps
+  them and still validates.
+
+### Changed
+- **`rb.from_asm` reads a peak's `height` and `area` in mAU and mAU·s, by
+  their unit.** They were taken as numbers whatever unit the document named,
+  and exported as mAU and mAU·s, so a peak list in AU or in Empower's µV was
+  written a thousand times off under a unit it was not in. They are now
+  converted from AU or µV (and AU·s or µV·s), as the edge heights are. A unit
+  rainbow does not know now reads as `None` where it used to pass through
+  unconverted; a value with no unit is still taken to be in mAU.
+
 ## [1.5.3] - 2026-10-01
 
 ### Fixed

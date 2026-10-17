@@ -26,7 +26,7 @@ peak list becomes the channel's peaks. A measurement from some other tool that
 rainbow's exporter would not have written is skipped rather than guessed at.
 
 Documents from other tools are read a little more generously than rainbow's own
-need. Two habits of an Agilent OpenLab or Empower export are worth knowing
+need. Three habits of an Agilent OpenLab or Empower export are worth knowing
 about:
 
 * **A channel can carry more than one integration.** Those exporters write one
@@ -44,6 +44,22 @@ about:
   to the wavelength named in the cube label (:code:`"DAD.0.0, DAD: Signal A,
   246.0 nm/Bw:4.0 nm"`). The label is kept whole as the channel's and the peak
   group's :code:`description`.
+* **A peak records the baseline it was integrated from.** Empower writes the
+  integration type at each edge, read into :code:`baseline_start_code` and
+  :code:`baseline_end_code` (:code:`B`, :code:`V`, :code:`S`, :code:`T`, ...,
+  lowercase for an edge moved by hand, and a group's :code:`Gp` split into
+  :code:`G` and :code:`p`). Its Start and End Height, how far the trace sits
+  above the baseline at each edge, are read into :code:`start_height` and
+  :code:`end_height` in mAU (from mAU, AU or µV; any other unit reads as
+  :code:`None`), so the line runs from :code:`(start_time, trace -
+  start_height)` to :code:`(end_time, trace - end_height)`. Empower fills
+  :code:`baseline value at start of peak` (and :code:`end`) with the time the
+  baseline under the peak's cluster begins (and ends), read into
+  :code:`baseline_start_time` and :code:`baseline_end_time` in minutes when
+  the unit is ``s`` or ``min``. The schema defines neither the codes nor these
+  times, so rainbow writes them as the peak's custom information, under the
+  same labels, and reads them from either place. All are :code:`None` when the
+  document does not carry them.
 
 Import is narrower than export: only the absorbance (UV) cubes are reconstructed,
 both the single-wavelength chromatogram and the DAD spectrum, as a ``DataFile``

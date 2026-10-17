@@ -146,7 +146,10 @@ def _rich_lc_document():
         "description": None, "channel_file": channel,
         "peaks": [{"retention_time": 1.5, "area": 100.0, "height": 10.0,
                    "area_percent": 60.0, "height_percent": 55.0,
-                   "start_time": 1.4, "end_time": 1.6, "symmetry": 0.95}],
+                   "start_time": 1.4, "end_time": 1.6, "symmetry": 0.95,
+                   "baseline_start_code": "B", "baseline_end_code": "V",
+                   "start_height": 0.0, "end_height": 1.25,
+                   "baseline_start_time": 1.4, "baseline_end_time": 1.8}],
     }]
     return datadir.to_asm(utc_offset=_TZ)
 
