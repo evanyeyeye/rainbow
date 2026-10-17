@@ -17,7 +17,8 @@
                 "unit": "mAU",
                 "signal": "DAD D, Sig=280,10 Ref=off",
                 "wavelength": 280.0,
-                "bandwidth": 10.0
+                "bandwidth": 10.0,
+                "reference_wavelength": null
             }
         },
         "dad1E.ch": {
@@ -33,7 +34,8 @@
                 "unit": "mAU",
                 "signal": "DAD E, Sig=230,10 Ref=off",
                 "wavelength": 230.0,
-                "bandwidth": 10.0
+                "bandwidth": 10.0,
+                "reference_wavelength": null
             }
         },
         "dad1A.ch": {
@@ -49,7 +51,8 @@
                 "unit": "mAU",
                 "signal": "DAD A, Sig=254,10 Ref=off",
                 "wavelength": 254.0,
-                "bandwidth": 10.0
+                "bandwidth": 10.0,
+                "reference_wavelength": null
             }
         },
         "dad1B.ch": {
@@ -65,7 +68,8 @@
                 "unit": "mAU",
                 "signal": "DAD B, Sig=210,10 Ref=off",
                 "wavelength": 210.0,
-                "bandwidth": 10.0
+                "bandwidth": 10.0,
+                "reference_wavelength": null
             }
         },
         "dad1C.ch": {
@@ -81,7 +85,8 @@
                 "unit": "mAU",
                 "signal": "DAD C, Sig=230,10 Ref=off",
                 "wavelength": 230.0,
-                "bandwidth": 10.0
+                "bandwidth": 10.0,
+                "reference_wavelength": null
             }
         },
         "dad1.uv": {

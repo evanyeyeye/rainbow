@@ -68,11 +68,13 @@ def test_parse_optics_full():
 
 
 def test_parse_optics_integer_values_and_no_reference():
-    # Integer-style values still parse as floats; "Ref=off" has no numbers,
-    # so the reference fields are omitted rather than guessed.
+    # Integer-style values still parse as floats. "Ref=off" states that the
+    # channel has no reference: the wavelength is present and None, and there
+    # is no reference bandwidth to state.
     assert chemstation.parse_optics("VWD1A,Sig=254,4  Ref=off") == {
         'wavelength': 254.0,
         'bandwidth': 4.0,
+        'reference_wavelength': None,
     }
 
 

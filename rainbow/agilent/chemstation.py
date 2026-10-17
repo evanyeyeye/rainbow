@@ -42,6 +42,7 @@ _MS_INT_POW8 = np.array([1, 8, 64, 512], dtype=np.uint32)
 # and other detectors have no Sig= clause. Shared with the OpenLab .dx parser.
 _SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
 _REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
+_REF_OFF_RE = re.compile(r'Ref=off\b', re.IGNORECASE)
 
 # Not every single-wavelength channel writes a Sig= clause. A variable- or
 # multi-wavelength detector often spells the same setting out, e.g.
@@ -55,9 +56,11 @@ def parse_optics(description):
 
     Returns a dict with any of ``wavelength``, ``bandwidth``,
     ``reference_wavelength``, and ``reference_bandwidth`` (in nm), parsed from
-    the ``Sig=``/``Ref=`` clause of a single-wavelength channel. Descriptions
-    without such a clause (spectra, FID, telemetry, ``Ref=off``) yield an
-    empty or reference-free dict.
+    the ``Sig=``/``Ref=`` clause of a single-wavelength channel. ``Ref=off``
+    gives a ``reference_wavelength`` of None: the channel states that it has
+    no reference, which is not the same as stating nothing about one, and two
+    channels at one wavelength differ by it. Descriptions without such a
+    clause (spectra, FID, telemetry) yield an empty dict.
 
     """
     optics = {}
@@ -69,6 +72,8 @@ def parse_optics(description):
     if ref:
         optics['reference_wavelength'] = float(ref.group(1))
         optics['reference_bandwidth'] = float(ref.group(2))
+    elif _REF_OFF_RE.search(description):
+        optics['reference_wavelength'] = None
     return optics
 
 """

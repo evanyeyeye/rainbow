@@ -1691,8 +1691,10 @@ def test_dad_signals_carry_their_optics():
     assert signal.metadata["wavelength"] == 254.0
     assert signal.metadata["bandwidth"] == 4.0
     assert signal.metadata["reference_wavelength"] == 360.0
-    # "Ref=off" means there is no reference band to record.
-    assert "reference_wavelength" not in by_name["DAD1D.cg"].metadata
+    # "Ref=off" states that there is no reference: present, and None.
+    off = by_name["DAD1D.cg"].metadata
+    assert off["reference_wavelength"] is None
+    assert "reference_bandwidth" not in off
 
 
 def test_dad_telemetry_has_no_optics():
