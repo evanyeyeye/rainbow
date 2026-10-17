@@ -107,7 +107,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
 
     datadir = DataDirectory(path, datafiles, metadata)
     if peaks:
-        datadir.peaks = injection_peaks(path)
+        datadir.peaks = _with_channels(datadir, injection_peaks(path))
     return datadir
 
 
@@ -269,7 +269,26 @@ def _attach_peaks(injections, injection_paths, sequence_acaml):
         groups = folded.get(injection.name.lower())
         if not groups:
             groups = _own_peaks(injection.name, injection_path)
-        injection.peaks = groups or []
+        injection.peaks = _with_channels(injection, groups or [])
+
+
+def _with_channels(datadir, groups):
+    """``groups`` with each one's detector and metadata from its DataFile.
+
+    A result document names the channel a signal was integrated on but not
+    its detector, which the run's own file for that channel does say. A
+    group whose channel the run did not read keeps None.
+    """
+    by_key = {os.path.splitext(datafile.name)[0].upper(): datafile
+              for datafile in datadir.datafiles + datadir.analog}
+    for group in groups:
+        channel = group.get("channel_file") or group.get("signal") or ""
+        datafile = by_key.get(
+            os.path.splitext(channel)[0].replace(" ", "").upper())
+        if datafile is not None:
+            group["detector"] = datafile.detector
+            group["metadata"] = dict(datafile.metadata)
+    return groups
 
 
 def _own_peaks(injection_name, injection_path):
