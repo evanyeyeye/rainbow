@@ -18,6 +18,7 @@ except ImportError:
     import xml.etree.ElementTree as etree
 from rainbow.datafile import DataFile
 from rainbow._binning import bin_datapairs
+from rainbow._optics import excitation_emission
 
 # Optional compiled accelerators for the delta decode loops.
 # Falls back to the pure-Python implementations below if not built.
@@ -44,12 +45,6 @@ _SIG_RE = re.compile(r'Sig=([\d.]+),([\d.]+)')
 _REF_RE = re.compile(r'Ref=([\d.]+),([\d.]+)')
 _REF_OFF_RE = re.compile(r'Ref=off\b', re.IGNORECASE)
 
-# A fluorescence channel names its excitation and emission instead, e.g.
-# "FLD1 A, Ex=230, Em=310". Its first number is the excitation, so reading it
-# as a UV wavelength put a fluorescence trace at 230 nm absorbance.
-_EX_EM_RE = re.compile(r'\bEx\s*[=:]?\s*([\d.]+)\s*(?:nm)?\s*[,/ ]\s*'
-                       r'Em\s*[=:]?\s*([\d.]+)', re.IGNORECASE)
-
 # Not every single-wavelength channel writes a Sig= clause. A variable- or
 # multi-wavelength detector often spells the same setting out, e.g.
 # "VWD1A, Wavelength=254 nm", with no bandwidth to report.
@@ -72,10 +67,12 @@ def parse_optics(description):
 
     """
     optics = {}
-    ex_em = _EX_EM_RE.search(description)
-    if ex_em:
-        optics['excitation_wavelength'] = float(ex_em.group(1))
-        optics['emission_wavelength'] = float(ex_em.group(2))
+    # A fluorescence channel names its excitation and emission instead, e.g.
+    # "FLD1 A, Ex=230, Em=310". Its first number is the excitation, so reading
+    # it as a UV wavelength put a fluorescence trace at 230 nm absorbance.
+    pair = excitation_emission(description)
+    if pair:
+        optics['excitation_wavelength'], optics['emission_wavelength'] = pair
         return optics
     sig = _SIG_RE.search(description)
     if sig:
