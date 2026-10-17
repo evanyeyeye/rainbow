@@ -1984,15 +1984,6 @@ def _asm_peak(index, peak, options=None):
          "(unitless)", 1.0),
         ("start_height", "peak value at start", "mAU", 1.0),
         ("end_height", "peak value at end", "mAU", 1.0),
-        # One ASM field holds either form of the baseline edge, so the value
-        # comes first and a time, if the peak has both, is the one written.
-        ("baseline_start_value", "baseline value at start of peak", "mAU",
-         1.0),
-        ("baseline_end_value", "baseline value at end of peak", "mAU", 1.0),
-        ("baseline_start_time", "baseline value at start of peak", "s",
-         _SECONDS_PER_MINUTE),
-        ("baseline_end_time", "baseline value at end of peak", "s",
-         _SECONDS_PER_MINUTE),
     )
     for source, target, unit, scale in mapping:
         value = peak.get(source)
@@ -2000,12 +1991,43 @@ def _asm_peak(index, peak, options=None):
         # rather than fail the whole export.
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             entry[target] = _quantity(value * scale, unit, options)
-    for source, target in (("baseline_start_code", "peak baseline start code"),
-                           ("baseline_end_code", "peak baseline end code")):
-        code = peak.get(source)
-        if isinstance(code, str) and code:
-            entry[target] = code
+    custom = _peak_baseline_custom(peak, options)
+    if custom:
+        entry["custom information aggregate document"] = {
+            "custom information document": custom}
     return entry
+
+
+# A peak's baseline fields the schema has no place for, as ``(key, label)``.
+# Empower writes them on the peak itself under these labels; rainbow writes
+# them as custom information under the same labels, so a document it exports
+# validates, and reads them from either place.
+_PEAK_BASELINE_CODES = (
+    ("baseline_start_code", "peak baseline start code"),
+    ("baseline_end_code", "peak baseline end code"),
+)
+_PEAK_BASELINE_TIMES = (
+    ("baseline_start_time", "baseline value at start of peak"),
+    ("baseline_end_time", "baseline value at end of peak"),
+)
+
+
+def _peak_baseline_custom(peak, options):
+    """A peak's baseline codes and times as custom information documents."""
+    entries = []
+    for key, label in _PEAK_BASELINE_CODES:
+        code = peak.get(key)
+        if isinstance(code, str) and code.strip():
+            entries.append({"datum label": label,
+                            "scalar string datum": code.strip()})
+    for key, label in _PEAK_BASELINE_TIMES:
+        time = peak.get(key)
+        if isinstance(time, (int, float)) and not isinstance(time, bool):
+            seconds = _quantity(time * _SECONDS_PER_MINUTE, "s", options)
+            entries.append({"datum label": label,
+                            "scalar double datum": seconds["value"],
+                            "unit": "s"})
+    return [dict({"@index": i + 1}, **e) for i, e in enumerate(entries)]
 
 
 def _peak_groups_by_channel(peaks):
@@ -2988,43 +3010,72 @@ def _peak_from_asm(peak):
         "height": value("peak height"),
         "height_percent": value("relative peak height"),
         "symmetry": value("asymmetry factor measured at 5 % height"),
-        # How the integration drew the baseline under this peak. A code is the
-        # integration type at each edge (B, V, S, T, ..., lowercase where the
-        # edge was moved by hand; Empower splits a group's "Gp" into "G" and
-        # "p"). A height is how far the trace sits above the baseline at that
-        # edge, in the signal's unit, so the line runs from (start, trace -
-        # start height) to (end, trace - end height).
-        "baseline_start_code": _text(peak.get("peak baseline start code")),
-        "baseline_end_code": _text(peak.get("peak baseline end code")),
-        "start_height": value("peak value at start"),
-        "end_height": value("peak value at end"),
-        **_baseline_edge("start", peak.get("baseline value at start of peak")),
-        **_baseline_edge("end", peak.get("baseline value at end of peak")),
+        # How the integration drew the baseline under this peak. A height is
+        # how far the trace sits above the baseline at that edge, in mAU, so
+        # the line runs from (start, trace - start height) to (end, trace - end
+        # height).
+        "start_height": _peak_value_in_mau(peak.get("peak value at start")),
+        "end_height": _peak_value_in_mau(peak.get("peak value at end")),
+        **_peak_baseline_fields(peak),
     }
 
 
-def _baseline_edge(edge, quantity):
-    """
-    A peak's baseline edge as ``baseline_<edge>_time`` and
-    ``baseline_<edge>_value``, at most one of them set.
+# The units a peak's edge height is read in, as mAU per unit. Empower's own unit
+# for a UV height is the microvolt, one of which is one microabsorbance unit.
+# Kept apart from _ABSORBANCE_TO_MAU so that a cube labelled in microvolts is
+# exported as it was before. The micro sign and the Greek mu are both in use.
+_PEAK_VALUE_TO_MAU = dict(_ABSORBANCE_TO_MAU, **{"µv": 0.001,
+                                                 "μv": 0.001})
 
-    The schema does not define the field. Empower writes the time at which the
-    baseline under the peak's cluster begins or ends, in seconds, but the
-    field's name reads as the baseline's signal value at the edge. The unit is the only thing that tells the two
-    apart, so a time comes back in minutes like the peak's other times, any
-    other unit as the value it is, and a number with no unit as neither.
 
-    """
+def _peak_value_in_mau(quantity):
+    """A peak's edge height in mAU, or None when its unit is not one known."""
     number = _number(quantity)
     unit = quantity.get("unit") if isinstance(quantity, dict) else None
-    time = value = None
-    if number is not None and unit == "min":
-        time = number
-    elif number is not None and unit == "s":
-        time = number / _SECONDS_PER_MINUTE
-    elif number is not None and isinstance(unit, str) and unit:
-        value = number
-    return {f"baseline_{edge}_time": time, f"baseline_{edge}_value": value}
+    scale = _PEAK_VALUE_TO_MAU.get(_absorbance_unit_key(unit)) \
+        if isinstance(unit, str) else None
+    return number * scale if number is not None and scale else None
+
+
+# The units a baseline time is read in, as units per minute. Any other unit,
+# or none, gives None: the field's name reads as a signal value, and the unit
+# is the only thing that says a writer filled it with a time.
+_TIME_UNITS_PER_MINUTE = {"s": _SECONDS_PER_MINUTE, "min": 1.0}
+
+
+def _peak_baseline_fields(peak):
+    """
+    A peak's baseline codes and times, read from the peak or its custom
+    information.
+
+    A code is the integration type at each edge (B, V, S, T, ..., lowercase
+    where the edge was moved by hand; Empower splits a group's "Gp" into "G"
+    and "p"). A time is where the baseline under the peak's cluster begins or
+    ends, in minutes like the peak's other times. Empower writes both on the
+    peak, where the schema does not define them; rainbow writes them as custom
+    information, where it does.
+
+    """
+    custom = {}
+    if "custom information aggregate document" in peak:
+        custom = _custom_fields(peak, set())
+
+    def field(label):
+        value = peak.get(label)
+        return value if value is not None else custom.get(label)
+
+    fields = {}
+    for key, label in _PEAK_BASELINE_CODES:
+        fields[key] = (_text(field(label)) or "").strip() or None
+    for key, label in _PEAK_BASELINE_TIMES:
+        quantity = field(label)
+        number = _number(quantity)
+        unit = quantity.get("unit") if isinstance(quantity, dict) else None
+        per_minute = _TIME_UNITS_PER_MINUTE.get(unit) \
+            if isinstance(unit, str) else None
+        fields[key] = number / per_minute \
+            if number is not None and per_minute else None
+    return fields
 
 
 def _instrument_from_device_system(device_system):

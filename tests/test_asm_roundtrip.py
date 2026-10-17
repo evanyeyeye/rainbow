@@ -913,8 +913,7 @@ def _empower_peak(**fields):
 
 
 _BASELINE_KEYS = ("baseline_start_code", "baseline_end_code", "start_height",
-                  "end_height", "baseline_start_time", "baseline_end_time",
-                  "baseline_start_value", "baseline_end_value")
+                  "end_height", "baseline_start_time", "baseline_end_time")
 
 
 def test_a_peaks_baseline_is_read():
@@ -932,8 +931,6 @@ def test_a_peaks_baseline_is_read():
     assert peak["end_height"] == 1.25
     assert peak["baseline_start_time"] == 1.4
     assert peak["baseline_end_time"] == 2.5
-    assert peak["baseline_start_value"] is None
-    assert peak["baseline_end_value"] is None
 
 
 def test_a_peak_without_a_baseline_reads_none():
@@ -942,38 +939,86 @@ def test_a_peak_without_a_baseline_reads_none():
     assert peak["retention_time"] == 1.5
 
 
-def test_a_baseline_edge_is_a_time_or_a_value_by_its_unit():
-    """ One field, two readings: the unit says which, and nothing else does.
+def test_an_edge_height_converts_to_mau_by_its_unit():
+    """ A height in AU or in Empower's microvolts is the same line in mAU.
 
-    Empower writes the time the cluster's baseline starts and ends; the field's
-    name reads as the baseline's signal value at the edge. A time comes back in
-    minutes, a signal value as it is, and a bare number as neither, since
-    guessing would put a time where a value belongs or the other way round.
+    The heights are subtracted from the trace, and the trace is in mAU, so a
+    height left in its own unit draws the baseline a thousand times off. A
+    unit rainbow does not know, or none, cannot be converted and reads as None.
+    """
+    peak = asm._peak_from_asm(_empower_peak(**{
+        "peak value at start": {"value": 0.002, "unit": "AU"},
+        "peak value at end": {"value": 1250.0, "unit": "µV"}}))
+    assert peak["start_height"] == 2.0
+    assert peak["end_height"] == 1.25
+
+    peak = asm._peak_from_asm(_empower_peak(**{
+        "peak value at start": {"value": 1.0, "unit": "RFU"},
+        "peak value at end": 1.25}))
+    assert peak["start_height"] is None
+    assert peak["end_height"] is None
+
+
+def test_a_baseline_time_needs_a_time_unit():
+    """ The field's name reads as a signal value; only the unit says time.
+
+    Empower fills it with the time the cluster's baseline starts and ends, in
+    seconds. A time in seconds or minutes comes back in minutes, and anything
+    else reads as None rather than as a time it may not be.
     """
     peak = asm._peak_from_asm(_empower_peak(**{
         "baseline value at start of peak": {"value": 1.4, "unit": "min"},
         "baseline value at end of peak": {"value": 0.3, "unit": "mAU"}}))
     assert peak["baseline_start_time"] == 1.4
-    assert peak["baseline_start_value"] is None
     assert peak["baseline_end_time"] is None
-    assert peak["baseline_end_value"] == 0.3
 
     peak = asm._peak_from_asm(_empower_peak(**{
         "baseline value at start of peak": 84.0,
         "baseline value at end of peak": {"value": 150.0}}))
-    assert all(peak[key] is None for key in _BASELINE_KEYS[4:])
+    assert peak["baseline_start_time"] is None
+    assert peak["baseline_end_time"] is None
 
 
 def test_a_baseline_field_of_the_wrong_type_drops_to_none():
     peak = asm._peak_from_asm(_empower_peak(**{
         "peak baseline start code": 3,
+        "peak baseline end code": "  ",
         "peak value at end": {"value": "1.25", "unit": "mAU"},
         "baseline value at start of peak": {"value": "84", "unit": "s"}}))
     assert peak["baseline_start_code"] is None
+    assert peak["baseline_end_code"] is None
     assert peak["end_height"] is None
     assert peak["baseline_start_time"] is None
     # The fields beside them still come through.
-    assert peak["baseline_end_code"] == "v"
+    assert peak["start_height"] == 0.0
+    assert peak["baseline_end_time"] == 2.5
+
+
+def test_the_baseline_codes_and_times_are_written_as_custom_information():
+    """ An export must validate, and the schema defines neither field.
+
+    The schema does define custom information on a peak, so the codes and
+    times go there, under the labels Empower uses, and come back from there.
+    """
+    entry = asm._asm_peak(1, asm._peak_from_asm(_empower_peak()))
+    for label in ("peak baseline start code", "peak baseline end code",
+                  "baseline value at start of peak",
+                  "baseline value at end of peak"):
+        assert label not in entry
+    custom = (entry["custom information aggregate document"]
+              ["custom information document"])
+    assert custom == [
+        {"@index": 1, "datum label": "peak baseline start code",
+         "scalar string datum": "B"},
+        {"@index": 2, "datum label": "peak baseline end code",
+         "scalar string datum": "v"},
+        {"@index": 3, "datum label": "baseline value at start of peak",
+         "scalar double datum": 84.0, "unit": "s"},
+        {"@index": 4, "datum label": "baseline value at end of peak",
+         "scalar double datum": 150.0, "unit": "s"}]
+    assert entry["peak value at end"] == {"value": 1.25, "unit": "mAU"}
+    peak = asm._peak_from_asm(entry)
+    assert peak["baseline_start_code"] == "B"
     assert peak["baseline_end_time"] == 2.5
 
 
@@ -982,30 +1027,47 @@ def test_a_peaks_baseline_survives_a_round_trip():
     channel = next(d.name for d in datadir.datafiles
                    if d.detector == "UV" and d.data.shape[1] == 1)
     first = asm._peak_from_asm(_empower_peak(**_rt(105.0), **{
-        "peak area": {"value": 50.0, "unit": "mAU.s"}}))
+        "peak area": {"value": 50.0, "unit": "mAU.s"},
+        "peak value at end": {"value": 1250.0, "unit": "µV"}}))
     datadir.peaks = [{"signal": channel.split(".")[0].upper(),
                       "wavelength": 254.0, "description": None,
                       "channel_file": channel, "peaks": [first]}]
     document = datadir.to_asm()
     peak = (_measurements(document)[0]["processed data aggregate document"]
             ["processed data document"][0]["peak list"]["peak"][0])
-    assert peak["peak baseline start code"] == "B"
+    # Written in mAU, the unit it was converted to on the way in.
     assert peak["peak value at end"] == {"value": 1.25, "unit": "mAU"}
-    assert peak["baseline value at start of peak"] == {"value": 84.0,
-                                                       "unit": "s"}
     assert rb.from_asm(document).peaks[0]["peaks"][0] == first
 
 
-def test_a_baseline_value_survives_a_round_trip():
-    entry = asm._asm_peak(1, {"baseline_start_value": 0.3,
-                              "baseline_end_time": 2.5})
-    assert entry["baseline value at start of peak"] == {"value": 0.3,
-                                                        "unit": "mAU"}
-    assert entry["baseline value at end of peak"] == {"value": 150.0,
-                                                      "unit": "s"}
-    peak = asm._peak_from_asm(entry)
-    assert peak["baseline_start_value"] == 0.3
-    assert peak["baseline_end_time"] == 2.5
+def test_the_edge_heights_of_a_real_empower_export_reproduce_its_areas():
+    """ The heights mean what the area was measured from, not something near it.
+
+    Three touching peaks from an Empower export, a valley-split cluster, with
+    the trace under them. Names and identifiers are removed and times shifted
+    to start at zero. A line from (start, trace - start height) to (end, trace
+    - end height) has to reproduce each peak's area as the file reports it.
+    """
+    with open(os.path.join(INPUTS, "empower_peaks.asm.json")) as f:
+        datadir = rb.from_asm(json.load(f))
+    seconds = datadir.datafiles[0].xlabels * 60.0
+    trace = datadir.datafiles[0].data[:, 0]
+    peaks = datadir.peaks[0]["peaks"]
+    assert [peak["baseline_start_code"] + peak["baseline_end_code"]
+            for peak in peaks] == ["BV", "VV", "VB"]
+    for peak in peaks:
+        start, end = peak["start_time"] * 60.0, peak["end_time"] * 60.0
+        inside = (seconds > start) & (seconds < end)
+        t = np.concatenate([[start], seconds[inside], [end]])
+        y = np.interp(t, seconds, trace)
+        above = y - np.interp(t, [start, end],
+                              [y[0] - peak["start_height"],
+                               y[-1] - peak["end_height"]])
+        area = np.sum((above[1:] + above[:-1]) / 2 * np.diff(t))
+        assert area == pytest.approx(peak["area"], rel=0.01)
+        # The cluster's baseline spans the peak.
+        assert peak["baseline_start_time"] <= peak["start_time"]
+        assert peak["baseline_end_time"] >= peak["end_time"]
 
 
 def _measurements(document):
