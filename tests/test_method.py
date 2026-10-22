@@ -375,3 +375,69 @@ def _make_d_tmp():
             f.write(_sample_xml("C:\\Methods\\m.M").encode("utf-16"))
         _D_TMP = d
     return _D_TMP
+
+
+# One row of a MassHunter method report's ion table, as the report holds it.
+_ION_ROW = ("<Section><TableID>ScanType_8</TableID><RowIndex>{row}</RowIndex>"
+            "<ParameterID>{parameter}</ParameterID>"
+            "<ParameterValue>{value}</ParameterValue></Section>")
+
+
+def _write_acq_method_xml(directory, ions):
+    """
+    Writes a minimal AcqData/AcqMethod.xml listing ``ions``, each a
+    ``(compound, precursor, product, collision energy)`` tuple with invented
+    names. The device report is an XML document held as escaped text, as
+    MassHunter writes it.
+    """
+    from xml.sax.saxutils import escape
+    rows = "".join(
+        _ION_ROW.format(row=row, parameter=parameter, value=escape(str(value)))
+        for row, (name, precursor, product, energy) in enumerate(ions)
+        for parameter, value in (("CompoundName", name),
+                                 ("Report__Header_PrecursorIon", precursor),
+                                 ("Report__Header_ProductIon", product),
+                                 ("Collision_Energy", energy)))
+    report = ('<?xml version="1.0" standalone="yes"?>'
+              '<DSRdlReport xmlns="http://tempuri.org/DSRdlReport.xsd">'
+              f"{rows}</DSRdlReport>")
+    acq = directory / "AcqData"
+    acq.mkdir()
+    (acq / "AcqMethod.xml").write_text(
+        "<DataFileMethodReport><MethodReport><RCDevicesXml>"
+        f"{escape(report)}</RCDevicesXml></MethodReport>"
+        "</DataFileMethodReport>", encoding="utf-8")
+
+
+def test_monitored_compounds_read_from_masshunter_method(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    _write_acq_method_xml(d, [("<A>", 512.3, 150, 20),
+                              ("IS-1", 300.2, 110, ""),
+                              ("", 250.0, 100, 10)])  # names no compound
+    md = method.parse_injection_metadata(str(d))
+    assert md["monitored_compounds"] == [
+        {"compound": "<A>", "precursor_mz": 512.3, "product_mz": 150.0,
+         "collision_energy": 20.0},
+        {"compound": "IS-1", "precursor_mz": 300.2, "product_mz": 110.0,
+         "collision_energy": None},
+    ]
+
+
+def test_monitored_compounds_reach_the_directory_metadata(tmp_path):
+    import rainbow as rb
+    d = tmp_path / "x.D"
+    d.mkdir()
+    _write_acq_method_xml(d, [("<A>", 512.3, 150, 20)])
+    assert rb.read(str(d)).metadata["monitored_compounds"] == [
+        {"compound": "<A>", "precursor_mz": 512.3, "product_mz": 150.0,
+         "collision_energy": 20.0}]
+
+
+def test_monitored_compounds_missing_or_unreadable_is_absent(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    assert "monitored_compounds" not in method.parse_injection_metadata(str(d))
+    (d / "AcqData").mkdir()
+    (d / "AcqData" / "AcqMethod.xml").write_text("not xml at all <<<")
+    assert method.parse_injection_metadata(str(d)) == {}

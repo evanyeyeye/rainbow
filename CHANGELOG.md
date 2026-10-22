@@ -28,6 +28,11 @@ to [Semantic Versioning](https://semver.org/).
   DAD spectrum carries the HPLC scale factor) and `tests/inputs/lime.sirslt`
   (an HPLC run with one DAD signal), anonymised as
   `tests/inputs/README_sirslt.md` describes.
+- **Agilent MassHunter MRM transitions carry their compound names.** A .D
+  whose `AcqData/AcqMethod.xml` names the compound for each MRM transition
+  now has `metadata["monitored_compounds"]`: one
+  `{compound, precursor_mz, product_mz, collision_energy}` per transition, in
+  the method's order.
 
 ### Changed
 - **Python 3.11 or later.** rainbow now requires Python 3.11 (was 3.8), the

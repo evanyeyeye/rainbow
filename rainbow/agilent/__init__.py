@@ -82,7 +82,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     metadata = chemstation.parse_metadata(path, datafiles)
 
     # Enrich with the per-injection method and sample sidecars (acq.macaml,
-    # SAMPLE.XML), filling gaps without overriding the values above.
+    # SAMPLE.XML, AcqData/AcqMethod.xml), filling gaps without overriding the values above.
     from rainbow.agilent import method
     for key, value in method.parse_injection_metadata(path).items():
         metadata.setdefault(key, value)

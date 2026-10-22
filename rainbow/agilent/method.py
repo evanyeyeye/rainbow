@@ -1,15 +1,17 @@
 """
 Read the per-injection method and sample sidecars of an Agilent .D directory.
 
-Alongside the data channels, a ChemStation/OpenLab .D holds:
+Alongside the data channels, a .D holds:
 
-    acq.macaml   the acquisition method (ACAML)
-    SAMPLE.XML   the sample setup (name, dilution, method paths)
+    acq.macaml             the acquisition method (ACAML)
+    SAMPLE.XML             the sample setup (name, dilution, method paths)
+    AcqData/AcqMethod.xml  the MassHunter acquisition method report
 
 This module distills those into a small, vendor-neutral metadata dict that
 read() merges onto a DataDirectory: the operator, injection volume, column
 temperature, flow rate, run time, the instrument modules, and the sample
-amounts. It is best-effort, so any field the sidecars do not carry, or a
+amounts, and the compound each MRM transition of a MassHunter method is
+named for. It is best-effort, so any field the sidecars do not carry, or a
 sidecar that is missing or unreadable, simply contributes nothing.
 
 It also reads the MS acquisition mode from the ``acqmeth.txt`` instrument-
@@ -37,6 +39,23 @@ _MODULE_RE = re.compile(r"^\s*(.+?)\s*\(([^()]+)\)\s*$")
 # is what tells a module apart from a settings group. Agilent module numbers
 # are four digits, usually with a letter on each side: G4204A, G1316C, 5977B.
 _MODEL_ID_RE = re.compile(r"^[A-Z]{0,2}\d{4}[A-Z]{0,2}$")
+
+# The MassHunter acquisition method report. Its device sections are not XML
+# children but whole XML documents held as escaped text, each a flat list of
+# <Section> rows: TableID, RowIndex, ParameterID, ParameterValue. One table row
+# (TableID + RowIndex) is one MRM transition, its fields spread over several
+# <Section>s with ParameterIDs such as "CompoundName",
+# "Report__Header_PrecursorIon", "Report__Header_ProductIon" and
+# "Collision_Energy"; the prefix varies with the device, the ending does not.
+_MASSHUNTER_METHOD = os.path.join("AcqData", "AcqMethod.xml")
+
+# The ParameterID endings of an MRM transition's fields, lowercased.
+_ION_FIELDS = {
+    "compound": "compoundname",
+    "precursor_mz": "precursorion",
+    "product_mz": "production",
+    "collision_energy": "collision_energy",
+}
 
 # The ChemStation instrument-control report, which names the MS acquisition
 # mode ("Scan", "SIM", or "SIM/Scan") in its MS Information section.
@@ -98,13 +117,19 @@ def parse_injection_metadata(path):
     Returns:
         dict: Any of ``operator``, ``modules``, ``injection_volume``,
         ``column_temperature``, ``flow_rate``, ``run_time``, ``dilution``,
-        ``multiplier``, ``sample_amount``, and ``acq_method`` that the sidecars
-        supply. Quantities are ``{"value": float, "unit": str}``.
+        ``multiplier``, ``sample_amount``, ``acq_method``, and
+        ``monitored_compounds`` that the sidecars supply. Quantities are
+        ``{"value": float, "unit": str}``. ``monitored_compounds`` lists the
+        MRM transitions a MassHunter method names a compound for, in its
+        order, each ``{"compound": str, "precursor_mz": float,
+        "product_mz": float, "collision_energy": float}``, the last two None
+        where the method gives none; collision energy is in volts.
 
     """
     metadata = {}
     metadata.update(_from_acq_method(path))
     metadata.update(_from_sample_xml(path))
+    metadata.update(_from_masshunter_method(path))
     return metadata
 
 
@@ -167,6 +192,46 @@ def _from_sample_xml(path):
         normalized = method_path.text.replace("\\", "/").rstrip("/")
         out["acq_method"] = os.path.basename(normalized)
     return out
+
+
+def _from_masshunter_method(path):
+    """Monitored-ion compound names from MassHunter's AcqData/AcqMethod.xml."""
+    report = os.path.join(path, _MASSHUNTER_METHOD)
+    if not os.path.isfile(report):
+        return {}
+    rows = {}
+    try:
+        for outer in ET.parse(report).iter():
+            text = (outer.text or "").lstrip()
+            if not text.startswith("<?xml") or "Section" not in text:
+                continue
+            for section in ET.fromstring(text.encode("utf-8")).iterfind(
+                    ".//{*}Section"):
+                fields = {child.tag.rsplit("}", 1)[-1]:
+                          (child.text or "").strip() for child in section}
+                table = fields.get("TableID")
+                parameter = fields.get("ParameterID")
+                if table and parameter:
+                    row = rows.setdefault((table, fields.get("RowIndex")), {})
+                    row[parameter.lower()] = fields.get("ParameterValue")
+    except (ET.ParseError, ValueError, LookupError, OSError):
+        return {}
+
+    compounds = []
+    for row in rows.values():
+        ion = {}
+        for key, ending in _ION_FIELDS.items():
+            value = next((value for parameter, value in row.items()
+                          if parameter.endswith(ending) and value), None)
+            if key != "compound":
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    value = None
+            ion[key] = value
+        if ion["compound"] and ion["precursor_mz"] is not None:
+            compounds.append(ion)
+    return {"monitored_compounds": compounds} if compounds else {}
 
 
 def _modules(sections):
