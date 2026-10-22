@@ -382,7 +382,8 @@ def read_metadata(path):
                 mh_datafiles.append("MSPeak.bin")
                 metadata['centroid_available'] = True
         if mh_datafiles:
-            return {'datafiles': mh_datafiles, 'metadata': metadata}
+            return {'datafiles': mh_datafiles,
+                    'metadata': _with_injection_metadata(path, metadata)}
 
     if len(metadata) == 1:
         datadir = read(path)
@@ -391,4 +392,14 @@ def read_metadata(path):
         return None
     # Masshunter datafiles are not located.
     datafiles = [fn for fn in os.listdir(path) if fn[-3:].lower() in ('.uv', '.ch', '.ms')]
-    return {'datafiles': datafiles, 'metadata': metadata}
+    return {'datafiles': datafiles, 'metadata': _with_injection_metadata(path, metadata)}
+
+
+def _with_injection_metadata(path, metadata):
+    """The metadata with the per-injection method and sample sidecars
+    (acq.macaml, SAMPLE.XML, AcqData/AcqMethod.xml) filling its gaps, as
+    read() fills them, so read_metadata states the same sample setup."""
+    from rainbow.agilent import method
+    for key, value in method.parse_injection_metadata(path).items():
+        metadata.setdefault(key, value)
+    return metadata
