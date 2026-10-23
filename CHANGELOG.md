@@ -41,6 +41,14 @@ to [Semantic Versioning](https://semver.org/).
   equals `read().metadata` for every Agilent fixture. A MassHunter run's own
   `.ch`/`.uv`/`.ms` files, which `read()` parses, are now listed beside its
   `AcqData` files.
+- **Agilent MassHunter MS files state each scan's record.** An MS DataFile
+  read from `MSScan.bin` (`MSPeak.bin`, `MSProfile.bin`, ICP-MS) has
+  `metadata["scans"]`: one array per field, one entry per row, giving the
+  `scan_type` (`Scan`, `SIM`, `MRM`, ...), `monitoring` (SIM or MRM),
+  `ms_level`, `polarity` (`+`/`-`), `collision_energy`, `precursor_mz` and
+  the measured `mz_range_min`/`mz_range_max`, each where the run's schema
+  records it. A simultaneous SIM/Scan run's interleaved scans are told apart
+  by it.
 
 ### Changed
 - **Python 3.11 or later.** rainbow now requires Python 3.11 (was 3.8), the

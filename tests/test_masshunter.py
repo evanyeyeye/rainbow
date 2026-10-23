@@ -1859,3 +1859,86 @@ def test_bin_to_grid_refuses_a_width_that_overflows_the_bin_index():
 def test_the_signal_wavelength_reads_a_prefixed_description(description,
                                                             expected):
     assert masshunter._signal_wavelength(description) == expected
+
+
+# ---------------------------------------------------------------------------
+# What each scan's record states of the scan (DataFile.metadata['scans']).
+# ---------------------------------------------------------------------------
+
+def _records(acqdata):
+    return masshunter.read_scan_records(
+        os.path.join(acqdata, "MSScan.bin"),
+        masshunter.parse_scan_xsd(os.path.join(acqdata, "MSScan.xsd")),
+        masshunter.count_scans(acqdata))
+
+
+def test_scans_state_which_monitor_ions():
+    # yellow.D is a simultaneous SIM/Scan GC-MS run: its one MSPeak.bin holds
+    # both kinds of scan, interleaved, which only the scan records tell apart.
+    datafile = rb.read("tests/inputs/yellow.D", centroid=True,
+                       bin_width=0.1).get_file("MSPeak.bin")
+    scans = datafile.metadata["scans"]
+    codes = [r["ScanType"] for r in _records(YELLOW_ACQDATA)]
+    for values in scans.values():
+        assert len(values) == datafile.xlabels.size
+    assert scans["scan_type"].tolist() == [
+        {1: "Scan", 2: "SIM"}[code] for code in codes]
+    assert scans["monitoring"].tolist() == [code == 2 for code in codes]
+    assert scans["monitoring"].sum() == 1309
+    assert set(scans["polarity"]) == {"+"}
+    assert set(scans["ms_level"]) == {1}
+    assert np.isnan(scans["precursor_mz"]).all()      # each record writes 0
+    assert set(scans["mz_range_max"]) == {1050.0}
+
+
+def test_scans_are_on_the_per_scan_centroid_too():
+    centroid = masshunter.parse_mspeakdata(YELLOW_ACQDATA)
+    assert isinstance(centroid, masshunter.CentroidDataFile)
+    assert centroid.metadata["scans"]["monitoring"].sum() == 1309
+
+
+def test_icpms_scans_are_mrm():
+    datafile = rb.read("tests/inputs/silver.D", hrms=True).get_file(
+        "MSProfile.bin")
+    scans = datafile.metadata["scans"]
+    assert len(scans["scan_type"]) == datafile.xlabels.size
+    assert set(scans["scan_type"]) == {"MRM"}
+    assert scans["monitoring"].all()
+    assert set(scans["ms_level"]) == {2}
+    # Its schema has no collision energy or m/z of interest: nothing is made up.
+    assert "collision_energy" not in scans
+    assert "precursor_mz" not in scans
+
+
+@pytest.mark.parametrize("bin_width", [None, 0.1])
+def test_profile_scans_follow_each_files_rows(bin_width):
+    # The per-scan profile splits the scans across files by flight-time grid;
+    # each file states its own scans, in its own row order.
+    datafiles = masshunter.parse_msdata(
+        os.path.join(AMBER_D, "AcqData"), bin_width=bin_width)
+    if bin_width is not None:
+        datafiles = [datafiles]
+    for datafile in datafiles:
+        scans = datafile.metadata["scans"]
+        assert len(scans["polarity"]) == datafile.xlabels.size
+        assert set(scans["polarity"]) == {"-"}
+        assert set(scans["scan_type"]) == {"Scan"}
+        assert not scans["monitoring"].any()
+
+
+@pytest.mark.skipif(not HAVE_LZF, reason="needs python-lzf")
+def test_an_incomplete_profile_states_only_its_complete_scans():
+    # copper's MSScan.bin describes 4 scans, its MSProfile.bin holds 3.
+    profile = masshunter.parse_msdata(
+        os.path.join(COPPER_D, "AcqData"), bin_width=0.1)
+    assert profile.xlabels.size == 3
+    assert len(profile.metadata["scans"]["scan_type"]) == 3
+
+
+def test_scan_metadata_names_an_unknown_code_by_its_number():
+    scans = masshunter.scan_metadata(
+        [{"ScanType": 7, "IonPolarity": 3}, {"ScanType": 256, "IonPolarity": 0}])
+    assert scans["scan_type"].tolist() == ["7", "MRM"]
+    assert scans["monitoring"].tolist() == [False, True]
+    assert scans["polarity"].tolist() == ["", "+"]
+    assert masshunter.scan_metadata([]) == {}

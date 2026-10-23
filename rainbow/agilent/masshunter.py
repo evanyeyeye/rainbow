@@ -1125,7 +1125,9 @@ def parse_msdata(path, display_precision='auto', bin_width=None,
         # rounded can set mz_decimals on the returned file.
         return _build_per_scan_profiles(
             times, inten_arrs, grid_keys, calib_vals[:num_times],
-            scan_calib_ids, calib_flags, mz_decimals=None)
+            scan_calib_ids, calib_flags, mz_decimals=None,
+            scans=_take_scans(scan_metadata(scan_records),
+                              slice(0, num_times)))
 
     # Concatenating the per-scan arrays avoids materializing a ~100M-element
     # Python list (and the numpy round-trip through it), which otherwise
@@ -1137,13 +1139,16 @@ def parse_msdata(path, display_precision='auto', bin_width=None,
         mz_arr, intensities, rows, num_times, display_precision, bin_width,
         labels_only)
 
+    scans = _take_scans(scan_metadata(scan_records), slice(0, num_times))
     return _with_mz_floor(
-        DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data, {}),
+        DataFile("MSProfile.bin", 'MS', times, mz_ylabels, data,
+                 {'scans': scans}),
         HRMS_MZ_FLOOR)
 
 
 def _build_per_scan_profiles(times, inten_arrs, grid_keys, calib_vals,
-                             scan_calib_ids, calib_flags, mz_decimals=None):
+                             scan_calib_ids, calib_flags, mz_decimals=None,
+                             scans=None):
     """
     Builds the per-scan profile representation (see :obj:`parse_msdata` with no
     ``bin_width``).
@@ -1163,6 +1168,9 @@ def _build_per_scan_profiles(times, inten_arrs, grid_keys, calib_vals,
         calib_vals (np.ndarray): ``(num_scans, 10)`` calibration rows.
         scan_calib_ids (list): CalibrationID of each scan.
         calib_flags (dict): Maps CalibrationID to polynomial ValueUseFlags.
+        scans (dict, optional): What each kept scan's record states
+            (:obj:`scan_metadata`); each file's metadata gets its own scans'
+            entries as ``scans``.
 
     Returns:
         A list of :class:`ProfileDataFile`, largest grid first.
@@ -1185,8 +1193,10 @@ def _build_per_scan_profiles(times, inten_arrs, grid_keys, calib_vals,
         use_flags = [calib_flags.get(scan_calib_ids[i]) for i in idxs]
         # One grid keeps the canonical name; extra grids are suffixed.
         name = "MSProfile.bin" if seg == 0 else f"MSProfile.bin.{seg + 1}"
+        metadata = {} if scans is None else {
+            'scans': _take_scans(scans, np.array(idxs))}
         profiles.append(ProfileDataFile(
-            name, xlabels, flight_times, data, calib, use_flags, {},
+            name, xlabels, flight_times, data, calib, use_flags, metadata,
             mz_decimals=mz_decimals))
     return profiles
 
@@ -1280,7 +1290,8 @@ def parse_icpmsdata(path, display_precision='auto'):
     # the vendor default would warn that a fine bin_width inserts empty bins
     # when nothing here is binned at all.
     return _with_mz_floor(DataFile(
-        "MSProfile.bin", 'MS', times, mz_ylabels[order], data[:, order], {}),
+        "MSProfile.bin", 'MS', times, mz_ylabels[order], data[:, order],
+        {'scans': scan_metadata(scan_records)}),
         None)
 
 
@@ -1604,7 +1615,8 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
         # discard measured precision under a control documented as cosmetic.
         # The lossy control for this channel is bin_width, below.
         centroid = CentroidDataFile(
-            "MSPeak.bin", times, mz_per_scan, inten_per_scan, {})
+            "MSPeak.bin", times, mz_per_scan, inten_per_scan,
+            {'scans': scan_metadata(scan_records)})
         # Whether the peak m/z land on a lattice. An uncalibrated quadrupole
         # writes them near nominal mass, so pooling the run shows a real
         # quantization; a calibrated TOF writes continuous m/z that drift
@@ -1634,7 +1646,8 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
     if mz_arr.size == 0:
         return _with_mz_floor(DataFile(
             "MSPeak.bin", 'MS', times, np.array([], dtype=np.float64),
-            np.zeros((num_times, 0), dtype=np.float64), {}), floor)
+            np.zeros((num_times, 0), dtype=np.float64),
+            {'scans': scan_metadata(scan_records)}), floor)
     intensities = np.concatenate(inten_per_scan)
     num_peaks_per_time = np.array(
         [len(m) for m in mz_per_scan], dtype=np.int64)
@@ -1643,7 +1656,8 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
         mz_arr, intensities, rows, num_times, display_precision, bin_width,
         labels_only)
     return _with_mz_floor(
-        DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data, {}), floor)
+        DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data,
+                 {'scans': scan_metadata(scan_records)}), floor)
 
 
 def _select_centroid_block(blocks):
@@ -2162,6 +2176,85 @@ def _is_optional_padding(element, position, elements):
     return (element.get('name') == 'Padding'
             and element.get('minOccurs') == '0'
             and position == len(elements) - 1)
+
+
+# MassHunter's scan type codes (its MSScanType flags), by the names rainbow
+# gives them; SIM and MRM are the ones that monitor chosen ions rather than
+# sweep a range.
+SCAN_TYPES = {
+    0: 'Unspecified', 1: 'Scan', 2: 'SIM', 4: 'HighResolutionScan',
+    8: 'TotalIon', 256: 'MRM', 512: 'ProductIon', 1024: 'PrecursorIon',
+    2048: 'NeutralLoss', 4096: 'NeutralGain',
+}
+MONITORING_SCAN_TYPES = ('SIM', 'MRM')
+# MassHunter's IonPolarity codes, spelled as Waters' polarities are; an
+# unassigned or mixed polarity (2, 3) is ''.
+_POLARITIES = {0: '+', 1: '-'}
+
+
+def scan_metadata(scan_records):
+    """
+    What each scan's record in MSScan.bin states of the scan.
+
+    Each value is an array with one entry per record, in record order, so
+    entry ``i`` describes row ``i`` of a DataFile read from those records. A
+    field is included only when every record carries it, since the schema in
+    MSScan.xsd differs between instruments.
+
+    - ``scan_type``: the scan type's name in :obj:`SCAN_TYPES` (``'Scan'``,
+      ``'SIM'``, ``'MRM'``, ...), or the code itself as a string where it is
+      not one of them.
+    - ``monitoring``: whether the scan monitors chosen ions (SIM or MRM).
+    - ``ms_level``: the MS level as recorded (1 for MS, 2 for MS/MS).
+    - ``polarity``: ``'+'``, ``'-'``, or ``''`` where unassigned or mixed.
+    - ``collision_energy``: in volts, as recorded.
+    - ``precursor_mz``: the m/z of interest, NaN where the record names none
+      (MassHunter writes 0).
+    - ``mz_range_min``, ``mz_range_max``: the measured mass range.
+
+    Args:
+        scan_records (list): Output of :obj:`read_scan_records`.
+
+    Returns:
+        Dictionary mapping each field above to a numpy array.
+
+    """
+    def column(name):
+        if not scan_records or not all(name in r for r in scan_records):
+            return None
+        return [r[name] for r in scan_records]
+
+    scans = {}
+    types = column('ScanType')
+    if types is not None:
+        names = [SCAN_TYPES.get(code, str(code)) for code in types]
+        scans['scan_type'] = np.array(names)
+        scans['monitoring'] = np.isin(names, MONITORING_SCAN_TYPES)
+    level = column('MSLevel')
+    if level is not None:
+        scans['ms_level'] = np.array(level, dtype=np.int64)
+    polarity = column('IonPolarity')
+    if polarity is not None:
+        scans['polarity'] = np.array(
+            [_POLARITIES.get(code, '') for code in polarity], dtype='<U1')
+    energy = column('CollisionEnergy')
+    if energy is not None:
+        scans['collision_energy'] = np.array(energy, dtype=np.float64)
+    precursor = column('MzOfInterest')
+    if precursor is not None:
+        precursor = np.array(precursor, dtype=np.float64)
+        scans['precursor_mz'] = np.where(precursor > 0, precursor, np.nan)
+    for key, name in (('mz_range_min', 'MeasuredMassRangeMin'),
+                      ('mz_range_max', 'MeasuredMassRangeMax')):
+        values = column(name)
+        if values is not None:
+            scans[key] = np.array(values, dtype=np.float64)
+    return scans
+
+
+def _take_scans(scans, rows):
+    """``scans`` (:obj:`scan_metadata`) for the records at ``rows`` only."""
+    return {key: values[rows] for key, values in scans.items()}
 
 
 def read_complextype(f, complextypes_dict, name):
