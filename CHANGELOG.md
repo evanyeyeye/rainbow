@@ -33,6 +33,14 @@ to [Semantic Versioning](https://semver.org/).
   now has `metadata["monitored_compounds"]`: one
   `{compound, precursor_mz, product_mz, collision_energy}` per transition, in
   the method's order.
+- **`rb.read_metadata` states an Agilent .D's injection time as `read()`
+  does.** It read no data file, so a run with any sidecar came back without
+  its `date` (and `utc_offset`, `vialpos`); it now reads them from the
+  Chemstation files' headers alone (`chemstation.parse_header`, a few hundred
+  bytes per file), and states the method's `technique` too, so its metadata
+  equals `read().metadata` for every Agilent fixture. A MassHunter run's own
+  `.ch`/`.uv`/`.ms` files, which `read()` parses, are now listed beside its
+  `AcqData` files.
 
 ### Changed
 - **Python 3.11 or later.** rainbow now requires Python 3.11 (was 3.8), the

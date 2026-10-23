@@ -352,8 +352,13 @@ def read_metadata(path):
     if sirslt.is_sirslt(path):
         return sirslt.read_metadata(path)
 
-    datafiles = []
-    metadata = chemstation.parse_metadata(path, datafiles)
+    # The date and vial position come from the Chemstation files' headers,
+    # read without their data, so they are what read() states.
+    metadata = chemstation.parse_header_metadata(path)
+    # read() parses the .D's own Chemstation files in every run, AcqData or
+    # not, so they are listed in every run, ahead of the MassHunter files as
+    # read() returns them.
+    chemstation_files = chemstation.datafile_names(path)
 
     # MassHunter acquisitions (a .D with an AcqData subfolder) keep their data
     # in MSProfile.bin (profile/HRMS) and/or MSPeak.bin (centroid), which the
@@ -382,7 +387,7 @@ def read_metadata(path):
                 mh_datafiles.append("MSPeak.bin")
                 metadata['centroid_available'] = True
         if mh_datafiles:
-            return {'datafiles': mh_datafiles,
+            return {'datafiles': chemstation_files + mh_datafiles,
                     'metadata': _with_injection_metadata(path, metadata)}
 
     if len(metadata) == 1:
@@ -391,15 +396,19 @@ def read_metadata(path):
             return {'datafiles': datadir.datafiles + datadir.analog, 'metadata': datadir.metadata}
         return None
     # Masshunter datafiles are not located.
-    datafiles = [fn for fn in os.listdir(path) if fn[-3:].lower() in ('.uv', '.ch', '.ms')]
-    return {'datafiles': datafiles, 'metadata': _with_injection_metadata(path, metadata)}
+    return {'datafiles': chemstation_files,
+            'metadata': _with_injection_metadata(path, metadata)}
 
 
 def _with_injection_metadata(path, metadata):
     """The metadata with the per-injection method and sample sidecars
-    (acq.macaml, SAMPLE.XML, AcqData/AcqMethod.xml) filling its gaps, as
-    read() fills them, so read_metadata states the same sample setup."""
+    (acq.macaml, SAMPLE.XML, AcqData/AcqMethod.xml) and the separation
+    technique the method declares filling its gaps, as read() fills them, so
+    read_metadata states the same sample setup."""
     from rainbow.agilent import method
     for key, value in method.parse_injection_metadata(path).items():
         metadata.setdefault(key, value)
+    technique = method.acquisition_technique(path)
+    if technique:
+        metadata.setdefault('technique', technique)
     return metadata

@@ -2,6 +2,7 @@
 Unit tests for parsing Agilent .D directories.
 
 """
+import os
 import struct
 
 import pytest
@@ -337,3 +338,60 @@ def test_scan_sizes_either_side_of_the_wrap_read_the_same_way(tmp_path):
 
     assert parsed.data.shape[0] == len(counts)
     assert parsed.data.sum(axis=1).tolist() == counts
+
+
+# Every Chemstation data file among the fixtures, as (directory, name).
+_CHEMSTATION_FILES = [
+    (color, name)
+    for color in ("red", "orange", "yellow", "green", "brown", "pink")
+    for name in sorted(os.listdir(os.path.join("tests", "inputs", f"{color}.D")))
+    if name[-3:].lower() in (".ch", ".uv", ".ms")
+]
+
+
+@pytest.mark.parametrize("color, name", _CHEMSTATION_FILES)
+def test_a_header_read_alone_states_what_the_parse_does(color, name):
+    # parse_header reads the strings parse_file puts on the DataFile, from the
+    # same offsets, without decoding the data.
+    from rainbow.agilent import chemstation
+    path = os.path.join("tests", "inputs", f"{color}.D", name)
+    header = chemstation.parse_header(path)
+    parsed = chemstation.parse_file(path)
+    assert header
+    assert {key: parsed.metadata[key] for key in header} == header
+
+
+def test_a_header_too_short_to_read_states_nothing(tmp_path):
+    from rainbow.agilent import chemstation
+    for name, content in (("a.ch", b"\x03179"), ("b.ms", b"\x01\x32"),
+                          ("c.uv", b"")):
+        path = tmp_path / name
+        path.write_bytes(content)
+        assert chemstation.parse_header(str(path)) is None
+
+
+@pytest.mark.parametrize("color", [
+    "amber", "bronze", "brown", "copper", "cyan", "gold", "green", "magenta",
+    "navy", "orange", "pink", "red", "silver", "yellow"])
+def test_read_metadata_states_what_read_does(color):
+    # The injection's date, vial position, sample setup and technique, read
+    # from the headers and sidecars alone, and every file read() parses
+    # without a flag.
+    path = os.path.join("tests", "inputs", f"{color}.D")
+    said = rb.read_metadata(path)
+    full = rb.read(path)
+    assert said["metadata"] == full.metadata
+    names = [getattr(f, "name", f) for f in said["datafiles"]]
+    assert set(f.name for f in full.datafiles
+               if not f.name.endswith(".cg")) <= set(names)
+
+
+def test_read_metadata_lists_a_masshunter_runs_own_chemstation_files():
+    # yellow.D holds MSPeak.bin in AcqData beside FID1A.ch, data.ms and
+    # dataSim.ms of its own; read() parses all of them, so all are listed, and
+    # its date comes from their headers.
+    said = rb.read_metadata(os.path.join("tests", "inputs", "yellow.D"))
+    assert said["datafiles"] == [
+        "FID1A.ch", "data.ms", "dataSim.ms", "MSPeak.bin"]
+    assert said["metadata"]["date"] == "17 Dec 19  10:04 am"
+    assert said["metadata"]["technique"] == "GC"
