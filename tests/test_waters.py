@@ -124,3 +124,61 @@ def test_a_diode_array_function_ignores_bin_width():
             continue
         np.testing.assert_array_equal(np.asarray(a.ylabels, dtype=float),
                                       np.asarray(b.ylabels, dtype=float))
+
+
+def _renamed_copy(source, target, rename):
+    """A copy of a .raw folder with each file named rename(name)."""
+    import os
+    import shutil
+    os.makedirs(target)
+    for name in os.listdir(source):
+        shutil.copyfile(os.path.join(source, name),
+                        os.path.join(target, rename(name)))
+    return str(target)
+
+
+def test_a_raw_folder_named_in_another_case_reads_the_same(tmp_path):
+    """Waters file names are matched regardless of case: a copy of indigo.raw
+    whose folder and files are named in another case reads as indigo does."""
+    import numpy as np
+    original = rb.read("tests/inputs/indigo.raw")
+    path = _renamed_copy("tests/inputs/indigo.raw", tmp_path / "INDIGO.RAW",
+                         str.lower)
+    copy = rb.read(path)
+    assert sorted(f.name.lower() for f in copy.datafiles + copy.analog) == \
+        sorted(f.name.lower() for f in original.datafiles + original.analog)
+    for f in original.datafiles + original.analog:
+        g = copy.get_file(f.name.lower())
+        assert np.array_equal(g.xlabels, f.xlabels)
+        assert np.array_equal(g.data, f.data)
+    assert copy.metadata == original.metadata
+
+
+def test_read_metadata_lists_data_files_whatever_their_case(tmp_path):
+    """read_metadata finds the _FUNC and _CHRO files of a folder named in lower
+    case, listed as they are on disk, as it does in upper case."""
+    from rainbow import waters
+    upper = waters.read_metadata("tests/inputs/indigo.raw")
+    assert upper["datafiles"] == ["_FUNC001.DAT", "_CHRO001.DAT",
+                                  "_CHRO002.DAT"]
+    path = _renamed_copy("tests/inputs/indigo.raw", tmp_path / "indigo.raw",
+                         str.lower)
+    lower = waters.read_metadata(path)
+    assert lower["datafiles"] == ["_func001.dat", "_chro001.dat",
+                                  "_chro002.dat"]
+    assert lower["metadata"] == upper["metadata"]
+
+
+def test_requested_files_match_regardless_of_case(tmp_path):
+    """waters.read and rb.read take requested_files in any case, on files named
+    in any case."""
+    from rainbow import waters
+    path = _renamed_copy("tests/inputs/indigo.raw", tmp_path / "indigo.raw",
+                         str.lower)
+    for read in (waters.read, rb.read):
+        datadir = read(path, requested_files=["_FUNC001.DAT"])
+        assert [f.name for f in datadir.datafiles + datadir.analog] == \
+            ["_func001.dat"]
+    datadir = waters.read("tests/inputs/turquoise.raw",
+                          requested_files=["_FUNC001.DAT"])
+    assert [f.name for f in datadir.datafiles] == ["_func001.dat"]

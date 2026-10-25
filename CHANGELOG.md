@@ -77,6 +77,12 @@ to [Semantic Versioning](https://semver.org/).
   `Padding` element whose type is declared inline, which made the schema
   unreadable; it has no stored bytes and is now skipped. Any other element with
   an inline type, which rainbow cannot size, is refused rather than skipped.
+- **Waters file names are matched regardless of case everywhere.**
+  `waters.read_metadata` found a .raw folder's `_FUNC`/`_CHRO` files only by
+  their names' exact upper case, so a folder named in lower case (a
+  PerkinElmer export) seemed to hold none; it now lists them as they are on
+  disk. `waters.read(requested_files=)` matched only lower-case names when
+  called directly; it now takes them in any case, as `rb.read` does.
 
 ## [1.5.5] - 2026-10-17
 
