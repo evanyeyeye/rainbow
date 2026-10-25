@@ -50,6 +50,19 @@ to [Semantic Versioning](https://semver.org/).
   records it. A simultaneous SIM/Scan run's interleaved scans are told apart
   by it.
 
+- **`rb.measurements(datadir)` reads a run's measurements without building
+  an ASM document** (also `DataDirectory.measurements()`). One dict per
+  measurement `to_asm` writes (DAD spectra aside): its identifier, data file,
+  label, technique, detector, m/z, channel metadata and unit, the trace as
+  numpy arrays (`times` in minutes, `values` as `from_asm` rebuilds them),
+  the sample and injection fields, measurement time, acquisition method, its
+  peaks as `peaks_from_asm` reads them, and the measurement document itself.
+  The measurements are made by `to_asm`'s own builders and read by
+  `from_asm`'s readers, so the two agree (tested field by field on every
+  bundled run); no array becomes a Python list, nothing goes through JSON,
+  and no trace is rebuilt. What is said only of a document (that it will not
+  validate, that a channel is published relabeled or left out) is not said.
+
 ### Changed
 - **Python 3.11 or later.** rainbow now requires Python 3.11 (was 3.8), the
   oldest release still supported upstream; wheels are built for 3.11 to 3.13.

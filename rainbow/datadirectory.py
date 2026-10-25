@@ -194,6 +194,16 @@ class DataDirectory:
                           decimal_places=decimal_places, technique=technique,
                           utc_offset=utc_offset)
 
+    def measurements(self, *, ions=None, technique=None, utc_offset=None):
+        """
+        The measurements :meth:`to_asm` writes, read without building the
+        document: one dict per measurement, with its trace as numpy arrays.
+        See :func:`rainbow.asm.measurements`.
+        """
+        from rainbow import asm
+        return asm.measurements(self, ions=ions, technique=technique,
+                                utc_offset=utc_offset)
+
     def export_asm(self, filename, *, export_dad_cube=True, wavelengths=None,
                    ions=None, decimal_places=None, technique=None,
                    utc_offset=None, indent=2):

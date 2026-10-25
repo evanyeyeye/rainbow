@@ -352,6 +352,118 @@ def to_asm(datadir, *, export_dad_cube=True, wavelengths=None, ions=None,
                           _injection_filename(datadir.name)))
 
 
+def measurements(datadir, *, ions=None, technique=None, utc_offset=None):
+    """
+    The measurements :func:`to_asm` writes for a run, read without building
+    the document.
+
+    Each is what a reader of the document would read back from that
+    measurement, so the two cannot disagree: the measurements are made by the
+    same code that writes the document's, and read by the same code
+    :func:`from_asm` and :func:`peaks_from_asm` read them with. What is skipped
+    is the cost of a document: no array is turned into a Python list, nothing
+    is written to JSON or parsed back, and no trace is rebuilt from it. A
+    multi-wavelength DAD spectrum is not among them (it is the run's DataFile
+    itself; ``to_asm(export_dad_cube=False)`` leaves it out the same way).
+
+    Args:
+        datadir (DataDirectory): A parsed directory (e.g. from ``rb.read``).
+        ions (float/list, optional): m/z value(s) to extract from full-scan MS
+            data, each its own mass chromatogram, as for :func:`to_asm`. SIM MS
+            is always included.
+        technique (str, optional): ``"GC"`` or ``"LC"``, as for :func:`to_asm`.
+        utc_offset (str, optional): UTC offset stamped on timestamps the
+            instrument recorded without one, as for :func:`to_asm`.
+
+    Returns:
+        list of dict, one per measurement, in the document's order:
+
+        - ``identifier``: the measurement identifier; ``file``: the name of
+          the DataFile it was made from; ``label``: its cube's label.
+        - ``technique``: ``"LC"`` or ``"GC"``.
+        - ``detector``: the DataFile detector a reader names it (``"UV"``,
+          ``"FLD"``, ...; ``"MS"`` for a mass chromatogram; None for an analog
+          trace); ``mz``: a mass chromatogram's m/z, else None.
+        - ``channel``: what it says of its channel, as DataFile metadata
+          (``unit``, ``wavelength``, ``bandwidth``, ``reference_wavelength``,
+          ``measure``, ``device_type``, ...), as :func:`from_asm` gives it;
+          ``unit``: the unit ``values`` are in.
+        - ``times`` (minutes, the DataFile's own) and ``values`` (in
+          ``unit``: an absorbance in mAU, as :func:`from_asm` rebuilds it):
+          the trace, numpy float64 arrays.
+        - ``sample``: ``identifier``, ``name``, ``location``, ``plate``,
+          ``role`` and ``fields`` (its custom fields, by their labels), each
+          None (``fields`` {}) where the run states none.
+        - ``injection``: ``identifier``, ``time`` and ``volume_ul``, likewise.
+        - ``measurement_time`` and ``acquisition_method``.
+        - ``peaks``: the peak group :func:`peaks_from_asm` reads, or None.
+        - ``document``: the measurement document itself, for anything else;
+          its cube holds numpy arrays, so it is not JSON as it stands.
+
+    """
+    options = _Options(export_dad_cube=False, ions=ions,
+                       utc_offset=utc_offset, document=False)
+    technique = _technique(datadir.datafiles, datadir.metadata, technique)
+    return [_measurement_fields(measurement, options, technique)
+            for measurement in _measurements(datadir, options, technique)]
+
+
+def _measurement_fields(measurement, options, technique):
+    """One entry of :func:`measurements`: a measurement as a reader reads it."""
+    import numpy as np
+    said = {}
+    _absorb_samples([measurement], said)
+    _absorb_envelope(measurement, said)
+    source = options.sources.get(id(measurement)) or {}
+    datafile = source.get("datafile")
+    mass = _MASS_CHROMATOGRAM_CUBE in measurement
+    cube = measurement.get(_MASS_CHROMATOGRAM_CUBE if mass
+                           else _CHROMATOGRAM_CUBE) or {}
+    channel = _channel_metadata(measurement)
+    if mass:
+        # _channel_metadata reads the measure of a chromatogram cube alone.
+        concept, unit = _measure_of({_CHROMATOGRAM_CUBE: cube})
+        channel.setdefault("measure", concept)
+        channel.setdefault("unit", unit)
+    data = cube.get("data") or {}
+    values = np.asarray(data.get("measures", [()])[0], dtype=float)
+    if not mass:
+        values = _absorbance_in_mau(values, measurement)
+    volume = said.get("injection_volume")
+    return {
+        "identifier": measurement.get("measurement identifier"),
+        "file": datafile.name if datafile is not None else None,
+        "label": cube.get("label"),
+        "technique": "GC" if technique is _GC else "LC",
+        "detector": "MS" if mass else _detector_of(measurement),
+        "mz": source.get("mz"),
+        "channel": channel,
+        "unit": channel.get("unit"),
+        "times": np.asarray(datafile.xlabels, dtype=float)
+        if datafile is not None else
+        np.asarray(data.get("dimensions", [()])[0], dtype=float)
+        / _SECONDS_PER_MINUTE,
+        "values": values,
+        "sample": {
+            "identifier": said.get("sample"),
+            "name": said.get("sample_name"),
+            "location": said.get("vialpos"),
+            "plate": said.get("well_plate_id"),
+            "role": said.get("sample_role"),
+            "fields": said.get("sample_custom") or {},
+        },
+        "injection": {
+            "identifier": said.get("injection_identifier"),
+            "time": said.get("injection_time"),
+            "volume_ul": volume["value"] if volume else None,
+        },
+        "measurement_time": said.get("date"),
+        "acquisition_method": said.get("acq_method"),
+        "peaks": _peaks_from_measurement(measurement),
+        "document": measurement,
+    }
+
+
 def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
                     ions=None, decimal_places=None, technique=None,
                     utc_offset=None):
@@ -1096,15 +1208,24 @@ class _Options:
             many decimal places; ``None`` keeps full precision.
         utc_offset (str or None): UTC offset to stamp on timestamps the source
             recorded without one.
+        document (bool): the measurements go into an ASM document. False for
+            :func:`measurements`, which builds no document: its arrays stay
+            numpy arrays, never Python lists, and what is said only of a
+            document (that it will not validate, that a channel is published
+            relabeled or left out of it) is not said.
     """
 
     def __init__(self, export_dad_cube=True, wavelengths=None, ions=None,
-                 decimal_places=None, utc_offset=None):
+                 decimal_places=None, utc_offset=None, document=True):
         self.export_dad_cube = export_dad_cube
         self.wavelengths = _wavelength_list(wavelengths)
         self.ions = None if ions is None else _finite_number_list(ions, "ions")
         self.decimals = _check_decimal_places(decimal_places)
         self.utc_offset = _utc_offset(utc_offset)
+        self.document = document
+        # Without a document: what each measurement was made from, by id(), for
+        # measurements() (the data file it came from, an ion's m/z).
+        self.sources = {}
         self._warned = set()
 
     def start_document(self):
@@ -1145,7 +1266,7 @@ class _Options:
             # validate, so the document says so rather than leaving it to be
             # discovered by a schema checker. Said once however many timestamps
             # the document holds, and never when an offset was found or given.
-            if not _HAS_OFFSET.search(stamped):
+            if not _HAS_OFFSET.search(stamped) and self.document:
                 _warn_once_per_run(
                     self, "naive-timestamp",
                     "{!r} records no UTC offset and rainbow will not invent "
@@ -1157,6 +1278,8 @@ class _Options:
         if not isinstance(value, str) or not value.strip():
             return stamped
         if required:
+            if not self.document:
+                return value  # kept as the run wrote it; no schema to break
             warnings.warn(
                 f"cannot read {value!r} as a timestamp; writing it through "
                 "unchanged, because the schema requires the field. The "
@@ -1167,11 +1290,12 @@ class _Options:
         return None
 
     def array(self, values):
-        """The values as a Python list, rounded if a precision was set."""
+        """The values as a Python list, rounded if a precision was set; a
+        numpy array without a document."""
         result = np.asarray(values, dtype=float)
         if self.decimals is not None:
             result = np.round(result, self.decimals)
-        return result.tolist()
+        return result.tolist() if self.document else result
 
     def scalar(self, value):
         """One float, rounded if a precision was set."""
@@ -1475,6 +1599,8 @@ def _measurements(datadir, options, technique):
                     measurement.get("measurement identifier"))
                 carried.add(key)
             measurements.append(measurement)
+    if not options.document:
+        return measurements
     _warn_peaks_not_carried(datadir, peak_groups, carried, options)
     if not measurements:
         _warn_nothing_to_export(datadir, options)
@@ -1675,8 +1801,11 @@ def _warn_relabeled_unit(datafile, unit, descriptor, options):
     """Says that a channel's values went out under a quantity they are not in.
 
     The one message for every detector that reaches it, so no detector class is
-    quietly exempt from an explanation the others give.
+    quietly exempt from an explanation the others give. Said only of a
+    document: :func:`measurements` gives the values under their real unit.
     """
+    if not options.document:
+        return
     _warn_once_per_run(
         options, "source-unit:{}:{}".format(datafile.name, unit),
         "{} records its signal in {!r}, which the schema does not offer "
@@ -2147,11 +2276,14 @@ def _mass_chromatogram_measurement(datafile, metadata, intensities, mz,
                                    identifier, options):
     """One mass chromatogram measurement for a monitored or extracted ion."""
     control = {"device type": "mass spectrometer"}
-    return _measurement(
+    measurement = _measurement(
         datafile, metadata, control,
         _MASS_CHROMATOGRAM_CUBE,
         _mass_chromatogram_cube(intensities, mz, datafile, options), options,
         identifier=identifier)
+    if not options.document:
+        options.sources[id(measurement)]["mz"] = mz
+    return measurement
 
 
 def _normalize_ions(ions):
@@ -2240,6 +2372,8 @@ def _measurement(datafile, metadata, control, cube_key, cube, options,
     method = datafile.metadata.get("acq_method") or metadata.get("acq_method")
     if isinstance(method, str) and method:
         _append_custom(measurement, _ACQUISITION_METHOD, method)
+    if not options.document:
+        options.sources[id(measurement)] = {"datafile": datafile, "mz": None}
     return measurement
 
 
@@ -2359,7 +2493,7 @@ def _add_injection_document(measurement, metadata, identifier, technique,
         }
     else:
         document = {"injection identifier": identifier or "unknown"}
-        if not has_volume:
+        if not has_volume and options.document:
             # Required by the GC ADM, so the document will not validate
             # without it. Said once per run rather than once per measurement,
             # because it is a property of the run's metadata.
