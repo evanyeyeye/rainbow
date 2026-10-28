@@ -84,15 +84,16 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     # Enrich with the per-injection method and sample sidecars (acq.macaml,
     # SAMPLE.XML, AcqData/AcqMethod.xml), filling gaps without overriding the values above.
     from rainbow.agilent import method
-    for key, value in method.parse_injection_metadata(path).items():
+    acq = method.read_acq_method(path)          # acq.macaml, parsed once
+    for key, value in method.parse_injection_metadata(path, acq).items():
         metadata.setdefault(key, value)
 
     # Tag each MS channel SIM or Scan from the acquisition method, so a SIM run
     # (its monitored ions) is distinguishable from a full scan.
     method.tag_acquisition_modes(path, datafiles)
     # What the method states of each ChemStation MS signal (polarity,
-    # fragmentor, SIM ions and their compound names), onto its MSD<n>.MS file.
-    method.tag_ms_signals(datafiles, method.ms_signals(path))
+    # fragmentor, SIM ions and their compound names), onto the file holding it.
+    method.tag_ms_signals(path, datafiles, acq)
 
     # Record the separation technique the method declares (gas vs liquid
     # chromatography), so an export routes by what the instrument says rather

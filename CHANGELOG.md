@@ -29,9 +29,10 @@ to [Semantic Versioning](https://semver.org/).
   (an HPLC run with one DAD signal), anonymised as
   `tests/inputs/README_sirslt.md` describes.
 - **Agilent ChemStation LC/MS files state what the method says of their
-  signal.** Each `MSD<n>.MS` DataFile's metadata has, where the method's
-  `[Signal n]` states it, `polarity` (`+`/`-`), `ionization_mode`,
-  `fragmentor` (V; a Scan signal whose table rows state one) and
+  signal.** Each MS DataFile's metadata has, where the method's signal it
+  holds (the one whose ions, or m/z range, the file recorded) states it,
+  `polarity` (`+`/`-`), `ionization_mode`, `fragmentor` (V; where every row
+  of the signal's table states the same one) and
   `monitored_ions` (a SIM signal's ions in the method's order, each
   `{mz, fragmentor, compound}`), read from `acq.macaml`, else from the method
   report as run (`acq.txt`, or older ChemStation's `ACQ.M/ACQ.TXT`, UTF-8 or

@@ -517,10 +517,25 @@ Sim Parameters
     2.50 1                  1247.60   200    1.0    39   Cpd A-x          0
                             1511.70   150           39                    0
 
+    4.00 2                  1601.20   150    1.0    39   A-very-long-compound 0
+
 
 [Signal 3]
 
 Not Active
+
+
+[Signal 4]
+
+Ionization Mode          : AJS-ES
+Polarity                 : Positive
+
+Sim Parameters
+
+  Time  |                  |  SIM   |Frag- |Gain |Actual|               |
+  (min) |    Group Name    |  Ion   |mentor|EMV  |Dwell | Compound Name |ISTD
+ -------|------------------|--------|------|-----|------|---------------|----
+    0.00 1                   333.30   100    1.0    80   Cpd C            0
 
 
 Spray Chamber
@@ -533,10 +548,17 @@ Polarity                 : Positive
 
 SIGNALS = {
     1: {"polarity": "-", "ionization_mode": "AJS-ES", "fragmentor": 80.0},
+    # a SIM table's second group, after a blank line, is read too; a name
+    # running past its column's bar stays whole
     2: {"polarity": "-", "ionization_mode": "AJS-ES",
         "monitored_ions": [
             {"mz": 1247.6, "fragmentor": 200.0, "compound": "Cpd A-x"},
-            {"mz": 1511.7, "fragmentor": 150.0, "compound": None}]},
+            {"mz": 1511.7, "fragmentor": 150.0, "compound": None},
+            {"mz": 1601.2, "fragmentor": 150.0,
+             "compound": "A-very-long-compound"}]},
+    # every ion at one fragmentor: the signal's fragmentor
+    4: {"polarity": "+", "ionization_mode": "AJS-ES", "fragmentor": 100.0,
+        "monitored_ions": [{"mz": 333.3, "fragmentor": 100.0, "compound": "Cpd C"}]},
 }
 
 
@@ -596,8 +618,8 @@ def test_ms_signals_read_from_acq_macaml_first(tmp_path):
     assert method.ms_signals(str(d)) == {
         # two Scan rows of different fragmentors state no one fragmentor
         1: {"polarity": "+", "ionization_mode": "API-ES"},
-        2: {"polarity": "-", "ionization_mode": "API-ES", "monitored_ions": [
-            {"mz": 300.1, "fragmentor": 100.0, "compound": "B"}]},
+        2: {"polarity": "-", "ionization_mode": "API-ES", "fragmentor": 100.0,
+            "monitored_ions": [{"mz": 300.1, "fragmentor": 100.0, "compound": "B"}]},
         # a polarity word other than Positive or Negative is not read
         3: {"ionization_mode": "API-ES", "fragmentor": 70.0}}
 
@@ -610,14 +632,58 @@ def test_ms_signals_absent_without_a_method(tmp_path):
     assert method.ms_signals(str(d)) == {}
 
 
-def test_ms_signals_tag_each_signals_own_file(tmp_path):
+def _ms_file_of(name, mz, mode=None):
+    """A synthetic MS DataFile recording these ions (its m/z labels)."""
+    import numpy as np
+    from rainbow.datafile import DataFile
+    metadata = {"acquisition_mode": mode} if mode else {}
+    return DataFile(name, "MS", np.arange(5, dtype=float), np.asarray(mz, dtype=float),
+                    np.ones((5, len(mz)), dtype=np.uint32), metadata)
+
+
+def test_ms_signals_tag_the_file_holding_each_signal(tmp_path):
+    """A file holds the signal whose ions it recorded (SIM) or whose range
+    holds them (Scan), whatever its number: with Signal 3 off, the file
+    numbered 3 holds Signal 4. A file that fits no signal is left as it is;
+    what a file states itself stays."""
+    import numpy as np
     d = tmp_path / "x.D"
     d.mkdir()
     (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
-    one, two = _ms_file("MSD1.MS", 5), _ms_file("MSD2.MS", 2)
-    three = _ms_file("MSD3.MS", 1)
-    two.metadata["polarity"] = "+"           # what a file states itself stays
-    method.tag_ms_signals([one, two, three], method.ms_signals(str(d)))
-    assert one.metadata == SIGNALS[1]
-    assert two.metadata == {**SIGNALS[2], "polarity": "+"}
-    assert three.metadata == {}
+    scan = _ms_file_of("MSD1.MS", np.arange(800.0, 1900.0, 1.0), "Scan")
+    sim = _ms_file_of("MSD2.MS", [1248.0, 1512.0, 1601.0], "SIM")   # labels rounded
+    sim.metadata["polarity"] = "+"
+    last = _ms_file_of("MSD3.MS", [333.3], "SIM")
+    stray = _ms_file_of("MSD4.MS", [500.0], "SIM")
+    method.tag_ms_signals(str(d), [scan, sim, last, stray])
+    assert scan.metadata == {"acquisition_mode": "Scan", **SIGNALS[1]}
+    assert sim.metadata == {"acquisition_mode": "SIM", **SIGNALS[2], "polarity": "+"}
+    assert last.metadata == {"acquisition_mode": "SIM", **SIGNALS[4]}
+    assert stray.metadata == {"acquisition_mode": "SIM"}
+
+
+def test_ms_signals_two_alike_go_by_the_files_number(tmp_path):
+    """Two Scan signals over one range fit a file alike: the one numbered as
+    the file is its; a file of another name is left untagged."""
+    d = tmp_path / "x.D"
+    d.mkdir()
+    scan = {"MassRangeLow": "100", "MassRangeHigh": "500"}
+    (d / "acq.macaml").write_text(_ms_acaml([
+        ("Positive", [{"Fragmentor": "70", **scan}], []),
+        ("Negative", [{"Fragmentor": "90", **scan}], [])]), encoding="utf-8")
+    one = _ms_file_of("MSD1.MS", [150.0, 300.0], "Scan")
+    two = _ms_file_of("MSD2.MS", [150.0, 300.0], "Scan")
+    other = _ms_file_of("scan.ms", [150.0, 300.0], "Scan")
+    method.tag_ms_signals(str(d), [one, two, other])
+    assert (one.metadata["polarity"], two.metadata["polarity"]) == ("+", "-")
+    assert other.metadata == {"acquisition_mode": "Scan"}
+
+
+def test_acq_macaml_is_parsed_once_per_read(monkeypatch):
+    import rainbow as rb
+    from rainbow.agilent import acaml
+    calls = []
+    real = acaml.read
+    monkeypatch.setattr(acaml, "read", lambda src: calls.append(src) or real(src))
+    rb.read("tests/inputs/red.D")
+    assert len(calls) == 1

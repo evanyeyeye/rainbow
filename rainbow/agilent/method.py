@@ -112,12 +112,36 @@ def decode_text(raw):
         return raw.decode("latin-1", "replace")
 
 
-def parse_injection_metadata(path):
+def read_acq_method(path):
+    """
+    The .D directory's acq.macaml, parsed (:func:`acaml.read`), or None when
+    it is missing or unreadable. Read once and passed to
+    :func:`parse_injection_metadata` and :func:`ms_signals`.
+    """
+    acq_path = os.path.join(path, "acq.macaml")
+    if not os.path.isfile(acq_path):
+        return None
+    try:
+        return acaml.read(acq_path)
+    except (ET.ParseError, ValueError, LookupError, OSError):
+        # A sidecar that is missing or unreadable contributes nothing, which
+        # includes one whose XML declaration names an encoding Python does not
+        # have: that raises LookupError out of the parser, and taking the whole
+        # read down over an optional metadata file is the wrong failure mode.
+        return None
+
+
+_UNREAD = object()      # acq.macaml not yet read: the function reads it
+
+
+def parse_injection_metadata(path, acq=_UNREAD):
     """
     Reads per-injection method and sample metadata from a .D directory.
 
     Args:
         path (str): Path of the .D directory.
+        acq: its acq.macaml as :func:`read_acq_method` gives it, when already
+            read; read here otherwise.
 
     Returns:
         dict: Any of ``operator``, ``modules``, ``injection_volume``,
@@ -132,24 +156,15 @@ def parse_injection_metadata(path):
 
     """
     metadata = {}
-    metadata.update(_from_acq_method(path))
+    metadata.update(_from_acq_method(read_acq_method(path) if acq is _UNREAD else acq))
     metadata.update(_from_sample_xml(path))
     metadata.update(_from_masshunter_method(path))
     return metadata
 
 
-def _from_acq_method(path):
-    """Method settings from acq.macaml."""
-    acq_path = os.path.join(path, "acq.macaml")
-    if not os.path.isfile(acq_path):
-        return {}
-    try:
-        doc = acaml.read(acq_path)
-    except (ET.ParseError, ValueError, LookupError, OSError):
-        # A sidecar that is missing or unreadable contributes nothing, which
-        # includes one whose XML declaration names an encoding Python does not
-        # have: that raises LookupError out of the parser, and taking the whole
-        # read down over an optional metadata file is the wrong failure mode.
+def _from_acq_method(doc):
+    """Method settings from acq.macaml (`doc`: read_acq_method's)."""
+    if doc is None:
         return {}
     sections = doc["sections"]
 
@@ -459,7 +474,10 @@ def _classify_ms(datafile, modes):
     return "SIM" if "sim" in datafile.name.lower() else "Scan"
 
 
-# A ChemStation LC/MS signal's data file: [Signal n] of the method is MSD<n>.MS.
+# A ChemStation LC/MS signal's data file is named MSD<n>.MS. Its header
+# names the detector (MSD1), not the signal, so which [Signal n] a file holds
+# is read from what the file recorded (its ions, its m/z range); the number is
+# taken only to choose between signals the file fits alike.
 _MS_SIGNAL_FILE_RE = re.compile(r"^MSD(\d+)\.MS$", re.IGNORECASE)
 
 # The method report as run, in the .D: acq.txt (OpenLab ChemStation), else the
@@ -480,10 +498,16 @@ _SETTING_RE = re.compile(r"^\s*([A-Za-z][A-Za-z .\-]*?)\s*:\s*(.*?)\s*$")
 # A report table's column heads (its two header lines joined, letters only),
 # as acq.macaml's ids: "SIM" over "Ion", "Frag-" over "mentor".
 _REPORT_HEADS = {"simion": "SIMIon", "fragmentor": "Fragmentor",
-                 "compoundname": "CompoundName"}
+                 "compoundname": "CompoundName", "masslow": "MassRangeLow",
+                 "rangehigh": "MassRangeHigh"}
+
+# m/z: how far a file's ion label may sit from the ion the method names. The
+# file's labels are the method's ions rounded for display (to whole numbers
+# for a single quad's unit-resolution data), at most half a unit away.
+_LABEL_ROUNDING = 0.5
 
 
-def ms_signals(path):
+def ms_signals(path, acq=_UNREAD):
     """
     What a ChemStation LC/MS method states of each MS signal.
 
@@ -493,41 +517,89 @@ def ms_signals(path):
 
     Args:
         path (str): Path of the .D directory.
+        acq: its acq.macaml as :func:`read_acq_method` gives it, when already
+            read; read here otherwise.
 
     Returns:
-        dict: ``{signal number: settings}``, each settings dict holding any of
-        ``polarity`` (``"+"`` or ``"-"``), ``ionization_mode`` (as written,
-        ``"AJS-ES"``), ``fragmentor`` (V; a Scan signal's, where every row of
-        its table states the same one) and ``monitored_ions`` (a SIM signal's
-        ions in the method's order, each ``{"mz": float, "fragmentor": float
-        or None, "compound": str or None}``). Empty when neither source has an
-        MS section, or one names more than one MS detector.
+        dict: ``{signal number: settings}`` for each active signal, each
+        settings dict holding any of ``polarity`` (``"+"`` or ``"-"``),
+        ``ionization_mode`` (as written, ``"AJS-ES"``), ``fragmentor`` (V,
+        where every row of the signal's table states the same one) and
+        ``monitored_ions`` (a SIM signal's ions in the method's order, each
+        ``{"mz": float, "fragmentor": float or None, "compound": str or
+        None}``). Empty when neither source has an MS section, or one names
+        more than one MS detector.
     """
-    signals = _ms_signals_from_acaml(path)
+    return {n: {k: v for k, v in s.items() if not k.startswith("_")}
+            for n, s in _ms_signals(path, acq).items()}
+
+
+def tag_ms_signals(path, datafiles, acq=_UNREAD):
+    """
+    Puts each MS signal's settings (:func:`ms_signals`) onto the metadata of
+    the data file that holds it, filling only keys the file does not state
+    itself. A file holds the signal whose ions are the ions it recorded (a SIM
+    signal), or whose m/z range holds those it recorded (a Scan signal); where
+    it fits several alike, the one numbered as the file (``MSD<n>.MS``,
+    ``[Signal n]``); where it fits none, or several none of which is numbered
+    as it, it is left untagged.
+
+    Args:
+        path (str): Path of the .D directory.
+        datafiles (list): The directory's DataFiles; MS entries are tagged in
+            place.
+        acq: as for :func:`ms_signals`.
+
+    """
+    signals = _ms_signals(path, acq)
+    if not signals:
+        return
+    for datafile in datafiles:
+        if datafile.detector != "MS":
+            continue
+        n = _signal_of(datafile, signals)
+        for key, value in (signals[n].items() if n is not None else ()):
+            if not key.startswith("_"):
+                datafile.metadata.setdefault(key, value)
+
+
+def _signal_of(datafile, signals):
+    """The number of the signal a data file holds (tag_ms_signals), or None."""
+    try:
+        labels = sorted(float(x) for x in datafile.ylabels)
+    except (TypeError, ValueError):
+        return None
+    if not labels:
+        return None
+    stated = datafile.metadata.get("acquisition_mode")
+
+    def fits(settings):
+        ions = sorted(e["mz"] for e in settings.get("monitored_ions", []))
+        if ions:
+            return stated != "Scan" and len(ions) == len(labels) and all(
+                abs(a - b) <= _LABEL_ROUNDING for a, b in zip(ions, labels))
+        span = settings.get("_scan_range")
+        if span is None or stated == "SIM":
+            return False
+        return span[0] - _LABEL_ROUNDING <= labels[0] and \
+            labels[-1] <= span[1] + _LABEL_ROUNDING
+
+    fit = [n for n, s in signals.items() if fits(s)]
+    if len(fit) == 1:
+        return fit[0]
+    match = _MS_SIGNAL_FILE_RE.match(os.path.basename(datafile.name))
+    named = int(match.group(1)) if match else None
+    return named if named in fit else None
+
+
+def _ms_signals(path, acq):
+    """ms_signals with each Scan signal's m/z range (``_scan_range``), the
+    active signals only."""
+    doc = read_acq_method(path) if acq is _UNREAD else acq
+    signals = _ms_signals_from_acaml(doc) if doc is not None else None
     if signals is None:
         signals = _ms_signals_from_report(path)
     return {n: s for n, s in (signals or {}).items() if s}
-
-
-def tag_ms_signals(datafiles, signals):
-    """
-    Puts each MS signal's settings (:func:`ms_signals`) onto its data file's
-    metadata (``MSD<n>.MS`` for ``[Signal n]``), filling only keys the file
-    does not state itself.
-
-    Args:
-        datafiles (list): The directory's DataFiles; MS entries are tagged in
-            place.
-        signals (dict): :func:`ms_signals` of the directory.
-
-    """
-    for datafile in datafiles:
-        if datafile.detector != "MS" or not signals:
-            continue
-        match = _MS_SIGNAL_FILE_RE.match(os.path.basename(datafile.name))
-        settings = signals.get(int(match.group(1))) if match else None
-        for key, value in (settings or {}).items():
-            datafile.metadata.setdefault(key, value)
 
 
 def _settings_of(fields, rows, sim):
@@ -542,19 +614,20 @@ def _settings_of(fields, rows, sim):
     if ionization:
         out["ionization_mode"] = ionization
     if sim:
-        ions = []
-        for row in rows:
-            mz = _float(row.get("SIMIon"))
-            if mz is not None:
-                compound = str(row.get("CompoundName") or "").strip() or None
-                ions.append({"mz": mz, "fragmentor": _float(row.get("Fragmentor")),
-                             "compound": compound})
+        rows = [row for row in rows if _float(row.get("SIMIon")) is not None]
+        ions = [{"mz": _float(row["SIMIon"]), "fragmentor": _float(row.get("Fragmentor")),
+                 "compound": str(row.get("CompoundName") or "").strip() or None}
+                for row in rows]
         if ions:
             out["monitored_ions"] = ions
     else:
-        frags = {_float(row.get("Fragmentor")) for row in rows}
-        if len(frags) == 1 and None not in frags:
-            out["fragmentor"] = frags.pop()
+        lows = [_float(row.get("MassRangeLow")) for row in rows]
+        highs = [_float(row.get("MassRangeHigh")) for row in rows]
+        if rows and None not in lows + highs:
+            out["_scan_range"] = (min(lows), max(highs))
+    frags = {_float(row.get("Fragmentor")) for row in rows}
+    if len(frags) == 1 and None not in frags:
+        out["fragmentor"] = frags.pop()
     return out
 
 
@@ -566,16 +639,9 @@ def _float(text):
         return None
 
 
-def _ms_signals_from_acaml(path):
-    """ms_signals' signals from acq.macaml; None when it has no one MS
-    detector section to read them from."""
-    acq_path = os.path.join(path, "acq.macaml")
-    if not os.path.isfile(acq_path):
-        return None
-    try:
-        doc = acaml.read(acq_path)
-    except (ET.ParseError, ValueError, LookupError, OSError):
-        return None
+def _ms_signals_from_acaml(doc):
+    """ms_signals' signals from acq.macaml (`doc`: read_acq_method's); None
+    when it has no one MS detector section to read them from."""
     acquisition = _section(doc["sections"], "Acquisition Method")
     container = acquisition["sections"] if acquisition else doc["sections"]
     detectors = [s for s in container
@@ -635,10 +701,10 @@ def _ms_signals_from_report(path):
             if current is not None:
                 out[current] = _settings_of(fields, rows, sim)
             current, fields, rows, sim = int(signal.group(1)), {}, [], False
-        elif current is not None and i + 1 < len(lines) and line.strip() \
+        elif current is not None and line[:1].strip() and i + 1 < len(lines) \
                 and _UNDERLINE_RE.match(lines[i + 1]):
-            # The next heading of the MS section ("Spray Chamber", underlined
-            # "----- -------"): the signals have ended.
+            # A heading at the margin, underlined ("Spray Chamber" over
+            # "----- -------"): the MS section's next part; the signals end.
             break
         elif current is not None and _RULE_RE.match(line) and i >= 2:
             table, i = _report_table(lines, i)
@@ -658,22 +724,32 @@ def _ms_signals_from_report(path):
 
 def _report_table(lines, at):
     """(rows, the index of the line after the table) of the report table
-    whose rule line is ``lines[at]``: its columns cut where the rule's bars
-    are, each row ``{id: text}`` for the heads _REPORT_HEADS names."""
+    whose rule line is ``lines[at]``: each row ``{id: text}`` for the heads
+    _REPORT_HEADS names. A row's words go to the column they start in (the
+    rule's bars cut the columns), so a name running past its column's bar
+    stays whole. Its rows are the indented lines after the rule, blank lines
+    between them (a SIM table's groups) included; it ends at a line at the
+    margin (the next signal, a heading) or the report's end."""
     rule = lines[at]
-    cuts = [0] + [j for j, c in enumerate(rule) if c == "|"] + [None]
-    spans = list(zip(cuts, cuts[1:]))
+    cuts = [j for j, c in enumerate(rule) if c == "|"]
+
+    def column(pos):
+        return sum(1 for c in cuts if c < pos)
 
     def cells(line):
-        return [line[a:b].strip(" |") for a, b in spans]
+        out = [[] for _ in range(len(cuts) + 1)]
+        for word in re.finditer(r"[^\s|]+", line):
+            out[column(word.start())].append(word)
+        return [line[w[0].start():w[-1].end()] if w else "" for w in out]
 
     heads = [re.sub(r"[^a-z]", "", (top + " " + bottom).lower())
              for top, bottom in zip(cells(lines[at - 2]), cells(lines[at - 1]))]
     ids = [_REPORT_HEADS.get(h) for h in heads]
     rows = []
     i = at + 1
-    while i < len(lines) and lines[i].strip():
-        rows.append({k: v for k, v in zip(ids, cells(lines[i])) if k and v})
+    while i < len(lines) and (not lines[i].strip() or lines[i][:1].isspace()):
+        if lines[i].strip() and not _RULE_RE.match(lines[i]):
+            rows.append({k: v for k, v in zip(ids, cells(lines[i])) if k and v})
         i += 1
     return rows, i
 
