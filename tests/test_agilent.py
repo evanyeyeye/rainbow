@@ -340,6 +340,24 @@ def test_scan_sizes_either_side_of_the_wrap_read_the_same_way(tmp_path):
     assert parsed.data.sum(axis=1).tolist() == counts
 
 
+def test_ms_scans_state_their_scan_type():
+    # yellow.D is a simultaneous SIM/Scan run: ChemStation writes the full
+    # scans to data.ms and the monitored ions to dataSim.ms, and each scan's
+    # record says which it is. orange.D's MSD1.MS is a full-scan LC/MSD file.
+    from rainbow.agilent.chemstation import parse_ms
+    sim = parse_ms("tests/inputs/yellow.D/dataSim.ms")
+    full = parse_ms("tests/inputs/yellow.D/data.ms")
+    lc = parse_ms("tests/inputs/orange.D/MSD1.MS")
+    assert sim.metadata["acquisition_mode"] == "SIM"
+    assert full.metadata["acquisition_mode"] == "Scan"
+    assert lc.metadata["acquisition_mode"] == "Scan"
+    for datafile, monitoring in ((sim, True), (full, False), (lc, False)):
+        scans = datafile.metadata["scans"]
+        assert len(scans["monitoring"]) == datafile.data.shape[0]
+        assert set(scans["monitoring"].tolist()) == {monitoring}
+        assert set(scans["scan_type"].tolist()) == {"SIM" if monitoring else "Scan"}
+
+
 # Every Chemstation data file among the fixtures, as (directory, name).
 _CHEMSTATION_FILES = [
     (color, name)

@@ -2211,6 +2211,11 @@ def scan_metadata(scan_records):
     - ``precursor_mz``: the m/z of interest, NaN where the record names none
       (MassHunter writes 0).
     - ``mz_range_min``, ``mz_range_max``: the measured mass range.
+    - ``cycle``: the cycle the scan belongs to (CycleNumber): one pass of the
+      scan program, which in a SIM or MRM acquisition writes a record per ion
+      or transition monitored.
+    - ``scan_method``: the scan program's entry the scan ran (ScanMethodID),
+      the same for each pass's scan of one ion or transition.
 
     Args:
         scan_records (list): Output of :obj:`read_scan_records`.
@@ -2249,6 +2254,10 @@ def scan_metadata(scan_records):
         values = column(name)
         if values is not None:
             scans[key] = np.array(values, dtype=np.float64)
+    for key, name in (('cycle', 'CycleNumber'), ('scan_method', 'ScanMethodID')):
+        values = column(name)
+        if values is not None:
+            scans[key] = np.array(values, dtype=np.int64)
     return scans
 
 

@@ -116,6 +116,11 @@ _MS_HEADER = ({
     'method': 0xE4
 }, 1)
 _MS_MAGIC = 0x01320000
+# The scan type each scan's record in an .ms file states, in the fourth byte of
+# the six after its retention time, by the names masshunter.SCAN_TYPES gives
+# them. Seen in LC/MSD and GC/MSD files alike: 1 in every full-scan file and 3
+# in every SIM file, as each file's acquisition method lists its signals.
+_MS_SCAN_TYPES = {1: 'Scan', 3: 'SIM'}
 
 
 def parse_optics(description):
@@ -871,11 +876,12 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     # Store the bytes holding mz-intensity pairs.
     times = np.empty(num_times, dtype=np.uint32)
     pair_counts = np.zeros(num_times, dtype=np.uint16)
+    scan_types = np.zeros(num_times, dtype=np.uint8)
     pair_bytearr = bytearray()
     for i in range(num_times):
         f.read(2)
         times[i] = int_unpack(f.read(4))[0]
-        f.read(6)
+        scan_types[i] = f.read(6)[3]
         # The multiply below has to happen on a Python int. Read back out of
         # pair_counts it would be a numpy uint16, which wraps at 65536 under
         # NEP 50, so a scan of more than 16383 pairs would ask for its byte
@@ -913,8 +919,35 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     # Read file metadata.
     metadata = read_header(f, *_MS_HEADER)
     f.close()
+    metadata.update(_ms_scans(scan_types))
 
     return DataFile(path, 'MS', times, ylabels, data, metadata)
+
+
+def _ms_scans(codes):
+    """
+    What an .ms file's scan records state of each scan: ``scans`` (as
+    masshunter.scan_metadata names them: ``scan_type``, the name in
+    :obj:`_MS_SCAN_TYPES` or the code itself as a string; ``monitoring``,
+    whether the scan monitors chosen ions), and ``acquisition_mode``, ``'SIM'``
+    or ``'Scan'``, when every scan states the same one of them.
+
+    Args:
+        codes (list): Each scan record's scan type code, in record order.
+
+    Returns:
+        Dictionary of the metadata entries, empty for a file with no scans.
+
+    """
+    codes = np.asarray(codes, dtype=np.uint8)
+    if not codes.size:
+        return {}
+    names = np.array([_MS_SCAN_TYPES.get(int(c), str(int(c))) for c in codes])
+    out = {'scans': {'scan_type': names,
+                     'monitoring': np.isin(names, ('SIM',))}}
+    if (names == names[0]).all() and names[0] in ('SIM', 'Scan'):
+        out['acquisition_mode'] = str(names[0])
+    return out
 
 
 def parse_ms_partial(path, display_precision=0, bin_width=1.0,
@@ -959,18 +992,20 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0,
     # Store the bytes holding mz-intensity pairs.
     times = []
     pair_counts = []
+    scan_types = []
     pair_bytearr = bytearray()
     while True:
         try:
             f.read(2)
             time = int_unpack(f.read(4))[0]
-            f.read(6)
+            scan_type = f.read(6)[3]
             pair_count = short_unpack(f.read(2))[0]
             f.read(4)
             pair_bytes = f.read(pair_count * 4)
             f.read(10)
             times.append(time)
             pair_counts.append(pair_count)
+            scan_types.append(scan_type)
             pair_bytearr.extend(pair_bytes)
         except Exception:
             break
@@ -1002,6 +1037,7 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0,
     # Read file metadata.
     metadata = read_header(f, *_MS_HEADER)
     f.close()
+    metadata.update(_ms_scans(scan_types))
 
     return DataFile(path, 'MS', times, ylabels, data, metadata)
 

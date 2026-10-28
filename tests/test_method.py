@@ -358,6 +358,21 @@ def test_tag_acquisition_modes_single_ion_is_sim_without_a_report(tmp_path):
     assert "acquisition_mode" not in scan.metadata
 
 
+def test_tag_acquisition_modes_keeps_the_mode_a_file_states(tmp_path):
+    # A file whose own scans state its mode (an .ms file's scan records) keeps
+    # it, whatever the method report or its number of ions would say.
+    d = tmp_path / "x.D"
+    d.mkdir()
+    _write_acqmeth(d, "SIM")
+    sim = _ms_file("MSD2.MS", 2)
+    scan = _ms_file("MSD1.MS", 1)
+    sim.metadata["acquisition_mode"] = "SIM"
+    scan.metadata["acquisition_mode"] = "Scan"
+    method.tag_acquisition_modes(str(d), [sim, scan])
+    assert sim.metadata["acquisition_mode"] == "SIM"
+    assert scan.metadata["acquisition_mode"] == "Scan"
+
+
 # Shared synthetic .D for the read-only tests, built once under a temp dir.
 _D_TMP = None
 

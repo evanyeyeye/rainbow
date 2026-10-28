@@ -403,7 +403,8 @@ def tag_acquisition_modes(path, datafiles):
     """
     Tags each MS DataFile with its ``acquisition_mode`` where determinable.
 
-    A single-ion channel (one m/z column) is SIM. For a multi-column channel
+    A file whose own scans state its mode (chemstation.parse_ms reads it from
+    each scan's record) keeps it. Otherwise: a single-ion channel (one m/z column) is SIM. For a multi-column channel
     the method report decides: a pure SIM or pure Scan method tags all its MS
     files; a simultaneous SIM/Scan run tags the file ChemStation wrote the
     monitored ions to (named ``*SIM*.ms``) as SIM and the full-scan file as
@@ -421,6 +422,8 @@ def tag_acquisition_modes(path, datafiles):
         return
     modes = acquisition_modes(path)
     for datafile in ms_files:
+        if datafile.metadata.get("acquisition_mode"):
+            continue
         mode = _classify_ms(datafile, modes)
         if mode:
             datafile.metadata["acquisition_mode"] = mode
