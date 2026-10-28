@@ -39,14 +39,23 @@ There is a 416 byte segment allocated in this file for each FUNC .IDX/.DAT pair.
 
    * - Segment Length
      - Purpose 
-   * - 32 bytes
+   * - 2 bytes
+     - the function word (below)
+   * - 30 bytes
      - UNKNOWN
    * - 128 bytes
      - UNKNOWN
    * - 32 little-endian floats
-     - mz values
-   * - 128 bytes
-     - UNKNOWN
+     - mz values (for MRM, each transition's precursor)
+   * - 32 little-endian floats
+     - for MRM, each transition's product m/z
+
+The function word is a little-endian 16-bit integer. Its low 5 bits are the
+MassLynx function type (0 = MS scan, 1 = SIR, 9 = MRM, 12 = diode array); only
+a diode array is a UV function. Bits 5-9 are the ion mode the function ran in;
+on the bundled runs whose ``_extern.inf`` states a polarity, 0 is EI+, 8 ES+
+and 9 ES-, and a diode array reads 0. rainbow takes a function's polarity from
+``_extern.inf`` where it states one, else from these codes.
 
 This means that there are at most 32 unique mz values recorded for MS data in the 2-byte FUNC .DAT format. Accordingly, we only found instances of this format for SIM data. 
 

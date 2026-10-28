@@ -2254,7 +2254,7 @@ def _is_sim(datafile):
     scan (exported only on request) rather than guessed.
     """
     mode = datafile.metadata.get("acquisition_mode")
-    if mode == "SIM":
+    if mode in ("SIM", "MRM"):     # each monitors chosen ions or transitions
         return True
     if mode == "Scan":
         return False

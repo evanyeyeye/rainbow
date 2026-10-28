@@ -14,7 +14,8 @@ from tests.datatester import assert_data_directory
 #   - indigo:    MS trace (2-byte format), 2 analog channels
 #   - violet:    UV spectrum, 3 UV channels (analog), 2 MS spectra (6-byte
 #                format), ELSD channel
-#   - white:     6 UV spectrum (4-byte format), 2 analog channels
+#   - white:     6 MRM functions (4-byte format; 2 ES+, 4 ES-, no
+#                _extern.inf), 2 analog channels
 #   - turquoise: Perkin-Elmer / TurboMass .raw export with lowercase filenames
 #                and PE _extern.inf polarity format
 @pytest.mark.parametrize(
@@ -78,13 +79,57 @@ def test_the_uv_wavelength_step_is_not_the_ms_bin_width():
     assert _FUNC_TYPE_DIODE_ARRAY == 12
 
 
+def test_the_function_type_names_the_detector_and_the_ion_mode_its_polarity():
+    # white.raw has no _extern.inf, which is where the polarity used to come
+    # from, and with it the detector: its six MRM functions (type 9) were read
+    # as UV. The first word of each _FUNCTNS.INF record states both the type
+    # and the ion mode (bits 5-9: 8 = ES+, 9 = ES-).
+    datadir = rb.read("tests/inputs/white.raw")
+    got = [(f.detector, f.metadata.get("polarity"),
+            f.metadata.get("acquisition_mode")) for f in datadir.datafiles]
+    assert got == [("MS", "+", "MRM")] * 2 + [("MS", "-", "MRM")] * 4
+
+
+@pytest.mark.parametrize("color", ["blue", "indigo", "violet"])
+def test_the_ion_mode_agrees_with_extern_inf(color):
+    # Where _extern.inf states each function's polarity, the ion mode in
+    # _FUNCTNS.INF states the same one, and a diode array (type 12) none.
+    from rainbow.waters import masslynx
+    path = f"tests/inputs/{color}.raw"
+    datadir = rb.read(path)
+    words = masslynx._function_words(f"{path}/_FUNCTNS.INF",
+                                     len(datadir.datafiles))
+    for f, (func_type, ion_mode) in zip(datadir.datafiles, words):
+        if func_type == masslynx._FUNC_TYPE_DIODE_ARRAY:
+            assert f.detector == "UV" and "polarity" not in f.metadata
+        else:
+            assert f.detector == "MS"
+            assert masslynx._ION_MODE_POLARITY[ion_mode] == \
+                f.metadata["polarity"]
+
+
+def test_an_mrm_function_states_each_transition():
+    # Three transitions of one precursor were three columns all labelled
+    # 112.97. Each column is labelled by its product and states its
+    # transition, precursor and product, in column order.
+    import numpy as np
+    f = rb.read("tests/inputs/white.raw").get_file("_FUNC001.DAT")
+    assert np.allclose(f.ylabels, [40.0, 52.9, 84.9])
+    assert f.metadata["transitions"] == [
+        {"precursor_mz": 112.97, "product_mz": 40.0},
+        {"precursor_mz": 112.97, "product_mz": 52.9},
+        {"precursor_mz": 112.97, "product_mz": 84.9}]
+    f = rb.read("tests/inputs/white.raw").get_file("_FUNC005.DAT")
+    assert [t["precursor_mz"] for t in f.metadata["transitions"]] == [
+        98.8, 100.84, 100.84]
+
+
 # NOT COVERED, and no bundled fixture can cover it: reading the axis from the
-# declared function type rather than from the guessed detector only changes an
-# answer for a function that is (a) not type 12, (b) typed UV by the polarity
-# fallback, and (c) in the 6/8 format, which is the only one that bins rather
-# than taking its labels from _FUNCTNS.INF. white.raw is (a) and (b) but is in
-# the 2/4 format, so reverting the change leaves every bundled fixture
-# byte-identical. Covering it needs a fixture that does not exist yet.
+# declared function type rather than from the detector only changes an
+# answer for a function that is (a) not type 12 and (b) in the 6/8 format,
+# which is the only one that bins rather than taking its labels from
+# _FUNCTNS.INF, and (c) has no polarity. Covering it needs a fixture that does
+# not exist yet.
 
 
 @pytest.mark.parametrize("func_type,detector,expected", [
