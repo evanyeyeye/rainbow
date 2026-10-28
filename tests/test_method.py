@@ -465,3 +465,159 @@ def test_monitored_compounds_missing_or_unreadable_is_absent(tmp_path):
     (d / "AcqData").mkdir()
     (d / "AcqData" / "AcqMethod.xml").write_text("not xml at all <<<")
     assert method.parse_injection_metadata(str(d)) == {}
+
+
+# ---- what a ChemStation LC/MS method states of each MS signal ----
+
+# The MS section of a ChemStation method report, laid out as acq.txt writes
+# it: a Scan signal, a SIM signal of two ions (one naming no compound), and an
+# inactive one; a later heading's Polarity is not a signal's.
+MS_REPORT = """\
+=====================================================================
+                       Mass Spectrometer Detector
+=====================================================================
+
+Mass Spectrometer Detector (G6135B)
+===================================
+
+General Information
+------- -----------
+
+Use MSD                  : Enabled
+Polarity Switch Delay    : 50 ms
+
+
+Signals
+-------
+
+[Signal 1]
+
+Ionization Mode          : AJS-ES
+Polarity                 : Negative
+Fragmentor Ramp          : Disabled
+
+Scan Parameters
+
+   Time |      Mass Range    |Frag- | Gain|Thres-| Step-
+  (min) |    Low   |  High   |mentor| EMV | hold | size
+ -------|----------|---------|------|-----|------|-------
+    2.50    800.00   1900.00    80    1.0       0  0.20
+
+
+[Signal 2]
+
+Ionization Mode          : AJS-ES
+Polarity                 : Negative
+
+Sim Parameters
+
+  Time  |                  |  SIM   |Frag- |Gain |Actual|               |
+  (min) |    Group Name    |  Ion   |mentor|EMV  |Dwell | Compound Name |ISTD
+ -------|------------------|--------|------|-----|------|---------------|----
+    2.50 1                  1247.60   200    1.0    39   Cpd A-x          0
+                            1511.70   150           39                    0
+
+
+[Signal 3]
+
+Not Active
+
+
+Spray Chamber
+----- -------
+
+Polarity                 : Positive
+
+                      END OF MS ACQUISITION PARAMETERS
+"""
+
+SIGNALS = {
+    1: {"polarity": "-", "ionization_mode": "AJS-ES", "fragmentor": 80.0},
+    2: {"polarity": "-", "ionization_mode": "AJS-ES",
+        "monitored_ions": [
+            {"mz": 1247.6, "fragmentor": 200.0, "compound": "Cpd A-x"},
+            {"mz": 1511.7, "fragmentor": 150.0, "compound": None}]},
+}
+
+
+def _ms_acaml(signals):
+    """An acq.macaml whose MS detector section holds these signals:
+    [(polarity, [scan rows], [sim rows])], each row a dict of its ids."""
+    def table(id_, rows):
+        if not rows:
+            return ""
+        body = "".join(
+            "<Row>" + "".join(
+                f"<Parameter><ID>{k}</ID><Value>{v}</Value></Parameter>"
+                for k, v in row.items()) + "</Row>" for row in rows)
+        return (f"<Section><Name>p</Name><ID>p</ID>"
+                f"<Table><ID>{id_}</ID>{body}</Table></Section>")
+    sections = "".join(
+        f"<Section><Name>[Signal {n}]</Name><ID>[Signal{n}]</ID>"
+        f"<Parameter><ID>IonizationMode</ID><Value>API-ES</Value></Parameter>"
+        f"<Parameter><ID>Polarity</ID><Value>{pol}</Value></Parameter>"
+        + table("ScanParameters", scan) + table("SimParameters", sim)
+        + "</Section>"
+        for n, (pol, scan, sim) in enumerate(signals, 1))
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<ACAML xmlns="urn:schemas-agilent-com:acaml15"><Doc><Content>
+<MethodConfiguration><MethodDescription>
+<Section><Name>Acquisition Method</Name><ID>Acquisition_Method</ID>
+<Section><Name>Mass Spectrometer Detector (G6135B)</Name><ID>MSD</ID>
+<Section><Name>Signals</Name><ID>Signals</ID>{sections}</Section>
+</Section></Section></MethodDescription></MethodConfiguration></Content></Doc>
+</ACAML>
+"""
+
+
+def test_ms_signals_read_from_the_method_report_in_utf16(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    assert method.ms_signals(str(d)) == SIGNALS
+
+
+def test_ms_signals_read_from_an_older_acq_m_report(tmp_path):
+    d = tmp_path / "x.D"
+    (d / "ACQ.M").mkdir(parents=True)
+    (d / "ACQ.M" / "ACQ.TXT").write_bytes(MS_REPORT.encode("utf-8"))
+    assert method.ms_signals(str(d)) == SIGNALS
+
+
+def test_ms_signals_read_from_acq_macaml_first(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    (d / "acq.macaml").write_text(_ms_acaml([
+        ("Positive", [{"Fragmentor": "70"}, {"Fragmentor": "90"}], []),
+        ("Negative", [], [{"SIMIon": "300.10", "Fragmentor": "100",
+                           "CompoundName": "B"}]),
+        ("Alternating", [{"Fragmentor": "70"}], [])]), encoding="utf-8")
+    assert method.ms_signals(str(d)) == {
+        # two Scan rows of different fragmentors state no one fragmentor
+        1: {"polarity": "+", "ionization_mode": "API-ES"},
+        2: {"polarity": "-", "ionization_mode": "API-ES", "monitored_ions": [
+            {"mz": 300.1, "fragmentor": 100.0, "compound": "B"}]},
+        # a polarity word other than Positive or Negative is not read
+        3: {"ionization_mode": "API-ES", "fragmentor": 70.0}}
+
+
+def test_ms_signals_absent_without_a_method(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    assert method.ms_signals(str(d)) == {}
+    (d / "acq.txt").write_bytes("General Information\n".encode("utf-16"))
+    assert method.ms_signals(str(d)) == {}
+
+
+def test_ms_signals_tag_each_signals_own_file(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    one, two = _ms_file("MSD1.MS", 5), _ms_file("MSD2.MS", 2)
+    three = _ms_file("MSD3.MS", 1)
+    two.metadata["polarity"] = "+"           # what a file states itself stays
+    method.tag_ms_signals([one, two, three], method.ms_signals(str(d)))
+    assert one.metadata == SIGNALS[1]
+    assert two.metadata == {**SIGNALS[2], "polarity": "+"}
+    assert three.metadata == {}

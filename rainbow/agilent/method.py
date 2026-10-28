@@ -16,7 +16,10 @@ sidecar that is missing or unreadable, simply contributes nothing.
 
 It also reads the MS acquisition mode from the ``acqmeth.txt`` instrument-
 control report so each MS channel can be tagged SIM or Scan; see
-:func:`tag_acquisition_modes`.
+:func:`tag_acquisition_modes`; and what a ChemStation LC/MS method states of
+each MS signal (its polarity, ionization, fragmentor and SIM ions with their
+compound names), from acq.macaml or the method report, onto the signal's
+``MSD<n>.MS`` file; see :func:`ms_signals` and :func:`tag_ms_signals`.
 """
 import os
 import re
@@ -454,3 +457,238 @@ def _classify_ms(datafile, modes):
     # Simultaneous SIM/Scan: ChemStation writes the monitored ions to a
     # *SIM*.ms file and the full scan to the other.
     return "SIM" if "sim" in datafile.name.lower() else "Scan"
+
+
+# A ChemStation LC/MS signal's data file: [Signal n] of the method is MSD<n>.MS.
+_MS_SIGNAL_FILE_RE = re.compile(r"^MSD(\d+)\.MS$", re.IGNORECASE)
+
+# The method report as run, in the .D: acq.txt (OpenLab ChemStation), else the
+# ACQ.TXT of the ACQ.M copy older ChemStation keeps there. Both are the same
+# text report, their MS section laid out alike.
+_MS_REPORTS = (("acq.txt",), ("ACQ.M", "ACQ.TXT"))
+
+# The polarity words a ChemStation MS signal states, in rainbow's spelling
+# (Waters' too); any other word is not read as a polarity.
+_POLARITY_WORDS = {"positive": "+", "negative": "-"}
+
+_SIGNAL_RE = re.compile(r"^\s*\[Signal\s+(\d+)\]\s*$", re.IGNORECASE)
+# A report table's rule line, under its two header lines: " -------|------|".
+_RULE_RE = re.compile(r"^\s*-+(\|-+)+\s*$")
+# A report heading's underline: "-------" or "----- -------", no bars.
+_UNDERLINE_RE = re.compile(r"^\s*-+(\s+-+)*\s*$")
+_SETTING_RE = re.compile(r"^\s*([A-Za-z][A-Za-z .\-]*?)\s*:\s*(.*?)\s*$")
+# A report table's column heads (its two header lines joined, letters only),
+# as acq.macaml's ids: "SIM" over "Ion", "Frag-" over "mentor".
+_REPORT_HEADS = {"simion": "SIMIon", "fragmentor": "Fragmentor",
+                 "compoundname": "CompoundName"}
+
+
+def ms_signals(path):
+    """
+    What a ChemStation LC/MS method states of each MS signal.
+
+    Read from ``acq.macaml``, else from the method report as run
+    (``acq.txt``, or the ``ACQ.M/ACQ.TXT`` older ChemStation writes; UTF-8 or
+    UTF-16, see :func:`decode_text`). Only what the method states is given.
+
+    Args:
+        path (str): Path of the .D directory.
+
+    Returns:
+        dict: ``{signal number: settings}``, each settings dict holding any of
+        ``polarity`` (``"+"`` or ``"-"``), ``ionization_mode`` (as written,
+        ``"AJS-ES"``), ``fragmentor`` (V; a Scan signal's, where every row of
+        its table states the same one) and ``monitored_ions`` (a SIM signal's
+        ions in the method's order, each ``{"mz": float, "fragmentor": float
+        or None, "compound": str or None}``). Empty when neither source has an
+        MS section, or one names more than one MS detector.
+    """
+    signals = _ms_signals_from_acaml(path)
+    if signals is None:
+        signals = _ms_signals_from_report(path)
+    return {n: s for n, s in (signals or {}).items() if s}
+
+
+def tag_ms_signals(datafiles, signals):
+    """
+    Puts each MS signal's settings (:func:`ms_signals`) onto its data file's
+    metadata (``MSD<n>.MS`` for ``[Signal n]``), filling only keys the file
+    does not state itself.
+
+    Args:
+        datafiles (list): The directory's DataFiles; MS entries are tagged in
+            place.
+        signals (dict): :func:`ms_signals` of the directory.
+
+    """
+    for datafile in datafiles:
+        if datafile.detector != "MS" or not signals:
+            continue
+        match = _MS_SIGNAL_FILE_RE.match(os.path.basename(datafile.name))
+        settings = signals.get(int(match.group(1))) if match else None
+        for key, value in (settings or {}).items():
+            datafile.metadata.setdefault(key, value)
+
+
+def _settings_of(fields, rows, sim):
+    """One signal's settings from its fields ({id: value}) and its table rows
+    ([{id: value}]), ids as acq.macaml writes them; `sim`: its table is a SIM
+    table."""
+    out = {}
+    polarity = _POLARITY_WORDS.get(str(fields.get("Polarity") or "").strip().lower())
+    if polarity:
+        out["polarity"] = polarity
+    ionization = str(fields.get("IonizationMode") or "").strip()
+    if ionization:
+        out["ionization_mode"] = ionization
+    if sim:
+        ions = []
+        for row in rows:
+            mz = _float(row.get("SIMIon"))
+            if mz is not None:
+                compound = str(row.get("CompoundName") or "").strip() or None
+                ions.append({"mz": mz, "fragmentor": _float(row.get("Fragmentor")),
+                             "compound": compound})
+        if ions:
+            out["monitored_ions"] = ions
+    else:
+        frags = {_float(row.get("Fragmentor")) for row in rows}
+        if len(frags) == 1 and None not in frags:
+            out["fragmentor"] = frags.pop()
+    return out
+
+
+def _float(text):
+    """Text as a float, or None."""
+    try:
+        return float(str(text).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _ms_signals_from_acaml(path):
+    """ms_signals' signals from acq.macaml; None when it has no one MS
+    detector section to read them from."""
+    acq_path = os.path.join(path, "acq.macaml")
+    if not os.path.isfile(acq_path):
+        return None
+    try:
+        doc = acaml.read(acq_path)
+    except (ET.ParseError, ValueError, LookupError, OSError):
+        return None
+    acquisition = _section(doc["sections"], "Acquisition Method")
+    container = acquisition["sections"] if acquisition else doc["sections"]
+    detectors = [s for s in container
+                 if (s.get("name") or "").startswith("Mass Spectrometer Detector")]
+    if len(detectors) != 1:
+        return None
+    signals = _section(detectors[0]["sections"], "Signals")
+    out = {}
+    for section in (signals or {}).get("sections", []):
+        match = _SIGNAL_RE.match(section.get("name") or "")
+        if not match:
+            continue
+        fields = {p["id"]: p["value"] for p in section["parameters"] if p.get("id")}
+        tables = section["tables"] + [t for s in section["sections"] for t in s["tables"]]
+        tables = [t for t in tables if t.get("id") in ("SimParameters", "ScanParameters")]
+        rows = [{p["id"]: p["value"] for p in row if p.get("id")}
+                for t in tables for row in t["rows"]]
+        sim = any(t["id"] == "SimParameters" for t in tables)
+        out[int(match.group(1))] = _settings_of(fields, rows, sim)
+    return out
+
+
+def _ms_signals_from_report(path):
+    """ms_signals' signals from the method report's MS section; None when no
+    report has one, or it names more than one MS detector."""
+    text = None
+    for parts in _MS_REPORTS:
+        report = _find_any_case(path, parts)
+        if report is None:
+            continue
+        try:
+            with open(report, "rb") as f:
+                text = decode_text(f.read())
+        except OSError:
+            continue
+        break
+    if text is None:
+        return None
+    lines = text.splitlines()
+    # The section's banner title, then in newer reports a heading naming the
+    # module ("Mass Spectrometer Detector (G6135B)"): one detector's.
+    titles = [line.strip() for line in lines
+              if line.strip().startswith("Mass Spectrometer Detector")]
+    if not titles or len({t for t in titles if t != "Mass Spectrometer Detector"}) > 1:
+        return None
+    start = next(i for i, line in enumerate(lines)
+                 if line.strip().startswith("Mass Spectrometer Detector"))
+    out = {}
+    current, fields, rows, sim = None, {}, [], False
+    i = start + 1
+    while i < len(lines):
+        line = lines[i]
+        if "END OF MS ACQUISITION PARAMETERS" in line.upper():
+            break
+        signal = _SIGNAL_RE.match(line)
+        if signal:
+            if current is not None:
+                out[current] = _settings_of(fields, rows, sim)
+            current, fields, rows, sim = int(signal.group(1)), {}, [], False
+        elif current is not None and i + 1 < len(lines) and line.strip() \
+                and _UNDERLINE_RE.match(lines[i + 1]):
+            # The next heading of the MS section ("Spray Chamber", underlined
+            # "----- -------"): the signals have ended.
+            break
+        elif current is not None and _RULE_RE.match(line) and i >= 2:
+            table, i = _report_table(lines, i)
+            rows.extend(table)
+            continue
+        elif current is not None:
+            if line.strip().lower() == "sim parameters":
+                sim = True
+            setting = _SETTING_RE.match(line)
+            if setting:
+                fields[setting.group(1).replace(" ", "")] = setting.group(2)
+        i += 1
+    if current is not None:
+        out[current] = _settings_of(fields, rows, sim)
+    return out
+
+
+def _report_table(lines, at):
+    """(rows, the index of the line after the table) of the report table
+    whose rule line is ``lines[at]``: its columns cut where the rule's bars
+    are, each row ``{id: text}`` for the heads _REPORT_HEADS names."""
+    rule = lines[at]
+    cuts = [0] + [j for j, c in enumerate(rule) if c == "|"] + [None]
+    spans = list(zip(cuts, cuts[1:]))
+
+    def cells(line):
+        return [line[a:b].strip(" |") for a, b in spans]
+
+    heads = [re.sub(r"[^a-z]", "", (top + " " + bottom).lower())
+             for top, bottom in zip(cells(lines[at - 2]), cells(lines[at - 1]))]
+    ids = [_REPORT_HEADS.get(h) for h in heads]
+    rows = []
+    i = at + 1
+    while i < len(lines) and lines[i].strip():
+        rows.append({k: v for k, v in zip(ids, cells(lines[i])) if k and v})
+        i += 1
+    return rows, i
+
+
+def _find_any_case(path, parts):
+    """The file at ``path``/``parts...``, each part's name matched in any
+    case, or None."""
+    here = path
+    for part in parts:
+        try:
+            names = os.listdir(here)
+        except OSError:
+            return None
+        hit = next((n for n in names if n.lower() == part.lower()), None)
+        if hit is None:
+            return None
+        here = os.path.join(here, hit)
+    return here if os.path.isfile(here) else None

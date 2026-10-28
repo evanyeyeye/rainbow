@@ -90,6 +90,9 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     # Tag each MS channel SIM or Scan from the acquisition method, so a SIM run
     # (its monitored ions) is distinguishable from a full scan.
     method.tag_acquisition_modes(path, datafiles)
+    # What the method states of each ChemStation MS signal (polarity,
+    # fragmentor, SIM ions and their compound names), onto its MSD<n>.MS file.
+    method.tag_ms_signals(datafiles, method.ms_signals(path))
 
     # Record the separation technique the method declares (gas vs liquid
     # chromatography), so an export routes by what the instrument says rather

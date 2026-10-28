@@ -28,6 +28,14 @@ to [Semantic Versioning](https://semver.org/).
   DAD spectrum carries the HPLC scale factor) and `tests/inputs/lime.sirslt`
   (an HPLC run with one DAD signal), anonymised as
   `tests/inputs/README_sirslt.md` describes.
+- **Agilent ChemStation LC/MS files state what the method says of their
+  signal.** Each `MSD<n>.MS` DataFile's metadata has, where the method's
+  `[Signal n]` states it, `polarity` (`+`/`-`), `ionization_mode`,
+  `fragmentor` (V; a Scan signal whose table rows state one) and
+  `monitored_ions` (a SIM signal's ions in the method's order, each
+  `{mz, fragmentor, compound}`), read from `acq.macaml`, else from the method
+  report as run (`acq.txt`, or older ChemStation's `ACQ.M/ACQ.TXT`, UTF-8 or
+  UTF-16); see `agilent.method.ms_signals`.
 - **Agilent MassHunter MRM transitions carry their compound names.** A .D
   whose `AcqData/AcqMethod.xml` names the compound for each MRM transition
   now has `metadata["monitored_compounds"]`: one

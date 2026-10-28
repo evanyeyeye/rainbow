@@ -12,7 +12,10 @@
             "metadata": {
                 "date": "14 Nov 19   3:08 pm -0500", 
                 "method": "PURITY_HPLC.M",
-                "acquisition_mode": "Scan"
+                "acquisition_mode": "Scan",
+                "polarity": "+",
+                "ionization_mode": "API-ES",
+                "fragmentor": 70.0
             }
         },
         "ADC1A.CH": {
