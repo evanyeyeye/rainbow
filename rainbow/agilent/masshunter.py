@@ -2216,6 +2216,8 @@ def scan_metadata(scan_records):
       or transition monitored.
     - ``scan_method``: the scan program's entry the scan ran (ScanMethodID),
       the same for each pass's scan of one ion or transition.
+    - ``time_segment``: the time segment of the acquisition method the scan
+      ran in (TimeSegmentID); a segment runs its own scan program.
 
     Args:
         scan_records (list): Output of :obj:`read_scan_records`.
@@ -2254,7 +2256,8 @@ def scan_metadata(scan_records):
         values = column(name)
         if values is not None:
             scans[key] = np.array(values, dtype=np.float64)
-    for key, name in (('cycle', 'CycleNumber'), ('scan_method', 'ScanMethodID')):
+    for key, name in (('cycle', 'CycleNumber'), ('scan_method', 'ScanMethodID'),
+                      ('time_segment', 'TimeSegmentID')):
         values = column(name)
         if values is not None:
             scans[key] = np.array(values, dtype=np.int64)

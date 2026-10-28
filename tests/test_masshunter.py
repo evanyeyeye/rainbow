@@ -1904,6 +1904,7 @@ def test_scans_state_their_cycle_and_scan_method():
     scans = masshunter.scan_metadata(records)
     assert scans["cycle"].tolist() == [r["CycleNumber"] for r in records]
     assert scans["scan_method"].tolist() == [r["ScanMethodID"] for r in records]
+    assert scans["time_segment"].tolist() == [r["TimeSegmentID"] for r in records]
     assert (np.diff(scans["cycle"]) >= 0).all()
 
 
