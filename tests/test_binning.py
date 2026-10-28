@@ -486,22 +486,21 @@ def test_a_partial_ms_file_can_return_the_labels_alone():
 
 def test_the_probe_does_not_build_the_grid_it_never_reads():
     # The measurement the flag exists for. mz_resolution reads nothing but the
-    # m/z axis, and yellow.D holds a MassHunter centroid beside a Chemstation
-    # channel, which is the shape that sends the probe through both.
+    # m/z axis; yellow.D's data.ms and dataSim.ms are read on the probe grid.
     import tracemalloc
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         tracemalloc.start()
         try:
-            rb.mz_resolution("tests/inputs/yellow.D", centroid=True)
+            rb.mz_resolution("tests/inputs/yellow.D")
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
 
-    # Building both grids costs about 64 MB here against 26. The bound is
-    # generous: it is meant to catch a grid coming back, not to pin a number.
-    assert peak < 45e6
+    # Building the grids costs about 18 MB here against 12. The bound is meant
+    # to catch a grid coming back, not to pin a number.
+    assert peak < 15e6
 
 
 def test_the_agilent_floor_matches_the_lattice_the_format_stores():

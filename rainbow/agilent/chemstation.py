@@ -924,6 +924,55 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     return DataFile(path, 'MS', times, ylabels, data, metadata)
 
 
+def ms_scan_times(path):
+    """
+    The retention time of each scan an .ms file holds, in integer
+    milliseconds as the file stores them, read from the scan records' headers
+    alone (their m/z-intensity pairs are skipped, not decoded).
+
+    A whole file is walked from its stated data start for its stated scan
+    count; a partial one (no magic, as :obj:`parse_ms_partial` reads it) from
+    the common start offset to its end.
+
+    Args:
+        path (str): Path to the .ms file.
+
+    Returns:
+        numpy.ndarray of int64, or None for a file that is neither.
+
+    """
+    short_unpack = struct.Struct('>H').unpack
+    int_unpack = struct.Struct('>I').unpack
+    times = []
+    with open(path, 'rb') as f:
+        head = f.read(4)
+        if len(head) < 4:
+            return None
+        if int_unpack(head)[0] == _MS_MAGIC:
+            if read_string(f, 0x4, 1) == "MSD Spectral File":
+                f.seek(0x116)
+                num_times = int_unpack(f.read(4))[0]
+            else:
+                f.seek(0x142)
+                num_times = struct.unpack('<H', f.read(2))[0]
+            f.seek(0x10A)
+            f.seek(short_unpack(f.read(2))[0] * 2 - 2)
+        else:
+            f.seek(0x10A)
+            if short_unpack(f.read(2))[0] != 0:
+                return None
+            f.seek(0x2F2)
+            num_times = None
+        while num_times is None or len(times) < num_times:
+            record = f.read(18)
+            if len(record) < 18:
+                break
+            pair_count = short_unpack(record[12:14])[0]
+            f.seek(pair_count * 4 + 10, os.SEEK_CUR)
+            times.append(int_unpack(record[2:6])[0])
+    return np.array(times, dtype=np.int64)
+
+
 def _ms_scans(codes):
     """
     What an .ms file's scan records state of each scan: ``scans`` (as

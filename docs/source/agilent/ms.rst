@@ -9,6 +9,8 @@ LC-MS data is stored in files named something like MSD1.ms.
 
 GC-MS data is stored in a file named data.ms. If SIM was performed, there will be a second file named dataSim.ms containing data for user-specified masses with a smoothing function applied. The exact smoothing function is unknown. 
 
+A .D written by MassHunter GC/MS Acquisition holds the same scans twice: in AcqData (MSScan.bin with MSPeak.bin, the Scan and SIM scans interleaved) and as data.ms (Scan) and dataSim.ms (SIM). Every scan time in the .ms files is one of MSScan.bin's, to the millisecond the .ms format stores, so rainbow reads the recording once: from AcqData when ``centroid`` or ``hrms`` is asked, else from the .ms files. ``read_metadata`` lists the .ms files.
+
 The .ms files for LC-MS and GC-MS data differ in file header length, available metadata, and storage of the number of retention times. On the other hand, they have the same data body structure.
 
 There is also a footer in .ms files of both types, but they are not described here because they are not understood. They do not appear to contain critical information.

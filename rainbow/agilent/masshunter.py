@@ -2141,6 +2141,28 @@ def read_scan_records(msscan_path, complextypes_dict, num_records=None):
     return records
 
 
+def scan_times(acqdata_path):
+    """
+    The retention time of each scan MSScan.bin records, in minutes, read from
+    its scan records alone (no spectrum is decoded).
+
+    Args:
+        acqdata_path (str): Path to the AcqData subdirectory.
+
+    Returns:
+        numpy.ndarray of float64, or None when AcqData holds no MSScan.bin
+        with its schema.
+
+    """
+    xsd = os.path.join(acqdata_path, "MSScan.xsd")
+    scan_bin = os.path.join(acqdata_path, "MSScan.bin")
+    if not (os.path.isfile(xsd) and os.path.isfile(scan_bin)):
+        return None
+    records = read_scan_records(
+        scan_bin, parse_scan_xsd(xsd), count_scans(acqdata_path))
+    return np.array([r['ScanTime'] for r in records], dtype=np.float64)
+
+
 def count_scans(acqdata_path):
     """
     Returns the total scan count from MSTS.xml, or None if MSTS.xml is absent.

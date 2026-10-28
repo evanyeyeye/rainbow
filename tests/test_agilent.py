@@ -4,6 +4,7 @@ Unit tests for parsing Agilent .D directories.
 """
 import os
 import struct
+import numpy as np
 
 import pytest
 
@@ -405,11 +406,32 @@ def test_read_metadata_states_what_read_does(color):
 
 
 def test_read_metadata_lists_a_masshunter_runs_own_chemstation_files():
-    # yellow.D holds MSPeak.bin in AcqData beside FID1A.ch, data.ms and
-    # dataSim.ms of its own; read() parses all of them, so all are listed, and
-    # its date comes from their headers.
+    # yellow.D holds its MS scans twice: in AcqData (MSScan.bin, MSPeak.bin)
+    # and as data.ms and dataSim.ms, the same scans at the same times. The
+    # recording is listed once, by the files read() returns without a flag;
+    # the centroid flag reads it from AcqData instead. Its date comes from
+    # the files' headers.
     said = rb.read_metadata(os.path.join("tests", "inputs", "yellow.D"))
-    assert said["datafiles"] == [
-        "FID1A.ch", "data.ms", "dataSim.ms", "MSPeak.bin"]
+    assert said["datafiles"] == ["FID1A.ch", "data.ms", "dataSim.ms"]
+    assert said["metadata"]["centroid_available"]
     assert said["metadata"]["date"] == "17 Dec 19  10:04 am"
     assert said["metadata"]["technique"] == "GC"
+
+
+def test_one_ms_recording_is_read_once():
+    # data.ms (Scan) and dataSim.ms (SIM) hold the very scans MSPeak.bin's
+    # records time: every .ms scan time is one of AcqData's, to the
+    # millisecond. With the centroid flag the recording comes from AcqData
+    # alone, its Scan and SIM scans interleaved as recorded.
+    from rainbow.agilent import chemstation, masshunter
+    path = os.path.join("tests", "inputs", "yellow.D")
+    acq = masshunter.scan_times(os.path.join(path, "AcqData"))
+    full = chemstation.ms_scan_times(os.path.join(path, "data.ms"))
+    sim = chemstation.ms_scan_times(os.path.join(path, "dataSim.ms"))
+    assert full.size + sim.size == acq.size
+    np.testing.assert_array_equal(
+        np.sort(np.concatenate([full, sim])), np.round(acq * 60000))
+    names = [f.name for f in rb.read(path, centroid=True).datafiles]
+    assert names == ["FID1A.ch", "MSPeak.bin"]
+    names = [f.name for f in rb.read(path).datafiles]
+    assert names == ["FID1A.ch", "data.ms", "dataSim.ms"]

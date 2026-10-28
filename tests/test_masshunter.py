@@ -72,7 +72,8 @@ COPPER_D = os.path.join("tests", "inputs", "copper.D")
 # non-HRMS parsers. teal.dx is a UV-only flush with no m/z axis, so the OpenLab
 # .dx reader is not covered here (no usable fixture).
 SILVER_ACQDATA = os.path.join("tests", "inputs", "silver.D", "AcqData")
-# Waters .raw fixtures that actually carry an MS m/z axis (white.raw has none).
+# Waters .raw fixtures that carry a binned MS m/z axis (white.raw's MRM
+# functions take their labels from _FUNCTNS.INF).
 WATERS_MS_RAW = [
     os.path.join("tests", "inputs", name)
     for name in ("blue.raw", "indigo.raw", "turquoise.raw", "violet.raw")
@@ -587,9 +588,13 @@ def test_centroid_flag_end_to_end():
     assert default.metadata.get("centroid_available")
 
     with_centroid = rb.read("tests/inputs/yellow.D", centroid=True)
-    assert "MSPeak.bin" in [df.name for df in with_centroid.datafiles]
-    # data.ms is untouched - centroid is additive, not a replacement.
-    assert "data.ms" in [df.name for df in with_centroid.datafiles]
+    names = [df.name for df in with_centroid.datafiles]
+    assert "MSPeak.bin" in names
+    # data.ms and dataSim.ms hold the same scans MSPeak.bin does (yellow.D is
+    # a MassHunter GC/MS acquisition, written both ways), so the recording is
+    # returned once, from AcqData; the FID beside it is untouched.
+    assert "data.ms" not in names and "dataSim.ms" not in names
+    assert "FID1A.ch" in names
     assert "centroid_available" not in with_centroid.metadata
 
 
@@ -1780,24 +1785,20 @@ def test_an_uncalibrated_centroid_reports_the_quantization_it_has():
     assert resolved["MSPeak.bin"] == pytest.approx(0.09, abs=0.001)
 
 
-def test_mz_resolution_centroid_flag_leaves_binned_channels_alone():
-    """ The centroid flag must not change what a binned MS channel reports.
-
-    yellow.D holds a Chemstation data.ms beside a MassHunter MSPeak.bin. The
-    centroid read is unbinned (the peak lists are per scan), which binned
-    data.ms at the default nominal width, so it reported that default instead
-    of the 0.1 Da grid the binary records.
+def test_mz_resolution_reads_one_recording_once():
+    """ yellow.D holds one MS recording as MSD ChemStation data.ms and
+    dataSim.ms and as MassHunter's MSPeak.bin. Without the flag the .ms files
+    are measured (data.ms on the 0.1 Da grid it records); with it, the same
+    scans are measured from MSPeak.bin alone, per scan.
     """
     yellow = os.path.join("tests", "inputs", "yellow.D")
     binned = rb.mz_resolution(yellow)
     assert binned["data.ms"] == 0.1
-    with_centroid = rb.mz_resolution(yellow, centroid=True)
-    assert with_centroid["data.ms"] == binned["data.ms"]
-    # dataSim.ms is selected-ion, so neither read reports a grid for it: the
-    # gaps between monitored ions are the method's choice, not a lattice.
+    # dataSim.ms is selected-ion, so no grid is reported for it: the gaps
+    # between monitored ions are the method's choice, not a lattice.
     assert "dataSim.ms" not in binned
-    assert "dataSim.ms" not in with_centroid
-    # The centroid channel is still measured per scan, not on the probe grid.
+    with_centroid = rb.mz_resolution(yellow, centroid=True)
+    assert set(with_centroid) == {"MSPeak.bin"}
     assert with_centroid["MSPeak.bin"] > 1e-3
 
 

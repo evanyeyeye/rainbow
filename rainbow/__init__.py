@@ -519,8 +519,8 @@ def _needs_the_probe(datadir, measured):
     """Whether any MS channel in ``datadir`` still has no measurement.
 
     Every MS channel the first read did not measure has to come from the probe:
-    one already on a shared axis (a Chemstation .ms beside a MassHunter
-    MSPeak.bin, or Agilent ICP-MS), and a centroid, whose per-scan peaks are
+    one already on a shared axis (a Chemstation .ms read beside a MassHunter
+    centroid, or Agilent ICP-MS), and a centroid, whose per-scan peaks are
     not a grid to measure. Asking which channels are still missing covers both
     without naming either, so a channel that stops being measured in the first
     read cannot silently drop out of the answer.
