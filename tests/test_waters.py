@@ -47,11 +47,12 @@ def test_acquisition_mode_tagged_from_function_type():
 
 def test_function_type_helpers_degrade_and_map():
     # The function-type helpers must not crash on a missing/short sidecar, and
-    # the type-code mapping is scan (0), SIR=SIM (1), and untagged otherwise.
+    # the type-code mapping is scan (0), SIR=SIM (1), MRM (9), and untagged otherwise.
     from rainbow.waters import masslynx
     assert masslynx._function_types("/tmp/does-not-exist.inf", 3) == []
     assert masslynx._acquisition_mode(0) == "Scan"
     assert masslynx._acquisition_mode(1) == "SIM"
+    assert masslynx._acquisition_mode(9) == "MRM"   # MRM: chosen transitions
     assert masslynx._acquisition_mode(12) is None  # diode array: not an MS mode
 
 

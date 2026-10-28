@@ -22,6 +22,8 @@ import os
 import re
 import xml.etree.ElementTree as ET
 
+import numpy as np
+
 from rainbow.agilent import acaml
 
 
@@ -403,12 +405,14 @@ def tag_acquisition_modes(path, datafiles):
     """
     Tags each MS DataFile with its ``acquisition_mode`` where determinable.
 
-    A file whose own scans state its mode (chemstation.parse_ms reads it from
-    each scan's record) keeps it. Otherwise: a single-ion channel (one m/z column) is SIM. For a multi-column channel
-    the method report decides: a pure SIM or pure Scan method tags all its MS
-    files; a simultaneous SIM/Scan run tags the file ChemStation wrote the
-    monitored ions to (named ``*SIM*.ms``) as SIM and the full-scan file as
-    Scan. A channel that cannot be classified is left untagged.
+    For a multi-column channel the method report decides: a pure SIM or pure
+    Scan method tags all its MS files; a simultaneous SIM/Scan run tags the
+    file ChemStation wrote the monitored ions to (named ``*SIM*.ms``) as SIM and
+    the full-scan file as Scan. Where it says the other of what a file's own
+    scans state (chemstation.parse_ms reads each scan's record), the report
+    decides, and the scans' ``monitoring`` follows it. With no report, a file
+    keeps the mode its scans state, and a single-ion channel (one m/z column)
+    is SIM. A channel that cannot be classified is left untagged.
 
     Args:
         path (str): Path of the .D directory.
@@ -422,11 +426,15 @@ def tag_acquisition_modes(path, datafiles):
         return
     modes = acquisition_modes(path)
     for datafile in ms_files:
-        if datafile.metadata.get("acquisition_mode"):
-            continue
-        mode = _classify_ms(datafile, modes)
-        if mode:
+        stated = datafile.metadata.get("acquisition_mode")
+        mode = _classify_ms(datafile, modes) if modes or not stated else None
+        if mode and mode != stated:
             datafile.metadata["acquisition_mode"] = mode
+            scans = datafile.metadata.get("scans")
+            if stated and scans and "monitoring" in scans:
+                n = len(scans["monitoring"])
+                scans["monitoring"] = np.full(n, mode == "SIM")
+                scans["scan_type"] = np.full(n, mode)
 
 
 def _classify_ms(datafile, modes):

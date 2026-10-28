@@ -34,6 +34,9 @@ _FUNCTNS_RECORD = 32 * 13
 _FUNC_TYPE_MASK = 0x1F
 _FUNC_TYPE_MS_SCAN = 0
 _FUNC_TYPE_SIR = 1
+# MRM: each scan reads the transitions it was set, its axis the product m/z of
+# each.
+_FUNC_TYPE_MRM = 9
 # Diode array. The authoritative signal that a function's axis is wavelength
 # rather than m/z, and stronger than the absence of a polarity: polarities are
 # read from separate metadata that can be missing or short, and white.raw
@@ -203,17 +206,16 @@ def _function_types(functns_inf_path, count):
 
 
 def _acquisition_mode(func_type):
-    """``'SIM'`` or ``'Scan'`` for an MS function type, or None if unrecognized.
+    """``'SIM'``, ``'MRM'`` or ``'Scan'`` for an MS function type, or None if
+    unrecognized.
 
-    SIR (Selected Ion Recording) is Waters' SIM. A plain MS scan is a scan. Other
-    MS modes (MRM, parent/daughter scans) are left untagged so the exporter falls
-    back to treating only single-ion data as SIM.
+    SIR (Selected Ion Recording) is Waters' SIM. A plain MS scan is a scan. MRM
+    monitors chosen transitions, as SIM does ions. Other MS modes
+    (parent/daughter scans) are left untagged so the exporter falls back to
+    treating only single-ion data as SIM.
     """
-    if func_type == _FUNC_TYPE_SIR:
-        return 'SIM'
-    if func_type == _FUNC_TYPE_MS_SCAN:
-        return 'Scan'
-    return None
+    return {_FUNC_TYPE_SIR: 'SIM', _FUNC_TYPE_MRM: 'MRM',
+            _FUNC_TYPE_MS_SCAN: 'Scan'}.get(func_type)
 
 
 def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
