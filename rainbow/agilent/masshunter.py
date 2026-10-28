@@ -255,7 +255,8 @@ def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
             :obj:`parse_msdata`.
         telemetry (bool, optional): Parse the DAD's non-absorbance traces.
         requested_files (list, optional): Lowercased filenames to restrict the
-            DAD parse to. The MS files are selected by their flags instead.
+            parse to; an MS file (MSPeak.bin, MSProfile.bin) is parsed when
+            its flag is set and, where files are named, it is among them.
         labels_only (bool, optional): Return each binned MS channel's m/z
             labels against an empty grid, for a caller that reads nothing but
             the axis; see :obj:`bin_to_grid`.
@@ -276,6 +277,11 @@ def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
     # MSTS.xml is not required: the scan count is recovered from the
     # MSScan.bin record geometry (see read_scan_records) when it is absent.
     if {"MSScan.xsd", "MSScan.bin"} <= acqdata_files:
+        # A caller naming the files it wants names the MS files too.
+        if requested_files and "mspeak.bin" not in requested_files:
+            centroid = False
+        if requested_files and "msprofile.bin" not in requested_files:
+            hrms = False
         # ICP-MS data is distinguished by the presence of MSScan_XSpecific.bin,
         # which records the per-isotope channels. Its MSProfile.bin is stored
         # uncompressed in a different layout than the HRMS one, so it needs a

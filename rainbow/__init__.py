@@ -502,8 +502,9 @@ def _is_selected_ion(datafile):
     as selected-ion.
     """
     mode = datafile.metadata.get('acquisition_mode')
-    if mode in ('SIM', 'Scan'):
-        return mode == 'SIM'
+    if mode in ('SIM', 'MRM', 'Scan', 'mixed'):
+        # A mixed channel's full scans are a grid to measure.
+        return mode in ('SIM', 'MRM')
     # Counted on the labels, not on the width of the data grid. They are the
     # same for an ordinary read (one column per label), but the probe reads
     # labels only, so the grid there is empty and would make every untagged

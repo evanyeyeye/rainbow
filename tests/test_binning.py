@@ -498,9 +498,11 @@ def test_the_probe_does_not_build_the_grid_it_never_reads():
         finally:
             tracemalloc.stop()
 
-    # Building the grids costs about 18 MB here against 12. The bound is meant
-    # to catch a grid coming back, not to pin a number.
-    assert peak < 15e6
+    # Measured (tracemalloc, fresh process, three runs alike): 11.5 MB peak
+    # for this probe, 17.8 MB for the same read building its grids (4.7 MB of
+    # them). The bound leaves 3 MB above the measured peak and sits 3.3 MB
+    # under the grid-building read, so a grid coming back fails it.
+    assert peak < 14.5e6
 
 
 def test_the_agilent_floor_matches_the_lattice_the_format_stores():

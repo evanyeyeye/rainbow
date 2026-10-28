@@ -444,6 +444,8 @@ def tag_acquisition_modes(path, datafiles):
         return
     modes = acquisition_modes(path)
     for datafile in ms_files:
+        if _tag_interleaved(datafile):
+            continue
         stated = datafile.metadata.get("acquisition_mode")
         mode = _classify_ms(datafile, modes) if modes or not stated else None
         if mode and mode != stated:
@@ -453,6 +455,33 @@ def tag_acquisition_modes(path, datafiles):
                 n = len(scans["monitoring"])
                 scans["monitoring"] = np.full(n, mode == "SIM")
                 scans["scan_type"] = np.full(n, mode)
+
+
+def _tag_interleaved(datafile):
+    """
+    Tags a file whose own scans are of both kinds, Scan and SIM (a MassHunter
+    acquisition's one MSScan.bin holding a simultaneous SIM/Scan run), from
+    those scans: ``acquisition_mode`` ``'mixed'``, and ``acquisition_modes``
+    the mode of each scan program entry (``scan_method``), ``{1: 'Scan',
+    2: 'SIM'}``; each scan's own kind stays in ``scans``. Returns whether it
+    did.
+    """
+    scans = datafile.metadata.get("scans") or {}
+    monitoring = scans.get("monitoring")
+    if monitoring is None:
+        return False
+    monitoring = np.asarray(monitoring, dtype=bool)
+    if monitoring.all() or not monitoring.any():
+        return False
+    datafile.metadata["acquisition_mode"] = "mixed"
+    methods = scans.get("scan_method")
+    if methods is not None:
+        datafile.metadata["acquisition_modes"] = {
+            int(m): ("SIM" if monitoring[np.asarray(methods) == m].all()
+                     else "Scan" if not monitoring[np.asarray(methods) == m].any()
+                     else "mixed")
+            for m in np.unique(methods)}
+    return True
 
 
 def _classify_ms(datafile, modes):

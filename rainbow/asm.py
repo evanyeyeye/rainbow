@@ -439,7 +439,8 @@ def _measurement_fields(measurement, options, technique):
         "mz": source.get("mz"),
         "channel": channel,
         "unit": channel.get("unit"),
-        "times": np.asarray(datafile.xlabels, dtype=float)
+        "times": np.asarray(datafile.xlabels, dtype=float)[
+            source["rows"] if source.get("rows") is not None else slice(None)]
         if datafile is not None else
         np.asarray(data.get("dimensions", [()])[0], dtype=float)
         / _SECONDS_PER_MINUTE,
@@ -2215,25 +2216,41 @@ def _reported_measure(measurement):
 def _mass_chromatogram_measurements(datafile, metadata, options):
     """Mass chromatogram measurements for an MS channel.
 
-    A SIM channel (its monitored ions) is always exported: every ion becomes a
-    mass chromatogram (ion count over retention time). A full scan is a 2D
-    retention-by-m/z grid that the published schema cannot hold faithfully, so
-    it is exported only ion by ion: each requested m/z in ``ions`` is pulled
-    from the grid as its own mass chromatogram. SIM and scan are told apart by
-    the channel's ``acquisition_mode`` (read from the acquisition method);
-    absent that, only a single-ion channel is taken as SIM. A per-scan HRMS
-    profile has no single shared m/z axis (reading ``ylabels`` raises), so it is
-    skipped. See the ASM detectors documentation.
+    A SIM channel (its monitored ions) and an MRM channel (its transitions) are
+    always exported: every ion or transition becomes a mass chromatogram (ion
+    count over retention time). A full scan is a 2D retention-by-m/z grid that
+    the published schema cannot hold faithfully, so it is exported only ion by
+    ion: each requested m/z in ``ions`` is pulled from the grid as its own mass
+    chromatogram. SIM and scan are told apart by the channel's
+    ``acquisition_mode`` (read from the acquisition method); absent that, only
+    a single-ion channel is taken as SIM. A channel whose scans are of both
+    kinds (``'mixed'``: a MassHunter simultaneous SIM/Scan run) exports each
+    ion its SIM scans recorded, from those scans, and the requested ions from
+    its full scans. A per-scan HRMS profile has no single shared m/z axis
+    (reading ``ylabels`` raises), so it is skipped. See the ASM detectors
+    documentation.
     """
+    import numpy as np
     try:
         ylabels = datafile.ylabels
     except Exception:
         return []  # per-scan HRMS, out of scope
-    if _is_sim(datafile):
+    scan_rows = None
+    measurements = []
+    if datafile.metadata.get("acquisition_mode") == "mixed":
+        sim_rows = np.asarray(
+            datafile.metadata["scans"]["monitoring"], dtype=bool)
+        scan_rows = ~sim_rows
+        recorded = np.flatnonzero(
+            np.asarray(datafile.data[sim_rows]).any(axis=0))
+        measurements = [
+            _extracted_ion(datafile, metadata, ylabels, index, options,
+                           rows=sim_rows, kind="SIM")
+            for index in recorded]
+    elif _is_sim(datafile):
         return [_extracted_ion(datafile, metadata, ylabels, index, options,
                                single=datafile.data.shape[1] == 1)
                 for index in range(datafile.data.shape[1])]
-    measurements = []
     for requested in _normalize_ions(options.ions):
         index = _nearest_ion(ylabels, requested)
         if index is None:
@@ -2242,7 +2259,8 @@ def _mass_chromatogram_measurements(datafile, metadata, options):
                 f"{datafile.name}; skipping that ion.")
             continue
         measurements.append(
-            _extracted_ion(datafile, metadata, ylabels, index, options))
+            _extracted_ion(datafile, metadata, ylabels, index, options,
+                           rows=scan_rows))
     return measurements
 
 
@@ -2256,33 +2274,53 @@ def _is_sim(datafile):
     mode = datafile.metadata.get("acquisition_mode")
     if mode in ("SIM", "MRM"):     # each monitors chosen ions or transitions
         return True
-    if mode == "Scan":
+    if mode in ("Scan", "mixed"):
         return False
     return datafile.data.shape[1] == 1
 
 
-def _extracted_ion(datafile, metadata, ylabels, index, options, single=False):
-    """One ion's mass chromatogram, taken from column ``index`` of the grid."""
+def _extracted_ion(datafile, metadata, ylabels, index, options, single=False,
+                   rows=None, kind=None):
+    """One ion's mass chromatogram, taken from column ``index`` of the grid,
+    from the scans at ``rows`` (a boolean mask; None for every scan). An MRM
+    column is named by its transition (precursor and product, the
+    ``transitions`` the file states), since two transitions can share a
+    product; ``kind`` ("SIM") names the scans an ion of a mixed channel is
+    taken from."""
     mz = float(ylabels[index]) if len(ylabels) > index else None
-    # A single-ion channel keeps the file's own name; for one of several ions the
-    # m/z disambiguates the identifier, unless the ylabel is missing (no m/z).
-    identifier = datafile.name if (single or mz is None) \
-        else "{} m/z {:g}".format(datafile.name, mz)
+    transitions = datafile.metadata.get("transitions")
+    what = None
+    if mz is not None:
+        what = "m/z {:g}".format(mz)
+        if transitions and len(transitions) == len(ylabels):
+            what = "MRM {:g} > {:g}".format(
+                transitions[index]["precursor_mz"],
+                transitions[index]["product_mz"])
+        elif kind:
+            what = "{} {}".format(kind, what)
+    # A single-ion channel keeps the file's own name; for one of several ions
+    # the ion disambiguates the identifier, unless the ylabel is missing.
+    identifier = datafile.name if (single or what is None) \
+        else "{} {}".format(datafile.name, what)
+    intensities = datafile.data[:, index] if rows is None \
+        else datafile.data[rows, index]
     return _mass_chromatogram_measurement(
-        datafile, metadata, datafile.data[:, index], mz, identifier, options)
+        datafile, metadata, intensities, mz, identifier, options, rows, what)
 
 
 def _mass_chromatogram_measurement(datafile, metadata, intensities, mz,
-                                   identifier, options):
+                                   identifier, options, rows=None, what=None):
     """One mass chromatogram measurement for a monitored or extracted ion."""
     control = {"device type": "mass spectrometer"}
     measurement = _measurement(
         datafile, metadata, control,
         _MASS_CHROMATOGRAM_CUBE,
-        _mass_chromatogram_cube(intensities, mz, datafile, options), options,
+        _mass_chromatogram_cube(intensities, mz, datafile, options, rows,
+                                what), options,
         identifier=identifier)
     if not options.document:
         options.sources[id(measurement)]["mz"] = mz
+        options.sources[id(measurement)]["rows"] = rows
     return measurement
 
 
@@ -2836,15 +2874,19 @@ def _spectrum_cube(datafile, options):
     }
 
 
-def _mass_chromatogram_cube(intensities, mz, datafile, options):
+def _mass_chromatogram_cube(intensities, mz, datafile, options, rows=None,
+                            what=None):
     """Lays a single ion's trace into a 1D (retention time) data cube.
 
     The measure is ion count. ``intensities`` is the trace at the monitored or
-    extracted m/z. That m/z has no dimension of its own in a mass chromatogram,
-    so it is recorded in the cube label.
+    extracted m/z, from the scans at ``rows`` (None: every scan). That m/z has
+    no dimension of its own in a mass chromatogram, so it is recorded in the
+    cube label (``what``: the ion or transition in words, else the m/z).
     """
     label = datafile.name
-    if mz is not None:
+    if what is not None:
+        label = "{} ({})".format(datafile.name, what)
+    elif mz is not None:
         label = "{} (m/z {:g})".format(datafile.name, mz)
     return {
         "label": label,
@@ -2853,15 +2895,17 @@ def _mass_chromatogram_cube(intensities, mz, datafile, options):
             "measures": [_component("count", "Counts")],
         },
         "data": {
-            "dimensions": [_retention_seconds(datafile, options)],
+            "dimensions": [_retention_seconds(datafile, options, rows)],
             "measures": [options.array(intensities)],
         },
     }
 
 
-def _retention_seconds(datafile, options):
-    """Retention times in seconds (rainbow stores minutes)."""
-    return options.array(datafile.xlabels * _SECONDS_PER_MINUTE)
+def _retention_seconds(datafile, options, rows=None):
+    """Retention times in seconds (rainbow stores minutes), of the scans at
+    ``rows`` (None: every one)."""
+    times = datafile.xlabels if rows is None else datafile.xlabels[rows]
+    return options.array(times * _SECONDS_PER_MINUTE)
 
 
 def _component(concept, unit):

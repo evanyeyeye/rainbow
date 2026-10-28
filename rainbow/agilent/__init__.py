@@ -83,17 +83,22 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     acquired = masshunter.parse_allfiles(
         path, display_precision, hrms, centroid, bin_width, telemetry,
         requested_files, _labels_only)
+    datafiles.extend(acquired)
+    # The run's date, method and instrument come from every ChemStation file
+    # read, the .ms copies dropped below among them.
+    metadata = chemstation.parse_metadata(path, datafiles)
+
     # A .D written by MassHunter may hold one MS recording twice, in AcqData
     # and as MSD ChemStation .ms files; where AcqData's scans were read, the
-    # .ms files holding the same scans are that recording again.
+    # .ms files holding the same scans are that recording again, unless the
+    # caller asked for them by name.
+    named = {name.lower() for name in requested_files or ()}
     acq_times = [f.xlabels for f in acquired if f.detector == 'MS']
     if acq_times:
         acq_times = np.concatenate(acq_times)
         datafiles = [f for f in datafiles
-                     if not _same_recording(_ms_milliseconds(f), acq_times)]
-    datafiles.extend(acquired)
-
-    metadata = chemstation.parse_metadata(path, datafiles)
+                     if f.name.lower() in named
+                     or not _same_recording(_ms_milliseconds(f), acq_times)]
 
     # Enrich with the per-injection method and sample sidecars (acq.macaml,
     # SAMPLE.XML, AcqData/AcqMethod.xml), filling gaps without overriding the values above.
@@ -359,7 +364,11 @@ def read_metadata(path):
         path (str): Path of the directory.
 
     Returns:
-        Dictionary containing a list of datafiles and the metadata.
+        Dictionary containing a list of datafiles and the metadata. Where the
+        .D holds its MS scans twice (AcqData and .ms files, see :func:`read`),
+        the .ms files are listed and ``copies`` names, for each AcqData file
+        the ``centroid`` or ``hrms`` flag reads, the .ms files it takes the
+        place of: ``{'MSPeak.bin': ['data.ms', 'dataSim.ms']}``.
 
     """
     if os.path.splitext(path)[1].lower() == '.dx':
@@ -389,7 +398,8 @@ def read_metadata(path):
         from rainbow.agilent import masshunter
         acqdata_files = set(os.listdir(acqdata_path))
         mh_datafiles = []
-        held = False
+        held = []
+        said = {}
         # A diode-array detector writes its chromatograms and spectra here too,
         # and read() returns those with no flag needed - so a run holding them
         # must not be reported as MS-only.
@@ -402,12 +412,13 @@ def read_metadata(path):
             # The scans' one recording is listed once: where the .D's own .ms
             # files hold AcqData's scans, by them, as read() returns it
             # without a flag (the flags read it from AcqData instead).
-            times = masshunter.scan_times(acqdata_path)
-            held = any(
-                _same_recording(chemstation.ms_scan_times(
-                    os.path.join(path, name)), times)
-                for name in chemstation_files
-                if name.lower().endswith('.ms'))
+            ms_names = [name for name in chemstation_files
+                        if name.lower().endswith('.ms')]
+            if ms_names:
+                times = masshunter.scan_times(acqdata_path)
+                held = [name for name in ms_names
+                        if _same_recording(chemstation.ms_scan_times(
+                            os.path.join(path, name)), times)]
             if "MSProfile.bin" in acqdata_files:
                 if not held:
                     mh_datafiles.append("MSProfile.bin")
@@ -416,8 +427,14 @@ def read_metadata(path):
                 if not held:
                     mh_datafiles.append("MSPeak.bin")
                 metadata['centroid_available'] = True
+        if held:
+            # What the flags read instead: each AcqData file with the .ms
+            # files holding its scans.
+            said['copies'] = {
+                name: held for name in ("MSPeak.bin", "MSProfile.bin")
+                if name in acqdata_files}
         if mh_datafiles or held:
-            return {'datafiles': chemstation_files + mh_datafiles,
+            return {**said, 'datafiles': chemstation_files + mh_datafiles,
                     'metadata': _with_injection_metadata(path, metadata)}
 
     if len(metadata) == 1:

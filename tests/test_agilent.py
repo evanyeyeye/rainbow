@@ -435,3 +435,47 @@ def test_one_ms_recording_is_read_once():
     assert names == ["FID1A.ch", "MSPeak.bin"]
     names = [f.name for f in rb.read(path).datafiles]
     assert names == ["FID1A.ch", "data.ms", "dataSim.ms"]
+    # The run's date and method come from the .ms files' headers either way.
+    plain = rb.read(path).metadata
+    assert {k: v for k, v in rb.read(path, centroid=True).metadata.items()
+            } == {k: v for k, v in plain.items() if k != "centroid_available"}
+    # read_metadata names the copies the centroid read takes the place of.
+    assert rb.read_metadata(path)["copies"] == {
+        "MSPeak.bin": ["data.ms", "dataSim.ms"]}
+
+
+def test_files_asked_for_by_name_are_the_files_read():
+    # A caller naming an .ms file gets it, AcqData's copy beside it only when
+    # named too; naming neither MS file reads no MS.
+    path = os.path.join("tests", "inputs", "yellow.D")
+    names = lambda **k: [f.name for f in rb.read(path, centroid=True, **k)
+                         .datafiles]
+    assert names(requested_files=["data.ms"]) == ["data.ms"]
+    assert names(requested_files=["data.ms", "MSPeak.bin"]) == [
+        "data.ms", "MSPeak.bin"]
+    assert names(requested_files=["FID1A.ch"]) == ["FID1A.ch"]
+    assert names(requested_files=["MSPeak.bin"]) == ["MSPeak.bin"]
+
+
+def test_an_interleaved_scan_and_sim_recording_is_tagged_mixed():
+    # yellow.D's MSScan.bin holds its Scan and SIM scans in one file: the
+    # file states both, by scan program entry, and its ASM export carries
+    # each SIM ion from the SIM scans alone, a requested ion from the full
+    # scans alone.
+    path = os.path.join("tests", "inputs", "yellow.D")
+    datadir = rb.read(path, centroid=True, bin_width=0.1)
+    f = datadir.get_file("MSPeak.bin")
+    assert f.metadata["acquisition_mode"] == "mixed"
+    assert f.metadata["acquisition_modes"] == {1: "Scan", 2: "SIM"}
+    assert f.metadata["scans"]["monitoring"].sum() == 1309
+    got = {m["identifier"]: m for m in rb.measurements(datadir, ions=[131])}
+    assert set(got) == {"FID1A.ch", "MSPeak.bin SIM m/z 131",
+                        "MSPeak.bin SIM m/z 202", "MSPeak.bin m/z 131"}
+    assert len(got["MSPeak.bin SIM m/z 131"]["times"]) == 1309
+    assert len(got["MSPeak.bin m/z 131"]["times"]) == 1307
+    # The SIM ion is the same trace dataSim.ms holds, to the count the .ms
+    # encoding rounds to.
+    sim = rb.read(path).get_file("dataSim.ms")
+    column = list(sim.ylabels).index(131.0)
+    assert np.allclose(got["MSPeak.bin SIM m/z 131"]["values"],
+                       sim.data[:, column], rtol=1e-3, atol=1)

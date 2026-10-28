@@ -228,3 +228,23 @@ def test_requested_files_match_regardless_of_case(tmp_path):
     datadir = waters.read("tests/inputs/turquoise.raw",
                           requested_files=["_FUNC001.DAT"])
     assert [f.name for f in datadir.datafiles] == ["_func001.dat"]
+
+
+def test_white_exports_each_mrm_transition_by_its_transition():
+    # Every transition is exported as a mass chromatogram, named by its
+    # precursor and product (two transitions of a function can share a
+    # product), with the function's own retention times and counts.
+    import numpy as np
+    datadir = rb.read("tests/inputs/white.raw")
+    got = rb.measurements(datadir)
+    names = [m["identifier"] for m in got]
+    assert len(names) == len(set(names)) == 15
+    assert names[:3] == ["_FUNC001.DAT MRM 112.97 > 40",
+                         "_FUNC001.DAT MRM 112.97 > 52.9",
+                         "_FUNC001.DAT MRM 112.97 > 84.9"]
+    assert "_FUNC005.DAT MRM 100.84 > 85.22" in names
+    f = datadir.get_file("_FUNC001.DAT")
+    one = got[1]
+    assert one["mz"] == 52.9 and one["label"] == "_FUNC001.DAT (MRM 112.97 > 52.9)"
+    assert np.allclose(one["values"], f.data[:, 1])
+    assert np.allclose(one["times"], f.xlabels)
