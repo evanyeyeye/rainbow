@@ -28,9 +28,26 @@ to [Semantic Versioning](https://semver.org/).
   DAD spectrum carries the HPLC scale factor) and `tests/inputs/lime.sirslt`
   (an HPLC run with one DAD signal), anonymised as
   `tests/inputs/README_sirslt.md` describes.
+- **`bin_width='recorded'` (`rb.RECORDED`) reads m/z as the file stores
+  them.** No width is chosen and nothing is merged: an Agilent .ms file, a
+  Waters function and an uncalibrated MassHunter centroid get one column per
+  distinct stored m/z, labelled by it unrounded, with
+  `metadata["mz_spacing"]`, the smallest gap between two of them as measured
+  on the file (not for SIM or MRM). The HRMS profile and a calibrated TOF
+  centroid, whose m/z are continuous, stay per scan. `display_precision` does
+  not apply.
+- **ChemStation MS files state their method signal by number.**
+  `MSD<n>.MS` takes `[Signal n]`'s settings and `metadata["method_signal"]`;
+  the ions or range the file recorded are a check. Scan signals state their
+  table (`scan_parameters`) and step (`mz_step`). A method of several MS
+  detectors is read per detector (`agilent.method.ms_detectors`), each file
+  paired with the detector its header names (`method_detector`).
+- **What says an MS file's mode is stated.** `metadata["acquisition_mode_from"]`:
+  `scans`, `method report`, `file name` or `one m/z column`.
+
 - **Agilent ChemStation LC/MS files state what the method says of their
   signal.** Each MS DataFile's metadata has, where the method's signal it
-  holds (the one whose ions, or m/z range, the file recorded) states it,
+  holds (`MSD<n>.MS` holds `[Signal n]`) states it,
   `polarity` (`+`/`-`), `ionization_mode`, `fragmentor` (V; where every row
   of the signal's table states the same one) and
   `monitored_ions` (a SIM signal's ions in the method's order, each
@@ -73,6 +90,23 @@ to [Semantic Versioning](https://semver.org/).
   validate, that a channel is published relabeled or left out) is not said.
 
 ### Changed
+- **A file's scans decide its acquisition mode over the method report.**
+  Where the report states another, the scans' mode and records stay, and the
+  report's is kept in `metadata["method_disagrees"]`. A MassHunter file whose
+  scans all state one of SIM, Scan or MRM is tagged with it.
+- **A method's setting that disagrees with the file is kept apart.** A SIM
+  signal's ions the file did not record (compared at the coarser of the .ms
+  0.05 m/z step and the method's written precision), a Scan range that does
+  not hold the file's m/z, or a setting the file states otherwise, go to
+  `method_disagrees` instead of onto the file. The ±0.5 m/z label match is
+  gone.
+- **A Waters function nothing names is not called UV.** Without
+  `_FUNCTNS.INF` and a polarity its detector is unstated (an analog channel),
+  its axis read as recorded.
+- **A DAD spectrum in a unit rainbow cannot place says so in ASM**, as a
+  chromatogram does: published under mAU, unscaled, with the note naming the
+  file's unit, which `from_asm` reads back.
+
 - **Python 3.11 or later.** rainbow now requires Python 3.11 (was 3.8), the
   oldest release still supported upstream; wheels are built for 3.11 to 3.13.
   On older Python, pip keeps installing rainbow 1.5.5.

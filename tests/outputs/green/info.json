@@ -24,7 +24,8 @@
             "metadata": {
                 "date": "3 Feb 22  11:22 am -0500",
                 "method": "IVTT.Am.Carn.Neo.Ch",
-                "acquisition_mode": "SIM"
+                "acquisition_mode": "SIM",
+                "acquisition_mode_from": "scans"
             }
         },
         "MSD2.MS": {
@@ -33,7 +34,8 @@
             "metadata": {
                 "date": "3 Feb 22  11:22 am -0500",
                 "method": "IVTT.Am.Carn.Neo.Ch",
-                "acquisition_mode": "SIM"
+                "acquisition_mode": "SIM",
+                "acquisition_mode_from": "scans"
             }
         },
         "MSD3.MS": {
@@ -42,7 +44,8 @@
             "metadata": {
                 "date": "3 Feb 22  11:22 am -0500",
                 "method": "IVTT.Am.Carn.Neo.Ch",
-                "acquisition_mode": "SIM"
+                "acquisition_mode": "SIM",
+                "acquisition_mode_from": "scans"
             }
         },
         "MSD4.MS": {
@@ -51,7 +54,8 @@
             "metadata": {
                 "date": "3 Feb 22  11:22 am -0500",
                 "method": "IVTT.Am.Carn.Neo.Ch",
-                "acquisition_mode": "SIM"
+                "acquisition_mode": "SIM",
+                "acquisition_mode_from": "scans"
             }
         }
     }

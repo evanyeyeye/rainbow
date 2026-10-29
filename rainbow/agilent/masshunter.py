@@ -14,7 +14,7 @@ try:
 except ImportError:
     import xml.etree.ElementTree as etree
 from rainbow import DataFile
-from rainbow._binning import HRMS_MZ_FLOOR, label_precision
+from rainbow._binning import HRMS_MZ_FLOOR, is_recorded, label_precision
 from rainbow.agilent.chemstation import parse_optics
 
 # NOTE: `lzf` (python-lzf) is imported lazily inside parse_msdata, and only
@@ -249,10 +249,13 @@ def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
             centroids, 0 for unit-resolution (GC/quadrupole) centroids.
         hrms (bool, optional): Parse the profile spectrum (MSProfile.bin).
         centroid (bool, optional): Parse the centroid spectrum (MSPeak.bin).
-        bin_width (float, optional): For the profile, omit (the default) to keep
-            the per-scan representation (:class:`ProfileDataFile`); pass a width
-            in daltons to project onto the shared m/z grid; see
-            :obj:`parse_msdata`.
+        bin_width (float or 'recorded', optional): For the profile, omit (the
+            default) to keep the per-scan representation
+            (:class:`ProfileDataFile`); pass a width in daltons to project onto
+            the shared m/z grid; see :obj:`parse_msdata`. ``'recorded'`` keeps
+            each m/z as the file stores it: the profile and a calibrated
+            centroid per scan, an uncalibrated centroid with one column per
+            distinct stored m/z (see :obj:`parse_mspeakdata`).
         telemetry (bool, optional): Parse the DAD's non-absorbance traces.
         requested_files (list, optional): Lowercased filenames to restrict the
             parse to; an MS file (MSPeak.bin, MSProfile.bin) is parsed when
@@ -295,9 +298,11 @@ def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
                 datafiles.append(parse_mspeakdata(
                     acqdata_path, display_precision, bin_width, labels_only))
             if hrms and "MSProfile.bin" in acqdata_files:
+                # The profile as recorded is its per-scan representation.
+                width = None if is_recorded(bin_width) else bin_width
                 profile = parse_msdata(
-                    acqdata_path, display_precision, bin_width, labels_only)
-                if bin_width is not None:
+                    acqdata_path, display_precision, width, labels_only)
+                if width is not None:
                     datafiles.append(profile)         # single shared-grid file
                 else:
                     # The per-scan form is one ProfileDataFile per grid.
@@ -988,6 +993,8 @@ def parse_msdata(path, display_precision='auto', bin_width=None,
         the shared grid.
 
     """
+    if is_recorded(bin_width):
+        bin_width = None          # the profile as recorded: per scan
     if bin_width is not None and (
             isinstance(bin_width, bool)
             or not isinstance(bin_width, (int, float)) or bin_width <= 0):
@@ -1352,6 +1359,13 @@ _MAX_DENSE_BINS = 50_000_000
 _FLOAT64_EXACT_INT = 1 << 53
 
 
+def _grid_dtype(intensities):
+    """The dtype of a grid of summed ``intensities``: float64 for float
+    intensities (the centroid's; see parse_mspeakdata), empty or not, as
+    there is no integer grid to reproduce exactly; else uint64."""
+    return np.float64 if intensities.dtype.kind == 'f' else np.uint64
+
+
 def _scatter_sum(idx, intensities, size):
     """
     Scatter-adds ``intensities`` into a length-``size`` uint64 array at the flat
@@ -1375,15 +1389,11 @@ def _scatter_sum(idx, intensities, size):
         float ``intensities``.
 
     """
-    if intensities.dtype.kind == 'f':
-        # Float intensities (the centroid's; see parse_mspeakdata) are summed
-        # as they are, into a float64 grid, empty or not; there is no integer
-        # grid to reproduce exactly.
-        if intensities.size == 0:
-            return np.zeros(size, dtype=np.float64)
-        return np.bincount(idx, weights=intensities, minlength=size)
     if intensities.size == 0:
-        return np.zeros(size, dtype=np.uint64)
+        return np.zeros(size, dtype=_grid_dtype(intensities))
+    if _grid_dtype(intensities) == np.float64:
+        # Float intensities are summed as they are.
+        return np.bincount(idx, weights=intensities, minlength=size)
 
     def _bincount():
         return np.bincount(
@@ -1424,21 +1434,34 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision,
 
     Args:
         mz_arr (np.ndarray): mz value of every point, all scans concatenated.
-        intensities (np.ndarray): uint64 intensity of every point.
+        intensities (np.ndarray): uint64 or float64 intensity of every point.
         rows (np.ndarray): Retention-time (row) index of every point.
         num_times (int): Number of retention times (grid rows).
         display_precision (int): Number of decimals to round the returned mz labels to.
-        bin_width (float, optional): Width of each shared-grid bin in daltons.
-            Defaults to ``10**-display_precision``.
+        bin_width (float or 'recorded', optional): Width of each shared-grid
+            bin in daltons. Defaults to ``10**-display_precision``.
+            ``'recorded'``: one column per distinct m/z, unrounded.
         labels_only (bool, optional): Return the m/z labels with an empty
             ``(num_times, 0)`` grid, for a caller that reads nothing but the
             axis. The labels are identical either way.
 
     Returns:
         Tuple ``(mz_ylabels, data)``: the sorted bin-center mz values that occur,
-        and the ``(num_times, mz_ylabels.size)`` uint64 intensity grid.
+        and the ``(num_times, mz_ylabels.size)`` intensity grid
+        (:obj:`_grid_dtype`).
 
     """
+    if is_recorded(bin_width):
+        # One column per distinct stored m/z, labelled by it unrounded.
+        labels, cols = np.unique(np.asarray(mz_arr, dtype=np.float64),
+                                 return_inverse=True)
+        if labels_only:
+            return labels, np.zeros((num_times, 0),
+                                    dtype=_grid_dtype(intensities))
+        grid = _scatter_sum(rows * labels.size + cols.ravel(), intensities,
+                            num_times * labels.size)
+        return labels, grid.reshape(num_times, labels.size)
+
     # Assign each point to integer bin round(mz / bin_width). The None default
     # uses the integer scale 10**display_precision directly, reproducing the prior grid bit
     # for bit; an explicit bin_width divides by the requested width instead.
@@ -1475,10 +1498,8 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision,
         # with, an 8.7 MB run peaks at 350 MB and a long one runs to gigabytes,
         # all of it to be discarded unread.
         filled = np.unique(keys[intensities > 0])
-        empty_dtype = np.float64 if intensities.dtype.kind == 'f' \
-            else np.uint64
         return (np.round(filled * width, decimals),
-                np.zeros((num_times, 0), dtype=empty_dtype))
+                np.zeros((num_times, 0), dtype=_grid_dtype(intensities)))
 
     low = int(keys.min())
     span = int(keys.max()) - low + 1
@@ -1540,9 +1561,12 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
         display_precision (int or str, optional): Decimals to round the m/z
             labels to. ``'auto'`` (the default) resolves to 4 for TOF-calibrated
             centroids and 0 for unit-resolution (GC/quadrupole) centroids.
-        bin_width (float, optional): Omit (the default) for the per-scan
-            :class:`CentroidDataFile`; pass a width in daltons to project the
-            peaks onto one shared m/z grid.
+        bin_width (float or 'recorded', optional): Omit (the default) for
+            the per-scan :class:`CentroidDataFile`; pass a width in daltons to
+            project the peaks onto one shared m/z grid. ``'recorded'``: an
+            uncalibrated (quadrupole) centroid gets one column per distinct
+            m/z it stores, labelled by that m/z unrounded; a calibrated (TOF)
+            one, whose m/z are continuous, stays per scan.
         labels_only (bool, optional): With a ``bin_width``, return the m/z
             labels against an empty grid, for a caller that reads nothing but
             the axis; see :obj:`bin_to_grid`. The per-scan representation is
@@ -1576,6 +1600,7 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
     # Per-scan peak lists, aligned to every scan (empty where a scan has none).
     mz_per_scan = [None] * num_times
     inten_per_scan = [None] * num_times
+    stored_in_float32 = True        # every peak block's m/z a float32
     with open(peak_path, 'rb') as f:
         for i, record in enumerate(scan_records):
             times[i] = record['ScanTime']
@@ -1593,6 +1618,8 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
             f.seek(offset)
             mzs, intensities = _decode_peak_block(
                 f.read(byte_count), num_peaks, byte_count // num_peaks)
+            if mzs.dtype != np.float32:
+                stored_in_float32 = False
             if calib_vals is not None:
                 mzs = calibrate_mz(np.asarray(mzs, dtype=np.float64),
                                    calib_vals[i], calib_flags.get(
@@ -1613,8 +1640,11 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
         else:
             inten_per_scan[i] = np.asarray(inten_per_scan[i], dtype=np.float64)
 
-    if bin_width is None:
+    if bin_width is None or (is_recorded(bin_width) and calib_vals is not None):
         # The per-scan (faithful) representation, like the HRMS profile default.
+        # A calibrated centroid read as recorded is this too: its peaks carry
+        # continuous m/z, so one column per distinct value would be one per
+        # peak, and there is no grid the file keeps them on.
         # display_precision is not applied to it. On a centroid the m/z labels
         # are the data - mass_labels(i) returns the peak list itself, and there
         # is no separate display of it to round - so rounding them here would
@@ -1661,6 +1691,12 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
     mz_ylabels, data = bin_to_grid(
         mz_arr, intensities, rows, num_times, display_precision, bin_width,
         labels_only)
+    if is_recorded(bin_width) and stored_in_float32:
+        # A float32 m/z as the file writes it: the shortest decimal that reads
+        # back to the stored float32 (100.08, not 100.08000183105469). One to
+        # one, so the columns stay distinct.
+        mz_ylabels = np.array([float(str(np.float32(x))) for x in mz_ylabels],
+                              dtype=np.float64)
     return _with_mz_floor(
         DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data,
                  {'scans': scan_metadata(scan_records)}), floor)

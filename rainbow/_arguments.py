@@ -15,7 +15,8 @@ columns.
 """
 import math
 
-from rainbow._binning import _MAX_LABEL_DECIMALS as MAX_DISPLAY_PRECISION
+from rainbow._binning import (_MAX_LABEL_DECIMALS as MAX_DISPLAY_PRECISION,
+                              RECORDED)
 
 _REMOVED_ARGUMENTS = {
     'precision': (
@@ -32,7 +33,8 @@ _REMOVED_ARGUMENTS = {
 
 
 def validate_bin_width(bin_width):
-    """Rejects a ``bin_width`` that is not a finite positive number.
+    """Rejects a ``bin_width`` that is not a finite positive number or
+    ``'recorded'`` (:data:`rainbow._binning.RECORDED`).
 
     Infinity passes a ``> 0`` test and then divides every m/z to zero, so the
     run comes back as one column labelled NaN, holding the whole signal and
@@ -40,7 +42,7 @@ def validate_bin_width(bin_width):
     the parser's overflow guard, which then reports a width that is too small.
     Both are the collapse that guard exists to refuse, so both are refused here.
     """
-    if bin_width is None:
+    if bin_width is None or bin_width == RECORDED:
         return
     if (isinstance(bin_width, bool)
             or not isinstance(bin_width, (int, float))

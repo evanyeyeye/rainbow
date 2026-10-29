@@ -358,10 +358,11 @@ def test_tag_acquisition_modes_single_ion_is_sim_without_a_report(tmp_path):
     assert "acquisition_mode" not in scan.metadata
 
 
-def test_tag_acquisition_modes_the_report_decides_over_a_files_scans(tmp_path):
+def test_tag_acquisition_modes_a_files_scans_decide_over_the_report(tmp_path):
     # Where the method report says the other of what an .ms file's scan records
-    # state, the report decides, and the scans follow it; with no report the
-    # file keeps the mode its scans state, whatever its number of ions.
+    # state, the scans (the data) decide and stay as they are; the report's
+    # mode is kept as a disagreement. With no report the file keeps the mode
+    # its scans state, whatever its number of ions.
     import numpy as np
     d = tmp_path / "x.D"
     d.mkdir()
@@ -371,15 +372,43 @@ def test_tag_acquisition_modes_the_report_decides_over_a_files_scans(tmp_path):
     told.metadata["scans"] = {"scan_type": np.array(["Scan"] * 5),
                               "monitoring": np.zeros(5, dtype=bool)}
     method.tag_acquisition_modes(str(d), [told])
-    assert told.metadata["acquisition_mode"] == "SIM"
-    assert told.metadata["scans"]["monitoring"].all()
-    assert set(told.metadata["scans"]["scan_type"]) == {"SIM"}
+    assert told.metadata["acquisition_mode"] == "Scan"
+    assert told.metadata["acquisition_mode_from"] == "scans"
+    assert told.metadata["method_disagrees"] == {"acquisition_mode": "SIM"}
+    assert not told.metadata["scans"]["monitoring"].any()
+    assert set(told.metadata["scans"]["scan_type"]) == {"Scan"}
     bare = tmp_path / "y.D"
     bare.mkdir()
     one = _ms_file("MSD1.MS", 1)
     one.metadata["acquisition_mode"] = "Scan"
     method.tag_acquisition_modes(str(bare), [one])
     assert one.metadata["acquisition_mode"] == "Scan"
+    assert "method_disagrees" not in one.metadata
+
+
+def test_tag_acquisition_modes_says_what_said_the_mode(tmp_path):
+    # Scans that state nothing: a pure method's report says it; a simultaneous
+    # run's file name; with no report, one m/z column.
+    d = tmp_path / "x.D"
+    d.mkdir()
+    _write_acqmeth(d, "SIM")
+    sim = _ms_file("MSD1.MS", 3)
+    method.tag_acquisition_modes(str(d), [sim])
+    assert (sim.metadata["acquisition_mode"],
+            sim.metadata["acquisition_mode_from"]) == ("SIM", "method report")
+    both = tmp_path / "y.D"
+    both.mkdir()
+    _write_acqmeth(both, "SIM/Scan")
+    named = _ms_file("dataSim.ms", 3)
+    method.tag_acquisition_modes(str(both), [named])
+    assert (named.metadata["acquisition_mode"],
+            named.metadata["acquisition_mode_from"]) == ("SIM", "file name")
+    bare = tmp_path / "z.D"
+    bare.mkdir()
+    one = _ms_file("MSD1.MS", 1)
+    method.tag_acquisition_modes(str(bare), [one])
+    assert (one.metadata["acquisition_mode"],
+            one.metadata["acquisition_mode_from"]) == ("SIM", "one m/z column")
 
 
 # Shared synthetic .D for the read-only tests, built once under a temp dir.
@@ -547,7 +576,11 @@ Polarity                 : Positive
 """
 
 SIGNALS = {
-    1: {"polarity": "-", "ionization_mode": "AJS-ES", "fragmentor": 80.0},
+    # a Scan signal's table rows, and the step every row states
+    1: {"polarity": "-", "ionization_mode": "AJS-ES", "fragmentor": 80.0,
+        "mz_step": 0.2,
+        "scan_parameters": [{"time": 2.5, "mz_low": 800.0, "mz_high": 1900.0,
+                             "fragmentor": 80.0, "mz_step": 0.2}]},
     # a SIM table's second group, after a blank line, is read too; a name
     # running past its column's bar stays whole
     2: {"polarity": "-", "ionization_mode": "AJS-ES",
@@ -616,12 +649,15 @@ def test_ms_signals_read_from_acq_macaml_first(tmp_path):
                            "CompoundName": "B"}]),
         ("Alternating", [{"Fragmentor": "70"}], [])]), encoding="utf-8")
     assert method.ms_signals(str(d)) == {
-        # two Scan rows of different fragmentors state no one fragmentor
-        1: {"polarity": "+", "ionization_mode": "API-ES"},
+        # two Scan rows of different fragmentors state no one fragmentor;
+        # each row keeps its own
+        1: {"polarity": "+", "ionization_mode": "API-ES",
+            "scan_parameters": [{"fragmentor": 70.0}, {"fragmentor": 90.0}]},
         2: {"polarity": "-", "ionization_mode": "API-ES", "fragmentor": 100.0,
             "monitored_ions": [{"mz": 300.1, "fragmentor": 100.0, "compound": "B"}]},
         # a polarity word other than Positive or Negative is not read
-        3: {"ionization_mode": "API-ES", "fragmentor": 70.0}}
+        3: {"ionization_mode": "API-ES", "fragmentor": 70.0,
+            "scan_parameters": [{"fragmentor": 70.0}]}}
 
 
 def test_ms_signals_absent_without_a_method(tmp_path):
@@ -641,30 +677,97 @@ def _ms_file_of(name, mz, mode=None):
                     np.ones((5, len(mz)), dtype=np.uint32), metadata)
 
 
-def test_ms_signals_tag_the_file_holding_each_signal(tmp_path):
-    """A file holds the signal whose ions it recorded (SIM) or whose range
-    holds them (Scan), whatever its number: with Signal 3 off, the file
-    numbered 3 holds Signal 4. A file that fits no signal is left as it is;
-    what a file states itself stays."""
+def test_ms_signals_tag_the_file_by_the_number_both_state(tmp_path):
+    """MSD<n>.MS holds [Signal n]. What the file recorded is a check: ions the
+    method names that the file did not record, at the coarser of the .ms
+    format's 0.05 step and the method's two decimals, are kept as a
+    disagreement and not put on the file. A file whose number names no active
+    signal is left as it is."""
     import numpy as np
     d = tmp_path / "x.D"
     d.mkdir()
     (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
     scan = _ms_file_of("MSD1.MS", np.arange(800.0, 1900.0, 1.0), "Scan")
-    sim = _ms_file_of("MSD2.MS", [1248.0, 1512.0, 1601.0], "SIM")   # labels rounded
+    sim = _ms_file_of("MSD2.MS", [1247.6, 1511.7, 1601.2], "SIM")
+    off = _ms_file_of("MSD3.MS", [333.3], "SIM")
+    other = _ms_file_of("MSD4.MS", [500.0], "SIM")
+    method.tag_ms_signals(str(d), [scan, sim, off, other])
+    assert scan.metadata == {"acquisition_mode": "Scan", "method_signal": 1,
+                             **SIGNALS[1]}
+    assert sim.metadata == {"acquisition_mode": "SIM", "method_signal": 2,
+                            **SIGNALS[2]}
+    assert off.metadata == {"acquisition_mode": "SIM"}
+    four = dict(SIGNALS[4])
+    ions = four.pop("monitored_ions")
+    assert other.metadata == {"acquisition_mode": "SIM", "method_signal": 4,
+                              **four,
+                              "method_disagrees": {"monitored_ions": ions}}
+
+
+def test_ms_signals_a_files_own_statement_stays(tmp_path):
+    """Labels 0.4 from the method's ions are other ions, not the method's
+    rounded; a polarity the file states stays, the method's kept beside it."""
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    sim = _ms_file_of("MSD2.MS", [1248.0, 1512.0, 1601.0], "SIM")
     sim.metadata["polarity"] = "+"
-    last = _ms_file_of("MSD3.MS", [333.3], "SIM")
-    stray = _ms_file_of("MSD4.MS", [500.0], "SIM")
-    method.tag_ms_signals(str(d), [scan, sim, last, stray])
-    assert scan.metadata == {"acquisition_mode": "Scan", **SIGNALS[1]}
-    assert sim.metadata == {"acquisition_mode": "SIM", **SIGNALS[2], "polarity": "+"}
-    assert last.metadata == {"acquisition_mode": "SIM", **SIGNALS[4]}
-    assert stray.metadata == {"acquisition_mode": "SIM"}
+    method.tag_ms_signals(str(d), [sim])
+    assert sim.metadata["polarity"] == "+"
+    assert "monitored_ions" not in sim.metadata
+    assert sim.metadata["method_disagrees"] == {
+        "polarity": "-", "monitored_ions": SIGNALS[2]["monitored_ions"]}
+
+
+def test_ms_signals_a_scan_range_that_misses_the_file(tmp_path):
+    import numpy as np
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    scan = _ms_file_of("MSD1.MS", np.arange(100.0, 500.0, 1.0), "Scan")
+    method.tag_ms_signals(str(d), [scan])
+    assert scan.metadata["method_signal"] == 1
+    assert scan.metadata["method_disagrees"] == {"scan_range": (800.0, 1900.0)}
+
+
+def test_ms_detectors_two_in_one_report(tmp_path):
+    """A report of two MS detectors states each one's signals; a file is
+    paired with the detector its header names (MSD<k>)."""
+    second = MS_REPORT.split("Mass Spectrometer Detector (G6135B)", 1)[1]
+    second = second.replace("Negative", "Positive").split("Spray Chamber", 1)[0]
+    report = MS_REPORT.replace(
+        "Spray Chamber", "Mass Spectrometer Detector (G6125C)" + second
+        + "Spray Chamber", 1)
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(report.encode("utf-16"))
+    detectors = method.ms_detectors(str(d))
+    assert [x["name"] for x in detectors] == ["G6135B", "G6125C"]
+    assert detectors[0]["signals"][1]["polarity"] == "-"
+    assert detectors[1]["signals"][1]["polarity"] == "+"
+    assert method.ms_signals(str(d)) == {}
+
+    def ms_file(name, header):
+        raw = bytearray(0x200)
+        text = header.encode("latin-1")
+        raw[0x140] = len(text)
+        raw[0x141:0x141 + len(text)] = text
+        (d / name).write_bytes(bytes(raw))
+    import numpy as np
+    ms_file("MSD1.MS", "MSD2, Initial Scan Range=800.0-1900.0")
+    one = _ms_file_of("MSD1.MS", np.arange(800.0, 1900.0, 1.0), "Scan")
+    method.tag_ms_signals(str(d), [one])
+    assert (one.metadata["method_detector"], one.metadata["method_signal"],
+            one.metadata["polarity"]) == (2, 1, "+")
+    ms_file("MSD1.MS", "Initial Scan Range=800.0-1900.0")
+    bare = _ms_file_of("MSD1.MS", np.arange(800.0, 1900.0, 1.0), "Scan")
+    method.tag_ms_signals(str(d), [bare])
+    assert "method_signal" not in bare.metadata
 
 
 def test_ms_signals_two_alike_go_by_the_files_number(tmp_path):
-    """Two Scan signals over one range fit a file alike: the one numbered as
-    the file is its; a file of another name is left untagged."""
+    """Two Scan signals over one range: the one numbered as the file is its;
+    a file of another name, among several, is left untagged."""
     d = tmp_path / "x.D"
     d.mkdir()
     scan = {"MassRangeLow": "100", "MassRangeHigh": "500"}

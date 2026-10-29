@@ -1539,11 +1539,16 @@ def test_mz_resolution_measures_icpms_which_hrms_gates_but_does_not_bin():
     flagged read skips it, and a probe read that does not forward the flag
     never parses it, so it fell through both and the run looked like it had
     no MS at all.
+
+    silver.D's scans state MRM (an ICP-QQQ's mass-shift pairs), so it is
+    tagged MRM from them, and its isotopes are chosen masses whose gaps are
+    the method's, not a grid: it is parsed and read, and measures nothing.
     """
-    assert rb.mz_resolution("tests/inputs/silver.D", hrms=True) == \
-        {"MSProfile.bin": 1.0}
+    datadir = rb.read("tests/inputs/silver.D", hrms=True)
+    assert datadir.get_file("MSProfile.bin").metadata["acquisition_mode"] == "MRM"
+    assert rb.mz_resolution("tests/inputs/silver.D", hrms=True) == {}
     assert rb.mz_resolution("tests/inputs/silver.D", hrms=True,
-                            centroid=True) == {"MSProfile.bin": 1.0}
+                            centroid=True) == {}
 
 
 def test_read_sequence_rejects_bad_bin_width():
@@ -1659,6 +1664,24 @@ def test_scatter_sum_on_empty_input():
     got = masshunter._scatter_sum(
         np.array([], dtype=np.int64), np.array([], dtype=np.uint64), 4)
     assert got.dtype == np.uint64 and got.size == 4 and not got.any()
+
+
+@pytest.mark.parametrize("bin_width", [None, 0.1, rb.RECORDED])
+@pytest.mark.parametrize("labels_only", [False, True])
+def test_bin_to_grid_float_intensities_give_a_float64_grid(
+        bin_width, labels_only):
+    # A centroid's abundances are float64 (parse_mspeakdata); every grid made
+    # of them is too, the empty one labels_only returns included, on every
+    # width.
+    mz = np.array([100.0, 101.0, 100.0])
+    intensity = np.array([5.25, 7.5, 3.125])
+    rows = np.array([0, 0, 1])
+    _, grid = masshunter.bin_to_grid(
+        mz, intensity, rows, 2, display_precision=0, bin_width=bin_width,
+        labels_only=labels_only)
+    assert grid.dtype == np.float64
+    if not labels_only:
+        assert grid.sum() == intensity.sum()
 
 
 def test_bin_to_grid_dense_matches_reference():

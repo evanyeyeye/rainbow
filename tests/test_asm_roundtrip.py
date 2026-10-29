@@ -3305,3 +3305,24 @@ def test_a_source_with_no_converter_fields_gains_none_on_a_second_lap():
                   .get("custom information document", [])}
         assert not any(label.startswith("source ") for label in labels)
         assert record["ASM converter name"] == "rainbow-api"
+
+
+def test_a_spectrum_in_a_unit_rainbow_cannot_place_says_its_unit():
+    """A DAD spectrum whose file states a unit that is no absorbance unit
+    rainbow knows is published under the schema's mAU, unscaled, and its
+    note names the unit, which reads back as the spectrum's own."""
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    dad = datadir.get_file("DAD1.UV")
+    dad.metadata["unit"] = "mV"
+    with pytest.warns(UserWarning, match="relabeled and not converted"):
+        document = datadir.to_asm()
+    measurement = next(m for m in _asm_measurements(document)
+                       if m["measurement identifier"] == "DAD1.UV")
+    labels = {entry["datum label"]: entry["scalar string datum"]
+              for entry in measurement["custom information aggregate document"]
+              ["custom information document"]}
+    assert labels["reported measure unit"] == "mV"
+    back = rb.from_asm(document, name="red.D").get_file("DAD1.UV")
+    assert back.metadata["unit"] == "mV"
+    assert np.allclose(np.asarray(back.data, dtype=float),
+                       np.asarray(dad.data, dtype=float))

@@ -14,12 +14,15 @@ amounts, and the compound each MRM transition of a MassHunter method is
 named for. It is best-effort, so any field the sidecars do not carry, or a
 sidecar that is missing or unreadable, simply contributes nothing.
 
-It also reads the MS acquisition mode from the ``acqmeth.txt`` instrument-
-control report so each MS channel can be tagged SIM or Scan; see
-:func:`tag_acquisition_modes`; and what a ChemStation LC/MS method states of
-each MS signal (its polarity, ionization, fragmentor and SIM ions with their
-compound names), from acq.macaml or the method report, onto the signal's
-``MSD<n>.MS`` file; see :func:`ms_signals` and :func:`tag_ms_signals`.
+It also tags each MS channel SIM, Scan or MRM from its own scans, or, where
+they state nothing, from the ``acqmeth.txt`` instrument-control report; see
+:func:`tag_acquisition_modes`; and puts what a ChemStation LC/MS method states
+of each MS signal (its polarity, ionization, fragmentor, scan table and step,
+and SIM ions with their compound names), from acq.macaml or the method
+report, onto the signal's ``MSD<n>.MS`` file, by the number both state; see
+:func:`ms_signals`, :func:`ms_detectors` and :func:`tag_ms_signals`. Where the
+method states otherwise than the file records, the file's stays and the
+method's is kept under ``method_disagrees``.
 """
 import os
 import re
@@ -421,16 +424,24 @@ def acquisition_modes(path):
 
 def tag_acquisition_modes(path, datafiles):
     """
-    Tags each MS DataFile with its ``acquisition_mode`` where determinable.
+    Tags each MS DataFile with its ``acquisition_mode`` where determinable,
+    and ``acquisition_mode_from``, what said it.
 
-    For a multi-column channel the method report decides: a pure SIM or pure
-    Scan method tags all its MS files; a simultaneous SIM/Scan run tags the
-    file ChemStation wrote the monitored ions to (named ``*SIM*.ms``) as SIM and
-    the full-scan file as Scan. Where it says the other of what a file's own
-    scans state (chemstation.parse_ms reads each scan's record), the report
-    decides, and the scans' ``monitoring`` follows it. With no report, a file
-    keeps the mode its scans state, and a single-ion channel (one m/z column)
-    is SIM. A channel that cannot be classified is left untagged.
+    A file's own scans decide (``'scans'``): an .ms file's scan records
+    (chemstation.parse_ms) or MassHunter's (MSScan.bin), when every scan
+    states the same one of SIM, Scan or MRM; a file whose scans are of both
+    kinds is ``'mixed'`` (:func:`_tag_interleaved`). The scans are the data,
+    so the method report never overwrites them: where it states the other
+    mode, the file keeps its scans' and ``method_disagrees`` holds the
+    report's (``{'acquisition_mode': 'SIM'}``).
+
+    Where the scans state nothing, the method report (acqmeth.txt) decides
+    (``'method report'``): a pure SIM or pure Scan method tags all its MS
+    files. A simultaneous SIM/Scan run's report does not say which file is
+    which, so ChemStation's naming habit is used (the monitored ions in a
+    ``*SIM*.ms`` file), and said (``'file name'``). With neither, a channel
+    of one m/z column is SIM (``'one m/z column'``). Otherwise it is left
+    untagged.
 
     Args:
         path (str): Path of the .D directory.
@@ -445,16 +456,38 @@ def tag_acquisition_modes(path, datafiles):
     modes = acquisition_modes(path)
     for datafile in ms_files:
         if _tag_interleaved(datafile):
+            datafile.metadata["acquisition_mode_from"] = "scans"
             continue
-        stated = datafile.metadata.get("acquisition_mode")
-        mode = _classify_ms(datafile, modes) if modes or not stated else None
-        if mode and mode != stated:
-            datafile.metadata["acquisition_mode"] = mode
-            scans = datafile.metadata.get("scans")
-            if stated and scans and "monitoring" in scans:
-                n = len(scans["monitoring"])
-                scans["monitoring"] = np.full(n, mode == "SIM")
-                scans["scan_type"] = np.full(n, mode)
+        stated = _mode_of_scans(datafile) \
+            or datafile.metadata.get("acquisition_mode")
+        reported, how = _classify_ms(datafile, modes)
+        if stated:
+            datafile.metadata["acquisition_mode"] = stated
+            datafile.metadata["acquisition_mode_from"] = "scans"
+            if how == "method report" and reported != stated:
+                _disagree(datafile, "acquisition_mode", reported)
+        elif reported:
+            datafile.metadata["acquisition_mode"] = reported
+            datafile.metadata["acquisition_mode_from"] = how
+
+
+def _mode_of_scans(datafile):
+    """The one mode every scan of a file states (``scans['scan_type']``):
+    ``'SIM'``, ``'Scan'`` or ``'MRM'``, else None."""
+    types = (datafile.metadata.get("scans") or {}).get("scan_type")
+    if types is None or not len(types):
+        return None
+    types = np.asarray(types).astype(str)
+    first = str(types[0])
+    if first in ("SIM", "Scan", "MRM") and (types == first).all():
+        return first
+    return None
+
+
+def _disagree(datafile, key, value):
+    """Keeps ``value``, what the method states of ``key`` where the file's
+    own record says otherwise, under ``metadata['method_disagrees']``."""
+    datafile.metadata.setdefault("method_disagrees", {})[key] = value
 
 
 def _tag_interleaved(datafile):
@@ -485,29 +518,35 @@ def _tag_interleaved(datafile):
 
 
 def _classify_ms(datafile, modes):
-    """``"SIM"`` or ``"Scan"`` for one MS channel, or None if undetermined."""
+    """(``"SIM"`` or ``"Scan"``, what said it) for one MS channel from the
+    method report's modes, else from its one column, or (None, None)."""
+    if modes == {"SIM"}:
+        return "SIM", "method report"
+    if modes == {"Scan"}:
+        return "Scan", "method report"
+    if modes:
+        # Simultaneous SIM/Scan: ChemStation writes the monitored ions to a
+        # *SIM*.ms file and the full scan to the other.
+        return ("SIM" if "sim" in datafile.name.lower() else "Scan"), \
+            "file name"
     try:
         single_ion = datafile.data.shape[1] == 1
     except Exception:
         single_ion = False  # a per-scan profile has no shared m/z grid
     if single_ion:
-        return "SIM"
-    if not modes:
-        return None
-    if modes == {"SIM"}:
-        return "SIM"
-    if modes == {"Scan"}:
-        return "Scan"
-    # Simultaneous SIM/Scan: ChemStation writes the monitored ions to a
-    # *SIM*.ms file and the full scan to the other.
-    return "SIM" if "sim" in datafile.name.lower() else "Scan"
+        return "SIM", "one m/z column"
+    return None, None
 
 
-# A ChemStation LC/MS signal's data file is named MSD<n>.MS. Its header
-# names the detector (MSD1), not the signal, so which [Signal n] a file holds
-# is read from what the file recorded (its ions, its m/z range); the number is
-# taken only to choose between signals the file fits alike.
+# A ChemStation LC/MS signal's data file is named MSD<n>.MS, n the number of
+# the method's [Signal n] it holds. Its header's description names the
+# detector ("MSD1, Initial Ions=204.30"), the same in each signal's file, and
+# the first signal's ions or range, not this file's.
 _MS_SIGNAL_FILE_RE = re.compile(r"^MSD(\d+)\.MS$", re.IGNORECASE)
+_MS_HEADER_DETECTOR_RE = re.compile(r"^MSD(\d+)\s*,")
+# Where an .ms file's header keeps that description: a length byte, then the
+# text (chemstation.read_header reads its other strings the same way).
+_MS_HEADER_DESCRIPTION = 0x140
 
 # The method report as run, in the .D: acq.txt (OpenLab ChemStation), else the
 # ACQ.TXT of the ACQ.M copy older ChemStation keeps there. Both are the same
@@ -528,21 +567,27 @@ _SETTING_RE = re.compile(r"^\s*([A-Za-z][A-Za-z .\-]*?)\s*:\s*(.*?)\s*$")
 # as acq.macaml's ids: "SIM" over "Ion", "Frag-" over "mentor".
 _REPORT_HEADS = {"simion": "SIMIon", "fragmentor": "Fragmentor",
                  "compoundname": "CompoundName", "masslow": "MassRangeLow",
-                 "rangehigh": "MassRangeHigh"}
+                 "rangehigh": "MassRangeHigh", "stepsize": "Stepsize",
+                 "timemin": "Time(min)"}
+_MS_DETECTOR_TITLE = "Mass Spectrometer Detector"
 
-# m/z: how far a file's ion label may sit from the ion the method names. The
-# file's labels are the method's ions rounded for display (to whole numbers
-# for a single quad's unit-resolution data), at most half a unit away.
-_LABEL_ROUNDING = 0.5
+# m/z: the step an .ms file stores its m/z on, by its format (a big-endian
+# short divided by 20; chemstation.parse_ms). A file's ion and the method's
+# are the same ion when they agree at the coarser of this and the method's
+# own written precision.
+_MS_FILE_MZ_STEP = 0.05
 
 
 def ms_signals(path, acq=_UNREAD):
     """
-    What a ChemStation LC/MS method states of each MS signal.
+    What a ChemStation LC/MS method states of each MS signal of its one MS
+    detector.
 
     Read from ``acq.macaml``, else from the method report as run
     (``acq.txt``, or the ``ACQ.M/ACQ.TXT`` older ChemStation writes; UTF-8 or
     UTF-16, see :func:`decode_text`). Only what the method states is given.
+    A method of several MS detectors states its signals per detector: see
+    :func:`ms_detectors`.
 
     Args:
         path (str): Path of the .D directory.
@@ -553,25 +598,65 @@ def ms_signals(path, acq=_UNREAD):
         dict: ``{signal number: settings}`` for each active signal, each
         settings dict holding any of ``polarity`` (``"+"`` or ``"-"``),
         ``ionization_mode`` (as written, ``"AJS-ES"``), ``fragmentor`` (V,
-        where every row of the signal's table states the same one) and
+        where every row of the signal's table states the same one; each row's
+        own is in its ``scan_parameters`` row or ``monitored_ions`` entry),
+        ``mz_step`` (a Scan signal's step size, where every row states the
+        same one), ``scan_parameters`` (a Scan signal's table rows, each any
+        of ``time``, ``mz_low``, ``mz_high``, ``fragmentor``, ``mz_step``) and
         ``monitored_ions`` (a SIM signal's ions in the method's order, each
         ``{"mz": float, "fragmentor": float or None, "compound": str or
-        None}``). Empty when neither source has an MS section, or one names
+        None}``). Empty when neither source has an MS section, or it names
         more than one MS detector.
     """
-    return {n: {k: v for k, v in s.items() if not k.startswith("_")}
-            for n, s in _ms_signals(path, acq).items()}
+    detectors = _ms_detectors(path, acq)
+    if len(detectors) != 1:
+        return {}
+    return {n: _public(s) for n, s in detectors[0]["signals"].items()}
+
+
+def ms_detectors(path, acq=_UNREAD):
+    """
+    What a ChemStation LC/MS method states of each of its MS detectors, in
+    the method's order.
+
+    Args:
+        path (str): Path of the .D directory.
+        acq: as for :func:`ms_signals`.
+
+    Returns:
+        list: One ``{"name": str or None, "signals": {signal number:
+        settings}}`` per MS detector section, ``name`` the module its heading
+        names (``"G6135B"``), the settings as :func:`ms_signals` gives them.
+    """
+    return [{"name": d["name"],
+             "signals": {n: _public(s) for n, s in d["signals"].items()}}
+            for d in _ms_detectors(path, acq)]
+
+
+def _public(settings):
+    return {k: v for k, v in settings.items() if not k.startswith("_")}
 
 
 def tag_ms_signals(path, datafiles, acq=_UNREAD):
     """
     Puts each MS signal's settings (:func:`ms_signals`) onto the metadata of
     the data file that holds it, filling only keys the file does not state
-    itself. A file holds the signal whose ions are the ions it recorded (a SIM
-    signal), or whose m/z range holds those it recorded (a Scan signal); where
-    it fits several alike, the one numbered as the file (``MSD<n>.MS``,
-    ``[Signal n]``); where it fits none, or several none of which is numbered
-    as it, it is left untagged.
+    itself, and ``method_signal``, the signal's number.
+
+    ``MSD<n>.MS`` holds ``[Signal n]``, the number both state. With several MS
+    detectors, the detector is the one its header names (``MSD<k>``, the k-th
+    detector section); a file whose header names none is left untagged then.
+    A file named otherwise (a GC/MS ``data.ms``) holds the method's one
+    signal, where it has one.
+
+    What the file records is a check, never the pairing: where a SIM signal's
+    ions are not the ions the file recorded, or a Scan signal's range does
+    not hold them, the method's are kept under ``method_disagrees``
+    (``monitored_ions``, ``scan_range``) rather than put on the file, and the
+    file's own stay its m/z labels. Ions are compared at the coarser of the
+    file's m/z step (:data:`_MS_FILE_MZ_STEP`) and the method's written
+    precision. Where the file states a setting (its polarity) that the method
+    states otherwise, the file's stays and the method's is kept there too.
 
     Args:
         path (str): Path of the .D directory.
@@ -580,55 +665,122 @@ def tag_ms_signals(path, datafiles, acq=_UNREAD):
         acq: as for :func:`ms_signals`.
 
     """
-    signals = _ms_signals(path, acq)
-    if not signals:
+    detectors = _ms_detectors(path, acq)
+    if not detectors:
         return
-    for datafile in datafiles:
-        if datafile.detector != "MS":
+    ms_files = [f for f in datafiles if f.detector == "MS"]
+    for datafile in ms_files:
+        n = _signal_of(path, datafile, detectors, len(ms_files))
+        if n is None:
             continue
-        n = _signal_of(datafile, signals)
-        for key, value in (signals[n].items() if n is not None else ()):
-            if not key.startswith("_"):
-                datafile.metadata.setdefault(key, value)
+        k, number = n
+        settings = detectors[k]["signals"][number]
+        datafile.metadata["method_signal"] = number
+        if len(detectors) > 1:
+            datafile.metadata["method_detector"] = k + 1
+        for key, value in settings.items():
+            if key.startswith("_"):
+                continue
+            if key == "monitored_ions" and not _ions_agree(datafile, settings):
+                _disagree(datafile, key, value)
+                continue
+            if key in datafile.metadata and datafile.metadata[key] != value:
+                _disagree(datafile, key, value)
+                continue
+            datafile.metadata.setdefault(key, value)
+        span = settings.get("_scan_range")
+        if span is not None and not _range_holds(datafile, span, settings):
+            _disagree(datafile, "scan_range", span)
 
 
-def _signal_of(datafile, signals):
-    """The number of the signal a data file holds (tag_ms_signals), or None."""
+def _signal_of(path, datafile, detectors, ms_count):
+    """(detector index, signal number) of the signal a data file holds
+    (tag_ms_signals), or None."""
+    match = _MS_SIGNAL_FILE_RE.match(os.path.basename(datafile.name))
+    if len(detectors) == 1:
+        k = 0
+    else:
+        k = _header_detector(os.path.join(path, datafile.name))
+        if k is None or not 0 <= k < len(detectors):
+            return None
+    signals = detectors[k]["signals"]
+    if match:
+        number = int(match.group(1))
+        return (k, number) if number in signals else None
+    if len(signals) == 1 and ms_count == 1:
+        return k, next(iter(signals))
+    return None
+
+
+def _header_detector(file_path):
+    """The index of the MS detector an .ms file's header names (``MSD2`` is
+    1), or None."""
     try:
-        labels = sorted(float(x) for x in datafile.ylabels)
+        with open(file_path, "rb") as f:
+            f.seek(_MS_HEADER_DESCRIPTION)
+            length = f.read(1)
+            text = f.read(length[0]).decode("latin-1") if length else ""
+    except (OSError, IndexError):
+        return None
+    match = _MS_HEADER_DETECTOR_RE.match(text)
+    return int(match.group(1)) - 1 if match else None
+
+
+def _labels(datafile):
+    try:
+        return sorted(float(x) for x in datafile.ylabels)
     except (TypeError, ValueError):
         return None
+
+
+def _step(settings):
+    """The step at which a file's m/z and the method's are compared: the
+    coarser of the .ms format's and the method's written precision."""
+    return max(_MS_FILE_MZ_STEP, settings.get("_written_step") or 0.0)
+
+
+def _same_mz(a, b, step):
+    return round(a / step) == round(b / step)
+
+
+def _ions_agree(datafile, settings):
+    """Whether a SIM signal's ions are the ions the file recorded."""
+    labels = _labels(datafile)
+    ions = sorted(e["mz"] for e in settings.get("monitored_ions", []))
+    if labels is None or len(ions) != len(labels):
+        return False
+    step = _step(settings)
+    return all(_same_mz(a, b, step) for a, b in zip(ions, labels))
+
+
+def _range_holds(datafile, span, settings):
+    """Whether a Scan signal's m/z range holds every m/z the file recorded."""
+    labels = _labels(datafile)
     if not labels:
-        return None
-    stated = datafile.metadata.get("acquisition_mode")
-
-    def fits(settings):
-        ions = sorted(e["mz"] for e in settings.get("monitored_ions", []))
-        if ions:
-            return stated != "Scan" and len(ions) == len(labels) and all(
-                abs(a - b) <= _LABEL_ROUNDING for a, b in zip(ions, labels))
-        span = settings.get("_scan_range")
-        if span is None or stated == "SIM":
-            return False
-        return span[0] - _LABEL_ROUNDING <= labels[0] and \
-            labels[-1] <= span[1] + _LABEL_ROUNDING
-
-    fit = [n for n, s in signals.items() if fits(s)]
-    if len(fit) == 1:
-        return fit[0]
-    match = _MS_SIGNAL_FILE_RE.match(os.path.basename(datafile.name))
-    named = int(match.group(1)) if match else None
-    return named if named in fit else None
+        return True
+    step = _step(settings)
+    return round(labels[0] / step) >= round(span[0] / step) and \
+        round(labels[-1] / step) <= round(span[1] / step)
 
 
-def _ms_signals(path, acq):
-    """ms_signals with each Scan signal's m/z range (``_scan_range``), the
-    active signals only."""
+def _ms_detectors(path, acq):
+    """Each MS detector's ``{"name", "signals"}``, its signals with private
+    keys (``_scan_range``, ``_written_step``), the active ones only."""
     doc = read_acq_method(path) if acq is _UNREAD else acq
-    signals = _ms_signals_from_acaml(doc) if doc is not None else None
-    if signals is None:
-        signals = _ms_signals_from_report(path)
-    return {n: s for n, s in (signals or {}).items() if s}
+    detectors = _ms_detectors_from_acaml(doc) if doc is not None else None
+    if not detectors:
+        detectors = _ms_detectors_from_report(path)
+    out = []
+    for detector in detectors or []:
+        signals = {n: s for n, s in detector["signals"].items() if s}
+        out.append({"name": detector["name"], "signals": signals})
+    return [d for d in out if d["signals"]]
+
+
+def _decimals(text):
+    """How many decimals a number is written with ("1247.60": 2)."""
+    text = str(text or "").strip()
+    return len(text.split(".", 1)[1]) if "." in text else 0
 
 
 def _settings_of(fields, rows, sim):
@@ -649,11 +801,30 @@ def _settings_of(fields, rows, sim):
                 for row in rows]
         if ions:
             out["monitored_ions"] = ions
+            out["_written_step"] = 10.0 ** -min(
+                _decimals(row["SIMIon"]) for row in rows)
     else:
         lows = [_float(row.get("MassRangeLow")) for row in rows]
         highs = [_float(row.get("MassRangeHigh")) for row in rows]
         if rows and None not in lows + highs:
             out["_scan_range"] = (min(lows), max(highs))
+            out["_written_step"] = 10.0 ** -min(
+                _decimals(row.get(key)) for row in rows
+                for key in ("MassRangeLow", "MassRangeHigh"))
+        table = []
+        for row in rows:
+            entry = {name: _float(row.get(key)) for name, key in (
+                ("time", "Time(min)"), ("mz_low", "MassRangeLow"),
+                ("mz_high", "MassRangeHigh"), ("fragmentor", "Fragmentor"),
+                ("mz_step", "Stepsize"))}
+            entry = {k: v for k, v in entry.items() if v is not None}
+            if entry:
+                table.append(entry)
+        if table:
+            out["scan_parameters"] = table
+        steps = {_float(row.get("Stepsize")) for row in rows}
+        if len(steps) == 1 and None not in steps:
+            out["mz_step"] = steps.pop()
     frags = {_float(row.get("Fragmentor")) for row in rows}
     if len(frags) == 1 and None not in frags:
         out["fragmentor"] = frags.pop()
@@ -668,34 +839,46 @@ def _float(text):
         return None
 
 
-def _ms_signals_from_acaml(doc):
-    """ms_signals' signals from acq.macaml (`doc`: read_acq_method's); None
-    when it has no one MS detector section to read them from."""
+def _module_name(title):
+    """The module a detector heading names ("Mass Spectrometer Detector
+    (G6135B)": "G6135B"), or None."""
+    match = re.search(r"\(([^)]*)\)\s*$", title or "")
+    return match.group(1).strip() or None if match else None
+
+
+def _ms_detectors_from_acaml(doc):
+    """_ms_detectors' detectors from acq.macaml (`doc`: read_acq_method's);
+    None when it has no MS detector section."""
     acquisition = _section(doc["sections"], "Acquisition Method")
     container = acquisition["sections"] if acquisition else doc["sections"]
     detectors = [s for s in container
-                 if (s.get("name") or "").startswith("Mass Spectrometer Detector")]
-    if len(detectors) != 1:
+                 if (s.get("name") or "").startswith(_MS_DETECTOR_TITLE)]
+    if not detectors:
         return None
-    signals = _section(detectors[0]["sections"], "Signals")
-    out = {}
-    for section in (signals or {}).get("sections", []):
-        match = _SIGNAL_RE.match(section.get("name") or "")
-        if not match:
-            continue
-        fields = {p["id"]: p["value"] for p in section["parameters"] if p.get("id")}
-        tables = section["tables"] + [t for s in section["sections"] for t in s["tables"]]
-        tables = [t for t in tables if t.get("id") in ("SimParameters", "ScanParameters")]
-        rows = [{p["id"]: p["value"] for p in row if p.get("id")}
-                for t in tables for row in t["rows"]]
-        sim = any(t["id"] == "SimParameters" for t in tables)
-        out[int(match.group(1))] = _settings_of(fields, rows, sim)
+    out = []
+    for detector in detectors:
+        signals = _section(detector["sections"], "Signals")
+        found = {}
+        for section in (signals or {}).get("sections", []):
+            match = _SIGNAL_RE.match(section.get("name") or "")
+            if not match:
+                continue
+            fields = {p["id"]: p["value"] for p in section["parameters"] if p.get("id")}
+            tables = section["tables"] + [t for s in section["sections"] for t in s["tables"]]
+            tables = [t for t in tables if t.get("id") in ("SimParameters", "ScanParameters")]
+            rows = [{p["id"]: p["value"] for p in row if p.get("id")}
+                    for t in tables for row in t["rows"]]
+            sim = any(t["id"] == "SimParameters" for t in tables)
+            found[int(match.group(1))] = _settings_of(fields, rows, sim)
+        out.append({"name": _module_name(detector.get("name")), "signals": found})
     return out
 
 
-def _ms_signals_from_report(path):
-    """ms_signals' signals from the method report's MS section; None when no
-    report has one, or it names more than one MS detector."""
+def _ms_detectors_from_report(path):
+    """_ms_detectors' detectors from the method report's MS section; None
+    when no report has one. Each detector's part starts at its heading naming
+    its module ("Mass Spectrometer Detector (G6135B)"); a report with only
+    the section's banner title has one detector, from there."""
     text = None
     for parts in _MS_REPORTS:
         report = _find_any_case(path, parts)
@@ -710,18 +893,27 @@ def _ms_signals_from_report(path):
     if text is None:
         return None
     lines = text.splitlines()
-    # The section's banner title, then in newer reports a heading naming the
-    # module ("Mass Spectrometer Detector (G6135B)"): one detector's.
-    titles = [line.strip() for line in lines
-              if line.strip().startswith("Mass Spectrometer Detector")]
-    if not titles or len({t for t in titles if t != "Mass Spectrometer Detector"}) > 1:
+    titled = [i for i, line in enumerate(lines)
+              if line.strip().startswith(_MS_DETECTOR_TITLE)]
+    if not titled:
         return None
-    start = next(i for i, line in enumerate(lines)
-                 if line.strip().startswith("Mass Spectrometer Detector"))
+    starts = [i for i in titled if lines[i].strip() != _MS_DETECTOR_TITLE] \
+        or titled[:1]
+    out = []
+    for at, start in enumerate(starts):
+        end = starts[at + 1] if at + 1 < len(starts) else len(lines)
+        out.append({"name": _module_name(lines[start].strip()),
+                    "signals": _report_signals(lines, start, end)})
+    return out
+
+
+def _report_signals(lines, start, end):
+    """The signals of one MS detector's part of a method report, the lines
+    ``start`` (its heading) to ``end``."""
     out = {}
     current, fields, rows, sim = None, {}, [], False
     i = start + 1
-    while i < len(lines):
+    while i < end:
         line = lines[i]
         if "END OF MS ACQUISITION PARAMETERS" in line.upper():
             break

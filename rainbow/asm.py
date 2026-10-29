@@ -2425,8 +2425,21 @@ def _spectrum_measurement(datafile, metadata, device_type, options):
     if cube is None:
         return None
     control = {"device type": device_type}
-    return _measurement(
+    measurement = _measurement(
         datafile, metadata, control, _SPECTRUM_CUBE, cube, options)
+    unit = datafile.metadata.get("unit")
+    if unit and _absorbance_unit_key(unit) not in _ABSORBANCE_TO_MAU:
+        # A unit the file states that is no absorbance unit rainbow can
+        # place: the cube says mAU, the schema's only one, so the note says
+        # the unit the values are in, unconverted, as a chromatogram's does.
+        descriptor = {"concept": "absorbance", "unit": "mAU"}
+        _warn_relabeled_unit(datafile, unit, descriptor, options)
+        _note_relabeled_measure(
+            measurement, dict(descriptor, unit=unit),
+            "This channel records its signal in {}; its values are "
+            "published as absorbance in mAU, relabeled and not converted, "
+            "the schema having no term for that unit.".format(unit))
+    return measurement
 
 
 def _warn_once_per_run(options, key, message):
@@ -2783,7 +2796,11 @@ def _channel_key(name):
 # The ultraviolet-absorbance cube measure is pinned to mAU in the ADM, so a
 # source unit is normalized to mAU on the way out, scaling the values to match.
 # ChemStation already reports mAU; Waters UV chromatograms report AU (1 AU =
-# 1000 mAU). An unrecognized unit is labeled mAU unscaled, as before.
+# 1000 mAU). An unrecognized unit is labeled mAU unscaled, the schema having
+# no other, and the measurement says so: its note names the unit the file
+# states, which from_asm and measurements read back as the values' unit
+# (_measure_from_source for a chromatogram, _spectrum_measurement for a
+# spectrum).
 #
 # Keyed on a case-folded, stripped spelling, the way the measure table and the
 # volume table are. The unit is whatever text the vendor file carried (Waters
@@ -4341,8 +4358,13 @@ def _peak_from_asm(peak, said=None, absorbance=True):
 
 # The units a peak's height, edge heights and area are converted from, as mAU
 # per unit (an area's unit is one of these times seconds). Empower's own unit
-# for a UV height is the microvolt, one of which is one microabsorbance unit.
-# Kept apart from _ABSORBANCE_TO_MAU so that a cube labelled in microvolts
+# for a UV height is the microvolt, one of which is one microabsorbance unit:
+# Waters states "1 volt (V) = 1 absorbance unit (AU)" for its UV and PDA
+# detectors in Empower (Waters Knowledge Base WKB4852, "What is the conversion
+# factor for volts to AU with a Waters UV detector?"; also WKB4051, which
+# limits it to data Waters software acquired). Data brought in through an
+# analog input instead is scaled by the detector's analog output setting,
+# which the export does not state. Kept apart from _ABSORBANCE_TO_MAU so that a cube labelled in microvolts
 # exports as it did before. The micro sign and the Greek mu are both in use.
 _PEAK_VALUE_TO_MAU = dict(_ABSORBANCE_TO_MAU, **{"\u00b5v": 0.001,
                                                  "\u03bcv": 0.001})

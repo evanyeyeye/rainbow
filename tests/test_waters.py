@@ -248,3 +248,20 @@ def test_white_exports_each_mrm_transition_by_its_transition():
     assert one["mz"] == 52.9 and one["label"] == "_FUNC001.DAT (MRM 112.97 > 52.9)"
     assert np.allclose(one["values"], f.data[:, 1])
     assert np.allclose(one["times"], f.xlabels)
+
+
+def test_a_function_nothing_names_states_no_detector(tmp_path):
+    """Without _FUNCTNS.INF and without a polarity, a function is not called
+    UV: its detector is unstated (an analog channel), its keys as recorded."""
+    import shutil
+    src = "tests/inputs/turquoise.raw"
+    dst = tmp_path / "bare.raw"
+    shutil.copytree(src, dst)
+    for name in ("_functns.inf", "_extern.inf"):
+        (dst / name).unlink()
+    datadir = rb.read(str(dst))
+    func = datadir.get_file("_func001.dat")
+    assert func.detector is None
+    assert func in datadir.analog
+    full = rb.read(src, bin_width="recorded").get_file("_func001.dat")
+    assert len(func.ylabels) == len(full.ylabels)

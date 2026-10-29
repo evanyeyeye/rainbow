@@ -24,7 +24,8 @@
             "metadata": {
                 "date": "17 Dec 19  10:04 am",
                 "method": "HP-5MS_HTAchiral_da",
-                "acquisition_mode": "Scan"
+                "acquisition_mode": "Scan",
+                "acquisition_mode_from": "scans"
             }
         },
         "dataSim.ms": {
@@ -33,7 +34,8 @@
             "metadata": {
                 "date": "17 Dec 19  10:04 am",
                 "method": "HP-5MS_HTAchiral_da",
-                "acquisition_mode": "SIM"
+                "acquisition_mode": "SIM",
+                "acquisition_mode_from": "scans"
             }
         }
     }

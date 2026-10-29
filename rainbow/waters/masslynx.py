@@ -8,7 +8,7 @@ import os
 import re
 import numpy as np
 from rainbow.datafile import DataFile
-from rainbow._binning import bin_datapairs
+from rainbow._binning import RECORDED, bin_datapairs
 from rainbow._optics import excitation_emission
 # pandas is imported where it is used, not here. It is the single largest cost
 # in importing rainbow, and only this module's transition table needs it, so
@@ -283,24 +283,26 @@ def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
         parse_funcdat = parse_funcdat4
     # The function type says which detector recorded the function: only a
     # diode array is UV. Without _FUNCTNS.INF (PE exports), a function
-    # _extern.inf gives a polarity is MS, any other UV.
+    # _extern.inf gives a polarity is MS (a polarity is an ion source's); one
+    # with neither states no detector, and it is left unstated (None) rather
+    # than guessed, which DataDirectory files with the analog channels.
     if func_type is not None:
         detector = 'UV' if func_type == _FUNC_TYPE_DIODE_ARRAY else 'MS'
     else:
-        detector = 'MS' if polarity else 'UV'
+        detector = 'MS' if polarity else None
     metadata = {'polarity': polarity} if polarity and detector == 'MS' else {}
 
     # bin_width is an m/z control, so it only applies to the m/z functions. A
     # wavelength axis binned to an m/z width would quietly merge DAD channels
     # (at bin_width=5.0 a 190-wavelength trace came back as 39, five nanometres
     # to a column), and nothing warns about it: the too-fine-bin_width check
-    # only looks at MS files.
-    #
+    # only looks at MS files. An axis whose detector is unstated is not known
+    # to be either, so no width applies: its keys are taken as recorded.
     is_wavelength = _is_wavelength_axis(func_type, detector)
+    width = (_UV_WAVELENGTH_STEP if is_wavelength
+             else RECORDED if detector is None else bin_width)
     ylabels, data = parse_funcdat(
-        path, pair_counts, display_precision,
-        _UV_WAVELENGTH_STEP if is_wavelength else bin_width, calib,
-        labels_only)
+        path, pair_counts, display_precision, width, calib, labels_only)
 
     # An MRM function's columns are its transitions. _FUNCTNS.INF states each
     # one's precursor (read above as the labels) and product; the product is
@@ -347,7 +349,8 @@ def _is_wavelength_axis(func_type, detector):
 
     The recorded function type decides it where there is one: only a function
     the file calls a diode array is treated as wavelength. Without a type
-    (no _FUNCTNS.INF), the detector decides, as the polarity named it.
+    (no _FUNCTNS.INF), the detector decides, as the polarity named it; an
+    unstated detector (None) is not known to be wavelength.
     """
     if func_type is not None:
         return func_type == _FUNC_TYPE_DIODE_ARRAY
