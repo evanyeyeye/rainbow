@@ -567,7 +567,7 @@ def test_recorded_read_matches_the_stored_mz():
     binned = rb.read("tests/inputs/orange.D", bin_width=0.05).get_file("MSD1.MS")
     assert len(labels) == len(binned.ylabels)
     assert np.asarray(ms.data).sum() == np.asarray(binned.data).sum()
-    assert abs(ms.metadata["mz_spacing"] - 0.1) < 1e-9
+    assert ms.metadata["mz_spacing"] == 0.1      # exact, no float noise
 
 
 def test_recorded_states_no_spacing_for_chosen_ions():
@@ -600,3 +600,21 @@ def test_recorded_calibrated_centroid_stays_per_scan():
 def test_recorded_is_the_only_text_bin_width():
     with pytest.raises(Exception, match="Invalid bin_width"):
         rb.read("tests/inputs/orange.D", bin_width="nominal")
+
+
+def test_recorded_float32_keys_are_labelled_as_written():
+    """A float32 key is labelled by the shortest decimal that reads back to
+    it, the one rule for every reader."""
+    keys = np.array([100.08, 261.1, 100.08], dtype=np.float32)
+    ylabels, data = bin_datapairs(keys, np.array([1, 2, 3]), np.array([3]),
+                                  "recorded")
+    assert ylabels.tolist() == [100.08, 261.1]
+    assert data.tolist() == [[4, 2]]
+
+
+def test_recorded_spacing_is_exact():
+    from rainbow._binning import recorded_spacing
+    assert recorded_spacing([800.0, 800.2, 800.4]) == 0.2
+    assert recorded_spacing([159.64224243164062, 159.67926025390625]) == \
+        float(__import__("decimal").Decimal("159.67926025390625")
+              - __import__("decimal").Decimal("159.64224243164062"))

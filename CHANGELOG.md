@@ -94,15 +94,18 @@ to [Semantic Versioning](https://semver.org/).
   Where the report states another, the scans' mode and records stay, and the
   report's is kept in `metadata["method_disagrees"]`. A MassHunter file whose
   scans all state one of SIM, Scan or MRM is tagged with it.
-- **A method's setting that disagrees with the file is kept apart.** A SIM
-  signal's ions the file did not record (compared at the coarser of the .ms
-  0.05 m/z step and the method's written precision), a Scan range that does
-  not hold the file's m/z, or a setting the file states otherwise, go to
-  `method_disagrees` instead of onto the file. The ±0.5 m/z label match is
-  gone.
+- **A method's setting that disagrees with the file is kept apart.** Where a
+  SIM signal's ions are not the ones the file recorded (compared at the
+  coarser of the .ms 0.05 m/z step and the method's written precision), or a
+  Scan range does not hold the file's m/z, nothing of the signal goes on the
+  file: `method_disagrees` holds its `signal` number and whole `settings`. A
+  single setting the file states otherwise (its polarity) stays the file's,
+  the method's kept in `method_disagrees`. The ±0.5 m/z label match is gone.
 - **A Waters function nothing names is not called UV.** Without
-  `_FUNCTNS.INF` and a polarity its detector is unstated (an analog channel),
-  its axis read as recorded.
+  `_FUNCTNS.INF` and a polarity its detector is unstated (None), its axis
+  read as recorded. A multi-column one stays in `DataDirectory.datafiles`
+  (in no `by_detector` entry), not among the analog traces; ASM has no cube
+  for an axis of unknown kind and says so.
 - **A DAD spectrum in a unit rainbow cannot place says so in ASM**, as a
   chromatogram does: published under mAU, unscaled, with the note naming the
   file's unit, which `from_asm` reads back.

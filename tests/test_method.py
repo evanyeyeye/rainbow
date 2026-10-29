@@ -697,26 +697,30 @@ def test_ms_signals_tag_the_file_by_the_number_both_state(tmp_path):
     assert sim.metadata == {"acquisition_mode": "SIM", "method_signal": 2,
                             **SIGNALS[2]}
     assert off.metadata == {"acquisition_mode": "SIM"}
-    four = dict(SIGNALS[4])
-    ions = four.pop("monitored_ions")
-    assert other.metadata == {"acquisition_mode": "SIM", "method_signal": 4,
-                              **four,
-                              "method_disagrees": {"monitored_ions": ions}}
+    assert other.metadata == {"acquisition_mode": "SIM",
+                              "method_disagrees": {"signal": 4,
+                                                   "settings": SIGNALS[4]}}
 
 
 def test_ms_signals_a_files_own_statement_stays(tmp_path):
     """Labels 0.4 from the method's ions are other ions, not the method's
-    rounded; a polarity the file states stays, the method's kept beside it."""
+    rounded: nothing of the signal goes on the file. Where the ions agree, a
+    polarity the file states stays, the method's kept beside it."""
     d = tmp_path / "x.D"
     d.mkdir()
     (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
     sim = _ms_file_of("MSD2.MS", [1248.0, 1512.0, 1601.0], "SIM")
     sim.metadata["polarity"] = "+"
     method.tag_ms_signals(str(d), [sim])
-    assert sim.metadata["polarity"] == "+"
-    assert "monitored_ions" not in sim.metadata
-    assert sim.metadata["method_disagrees"] == {
-        "polarity": "-", "monitored_ions": SIGNALS[2]["monitored_ions"]}
+    assert sim.metadata == {"acquisition_mode": "SIM", "polarity": "+",
+                            "method_disagrees": {"signal": 2,
+                                                 "settings": SIGNALS[2]}}
+    same = _ms_file_of("MSD2.MS", [1247.6, 1511.7, 1601.2], "SIM")
+    same.metadata["polarity"] = "+"
+    method.tag_ms_signals(str(d), [same])
+    assert same.metadata["polarity"] == "+"
+    assert same.metadata["monitored_ions"] == SIGNALS[2]["monitored_ions"]
+    assert same.metadata["method_disagrees"] == {"polarity": "-"}
 
 
 def test_ms_signals_a_scan_range_that_misses_the_file(tmp_path):
@@ -726,8 +730,9 @@ def test_ms_signals_a_scan_range_that_misses_the_file(tmp_path):
     (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
     scan = _ms_file_of("MSD1.MS", np.arange(100.0, 500.0, 1.0), "Scan")
     method.tag_ms_signals(str(d), [scan])
-    assert scan.metadata["method_signal"] == 1
-    assert scan.metadata["method_disagrees"] == {"scan_range": (800.0, 1900.0)}
+    assert scan.metadata == {"acquisition_mode": "Scan", "method_disagrees": {
+        "signal": 1,
+        "settings": dict(SIGNALS[1], scan_range=(800.0, 1900.0))}}
 
 
 def test_ms_detectors_two_in_one_report(tmp_path):

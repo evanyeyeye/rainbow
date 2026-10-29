@@ -14,7 +14,8 @@ try:
 except ImportError:
     import xml.etree.ElementTree as etree
 from rainbow import DataFile
-from rainbow._binning import HRMS_MZ_FLOOR, is_recorded, label_precision
+from rainbow._binning import (HRMS_MZ_FLOOR, is_recorded, label_precision,
+                              recorded_columns)
 from rainbow.agilent.chemstation import parse_optics
 
 # NOTE: `lzf` (python-lzf) is imported lazily inside parse_msdata, and only
@@ -1452,13 +1453,13 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision,
 
     """
     if is_recorded(bin_width):
-        # One column per distinct stored m/z, labelled by it unrounded.
-        labels, cols = np.unique(np.asarray(mz_arr, dtype=np.float64),
-                                 return_inverse=True)
+        # One column per distinct stored m/z, labelled as bin_datapairs
+        # labels it (rainbow._binning.recorded_columns).
+        labels, cols = recorded_columns(mz_arr)
         if labels_only:
             return labels, np.zeros((num_times, 0),
                                     dtype=_grid_dtype(intensities))
-        grid = _scatter_sum(rows * labels.size + cols.ravel(), intensities,
+        grid = _scatter_sum(rows * labels.size + cols, intensities,
                             num_times * labels.size)
         return labels, grid.reshape(num_times, labels.size)
 
@@ -1688,15 +1689,13 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
     num_peaks_per_time = np.array(
         [len(m) for m in mz_per_scan], dtype=np.int64)
     rows = np.repeat(np.arange(num_times), num_peaks_per_time)
+    if is_recorded(bin_width) and stored_in_float32:
+        # Back to the float32 the file stores (exact), so the m/z are
+        # labelled as written; see rainbow._binning.recorded_columns.
+        mz_arr = mz_arr.astype(np.float32)
     mz_ylabels, data = bin_to_grid(
         mz_arr, intensities, rows, num_times, display_precision, bin_width,
         labels_only)
-    if is_recorded(bin_width) and stored_in_float32:
-        # A float32 m/z as the file writes it: the shortest decimal that reads
-        # back to the stored float32 (100.08, not 100.08000183105469). One to
-        # one, so the columns stay distinct.
-        mz_ylabels = np.array([float(str(np.float32(x))) for x in mz_ylabels],
-                              dtype=np.float64)
     return _with_mz_floor(
         DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data,
                  {'scans': scan_metadata(scan_records)}), floor)

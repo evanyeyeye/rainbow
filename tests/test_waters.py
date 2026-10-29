@@ -252,7 +252,8 @@ def test_white_exports_each_mrm_transition_by_its_transition():
 
 def test_a_function_nothing_names_states_no_detector(tmp_path):
     """Without _FUNCTNS.INF and without a polarity, a function is not called
-    UV: its detector is unstated (an analog channel), its keys as recorded."""
+    UV: its detector is unstated, its keys as recorded, and it stays among
+    the run's datafiles (several columns: not an analog trace)."""
     import shutil
     src = "tests/inputs/turquoise.raw"
     dst = tmp_path / "bare.raw"
@@ -262,6 +263,31 @@ def test_a_function_nothing_names_states_no_detector(tmp_path):
     datadir = rb.read(str(dst))
     func = datadir.get_file("_func001.dat")
     assert func.detector is None
-    assert func in datadir.analog
+    assert func in datadir.datafiles and func not in datadir.analog
     full = rb.read(src, bin_width="recorded").get_file("_func001.dat")
     assert len(func.ylabels) == len(full.ylabels)
+
+
+def test_a_diode_array_nothing_names_stays_in_the_run(tmp_path):
+    """violet.raw without _FUNCTNS.INF: its diode array (_FUNC003) has no
+    polarity, so no detector is stated; it is still one of the run's
+    datafiles, by no detector, its wavelengths as recorded, and the ASM
+    export says why it carries no cube for it."""
+    import shutil
+    import warnings
+    dst = tmp_path / "violet.raw"
+    shutil.copytree("tests/inputs/violet.raw", dst)
+    (dst / "_FUNCTNS.INF").unlink()
+    datadir = rb.read(str(dst))
+    func = datadir.get_file("_FUNC003.DAT")
+    assert func.detector is None
+    assert func in datadir.datafiles
+    assert func.data.shape[1] > 1
+    assert None not in datadir.by_detector
+    assert {f.name for f in datadir.datafiles if f.detector == "MS"} == \
+        {"_FUNC001.DAT", "_FUNC002.DAT"}
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        datadir.to_asm()
+    assert any("_FUNC003.DAT" in str(c.message) and "states no detector"
+               in str(c.message) for c in caught)

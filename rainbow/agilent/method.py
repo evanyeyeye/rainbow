@@ -31,6 +31,9 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 from rainbow.agilent import acaml
+# The .ms format's m/z step: a file's ion and the method's are one ion when
+# they agree at the coarser of it and the method's own written precision.
+from rainbow.agilent.chemstation import MS_MZ_STEP
 
 
 # An instrument-module section is titled like "DAD (G7117B)": the module name
@@ -571,11 +574,6 @@ _REPORT_HEADS = {"simion": "SIMIon", "fragmentor": "Fragmentor",
                  "timemin": "Time(min)"}
 _MS_DETECTOR_TITLE = "Mass Spectrometer Detector"
 
-# m/z: the step an .ms file stores its m/z on, by its format (a big-endian
-# short divided by 20; chemstation.parse_ms). A file's ion and the method's
-# are the same ion when they agree at the coarser of this and the method's
-# own written precision.
-_MS_FILE_MZ_STEP = 0.05
 
 
 def ms_signals(path, acq=_UNREAD):
@@ -627,6 +625,11 @@ def ms_detectors(path, acq=_UNREAD):
         list: One ``{"name": str or None, "signals": {signal number:
         settings}}`` per MS detector section, ``name`` the module its heading
         names (``"G6135B"``), the settings as :func:`ms_signals` gives them.
+
+    UNVERIFIED for more than one detector: no method report or acq.macaml of
+    two MS detectors has been seen, so splitting the report at each heading
+    that names a module, and the acq.macaml at each "Mass Spectrometer
+    Detector" section, follows the one-detector layout, not a seen file.
     """
     return [{"name": d["name"],
              "signals": {n: _public(s) for n, s in d["signals"].items()}}
@@ -644,17 +647,21 @@ def tag_ms_signals(path, datafiles, acq=_UNREAD):
     itself, and ``method_signal``, the signal's number.
 
     ``MSD<n>.MS`` holds ``[Signal n]``, the number both state. With several MS
-    detectors, the detector is the one its header names (``MSD<k>``, the k-th
-    detector section); a file whose header names none is left untagged then.
-    A file named otherwise (a GC/MS ``data.ms``) holds the method's one
-    signal, where it has one.
+    detectors, the detector is taken to be the one its header names
+    (``MSD<k>``, the k-th detector section); a file whose header names none
+    is left untagged then. That mapping is UNVERIFIED: no run with two MS
+    detectors has been seen, so it rests on the header naming its detector
+    ("MSD1, ...") in the one-detector runs. A file named otherwise (a GC/MS
+    ``data.ms``) holds the method's one signal, where it has one.
 
     What the file records is a check, never the pairing: where a SIM signal's
     ions are not the ions the file recorded, or a Scan signal's range does
-    not hold them, the method's are kept under ``method_disagrees``
-    (``monitored_ions``, ``scan_range``) rather than put on the file, and the
-    file's own stay its m/z labels. Ions are compared at the coarser of the
-    file's m/z step (:data:`_MS_FILE_MZ_STEP`) and the method's written
+    not hold them, nothing of the signal is put on the file; its number and
+    whole settings (a Scan signal's with its ``scan_range``) are kept under
+    ``method_disagrees`` (``signal``, ``settings``, and ``detector`` where
+    there are several), and the file's own ions stay its m/z labels. Ions
+    are compared at the coarser of the .ms format's m/z step
+    (:data:`rainbow.agilent.chemstation.MS_MZ_STEP`) and the method's written
     precision. Where the file states a setting (its polarity) that the method
     states otherwise, the file's stays and the method's is kept there too.
 
@@ -675,22 +682,27 @@ def tag_ms_signals(path, datafiles, acq=_UNREAD):
             continue
         k, number = n
         settings = detectors[k]["signals"][number]
+        span = settings.get("_scan_range")
+        if ("monitored_ions" in settings and not _ions_agree(datafile, settings)) \
+                or (span is not None and not _range_holds(datafile, span, settings)):
+            # The file did not record what the signal names: none of the
+            # signal's settings is put on it; the whole signal is kept apart.
+            kept = _public(settings)
+            if span is not None:
+                kept["scan_range"] = span
+            _disagree(datafile, "signal", number)
+            _disagree(datafile, "settings", kept)
+            if len(detectors) > 1:
+                _disagree(datafile, "detector", k + 1)
+            continue
         datafile.metadata["method_signal"] = number
         if len(detectors) > 1:
             datafile.metadata["method_detector"] = k + 1
-        for key, value in settings.items():
-            if key.startswith("_"):
-                continue
-            if key == "monitored_ions" and not _ions_agree(datafile, settings):
-                _disagree(datafile, key, value)
-                continue
+        for key, value in _public(settings).items():
             if key in datafile.metadata and datafile.metadata[key] != value:
                 _disagree(datafile, key, value)
                 continue
             datafile.metadata.setdefault(key, value)
-        span = settings.get("_scan_range")
-        if span is not None and not _range_holds(datafile, span, settings):
-            _disagree(datafile, "scan_range", span)
 
 
 def _signal_of(path, datafile, detectors, ms_count):
@@ -736,7 +748,7 @@ def _labels(datafile):
 def _step(settings):
     """The step at which a file's m/z and the method's are compared: the
     coarser of the .ms format's and the method's written precision."""
-    return max(_MS_FILE_MZ_STEP, settings.get("_written_step") or 0.0)
+    return max(MS_MZ_STEP, settings.get("_written_step") or 0.0)
 
 
 def _same_mz(a, b, step):

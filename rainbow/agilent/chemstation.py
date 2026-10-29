@@ -116,6 +116,10 @@ _MS_HEADER = ({
     'method': 0xE4
 }, 1)
 _MS_MAGIC = 0x01320000
+# An .ms file stores each m/z as a big-endian short, in twentieths of a
+# dalton: its m/z lattice, MS_MZ_STEP apart.
+MS_MZ_PER_DALTON = 20
+MS_MZ_STEP = 1 / MS_MZ_PER_DALTON
 # The scan type each scan's record in an .ms file states, in the fourth byte of
 # the six after its retention time, by the names masshunter.SCAN_TYPES gives
 # them. Seen in LC/MSD and GC/MSD files alike: 1 in every full-scan file and 3
@@ -900,7 +904,7 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     total_paircount = np.sum(pair_counts)
 
     # Calculate the mz values (raw; binning happens in bin_datapairs).
-    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / 20
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / MS_MZ_PER_DALTON
 
     # Calculate the intensity values. 
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -1067,7 +1071,7 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0,
     total_paircount = np.sum(pair_counts)
 
     # Calculate the mz values (raw; binning happens in bin_datapairs).
-    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / 20
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / MS_MZ_PER_DALTON
 
     # Calculate the intensity values.
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)

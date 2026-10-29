@@ -150,9 +150,7 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
                 np.zeros((num_times, 0), dtype=data_dtype))
 
     if recorded:
-        # Each distinct stored key is a column, labelled by the key itself.
-        ylabels, columns = np.unique(np.asarray(keys, dtype=np.float64),
-                                     return_inverse=True)
+        ylabels, columns = recorded_columns(keys)
         if labels_only:
             return ylabels, np.zeros((num_times, 0), dtype=data_dtype)
         rows = np.repeat(np.arange(num_times), pair_counts)
@@ -217,11 +215,32 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
     return ylabels, data.reshape(num_times, num_ylabels)
 
 
+def recorded_columns(keys):
+    """(labels, each key's column) under :data:`RECORDED`: each distinct
+    stored key a column, labelled by the key as the file writes it. A float32
+    key is labelled by the shortest decimal that reads back to it (100.08,
+    not its float64 widening 100.08000183105469), which is one to one, so the
+    columns stay distinct; any other key by its float64 value. The one rule
+    for every reader (bin_datapairs, MassHunter's bin_to_grid)."""
+    keys = np.asarray(keys)
+    labels, columns = np.unique(keys, return_inverse=True)
+    if labels.dtype == np.float32:
+        labels = np.array([float(str(x)) for x in labels], dtype=np.float64)
+    else:
+        labels = labels.astype(np.float64)
+    return labels, columns.ravel()
+
+
 def recorded_spacing(labels):
     """The smallest gap between two distinct recorded m/z of a channel read
     as recorded (:data:`RECORDED`), measured on its labels, or None for fewer
-    than two. A measurement of this file, not a property of its format."""
+    than two. A measurement of this file, not a property of its format.
+
+    Exact: each gap is taken between the labels' shortest decimals (their
+    repr), so 800.2 and 800.0 are 0.2 apart, not 0.1999999999998181."""
+    from decimal import Decimal
     labels = np.unique(np.asarray(labels, dtype=np.float64))
     if labels.size < 2:
         return None
-    return float(np.min(np.diff(labels)))
+    exact = [Decimal(repr(float(x))) for x in labels]
+    return float(min(b - a for a, b in zip(exact, exact[1:])))

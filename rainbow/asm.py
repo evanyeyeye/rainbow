@@ -1654,6 +1654,9 @@ def _omission_remedy(datafile, options):
         data = getattr(datafile, "data", None)
         if data is not None and data.shape[1] > 1:
             return None  # export_dad_cube=False is the caller's own choice
+    if datafile.detector is None:
+        return ("states no detector, so whether its axis is m/z or "
+                "wavelength is unknown and no cube can name it")
     return "is not a channel shape this exporter can carry"
 
 
