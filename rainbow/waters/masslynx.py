@@ -291,6 +291,9 @@ def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
     else:
         detector = 'MS' if polarity else None
     metadata = {'polarity': polarity} if polarity and detector == 'MS' else {}
+    if func_type == _FUNC_TYPE_DIODE_ARRAY:
+        # the function type states the detector: MassLynx's diode array
+        metadata['device_type'] = 'diode array detector'
 
     # bin_width is an m/z control, so it only applies to the m/z functions. A
     # wavelength axis binned to an m/z width would quietly merge DAD channels

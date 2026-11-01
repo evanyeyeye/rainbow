@@ -6,7 +6,7 @@ from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
 from rainbow import agilent, waters
 from rainbow._binning import MZ_FLOORS, RECORDED, is_recorded as _is_recorded
-from rainbow.asm import (asm_technique, from_asm, iso_timestamp,
+from rainbow.asm import (asm_technique, device_of, from_asm, iso_timestamp,
                          measurements, peaks_from_asm, sequence_from_asm)
 
 
@@ -17,7 +17,7 @@ __all__ = [
     'DataFile', 'DataDirectory', 'DataSequence',
     'agilent', 'waters', 'debug',
     'read', 'read_sequence', 'read_metadata', 'mz_resolution',
-    'from_asm', 'sequence_from_asm', 'peaks_from_asm', 'measurements',
+    'from_asm', 'sequence_from_asm', 'peaks_from_asm', 'measurements', 'device_of',
     'iso_timestamp',
     'asm_technique', 'sniff_vendor',
     'VENDORS', 'MZ_FLOORS', 'RECORDED',

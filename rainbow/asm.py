@@ -1757,8 +1757,44 @@ def _channel_device_type(descriptor, technique, datafile=None,
     return _for_technique(stated or descriptor["device_type"], technique)
 
 
+def device_of(datafile, metadata=None, technique=None):
+    """The device a datafile's measurement names, as :func:`to_asm` writes
+    its device control document: ``{"device type": the AFO class,
+    "device identifier": the module the file names it by}``, e.g.
+    ``{"device type": "diode array detector", "device identifier":
+    "DAD1A"}``; the identifier rainbow's detector name ("UV") where the file
+    names no module. A variable or multiple wavelength detector has no AFO
+    class of its own: its identifier ("VWD1A", "MWD1A") says which it is. None
+    for a datafile no device control document is written for (MS, analog).
+    """
+    descriptor = _DETECTOR_CUBES.get(datafile.detector)
+    if descriptor is None:
+        return None
+    return {"device type": _channel_device_type(descriptor, technique,
+                                                 datafile, metadata),
+            "device identifier": _device_identifier(datafile, metadata)}
+
+
+def _device_identifier(datafile, metadata):
+    """The module a datafile's channel is named by: the source's device
+    identifier, else the words the stated class was read from where they
+    name the module (a signal's module, a file's name, a module's name),
+    else rainbow's detector name."""
+    stated = _stated_device(datafile, metadata or {})
+    return (datafile.metadata.get("device_identifier")
+            or (stated[1] if stated else None) or datafile.detector)
+
+
 def _stated_device_type(datafile, metadata):
-    """The detector class the file states for a datafile's channel, or None.
+    """The detector class the file states for a datafile's channel, or None
+    (see :func:`_stated_device`)."""
+    stated = _stated_device(datafile, metadata)
+    return stated[0] if stated else None
+
+
+def _stated_device(datafile, metadata):
+    """(the detector class the file states for a datafile's channel, the
+    words naming the module it was read from, or None), or None.
 
     Read from the datafile's own words first: the device type an ASM
     document stated for it, its device identifier (but the detector's own
@@ -1771,22 +1807,23 @@ def _stated_device_type(datafile, metadata):
     """
     signal = datafile.metadata.get("signal")
     ident = datafile.metadata.get("device_identifier")
-    texts = (datafile.metadata.get("device_type"),
-             ident if ident != datafile.detector else None,
-             signal.split(",")[0] if isinstance(signal, str) else None,
-             os.path.splitext(os.path.basename(datafile.name or ""))[0])
-    for text in texts:
+    ident = ident if ident != datafile.detector else None
+    texts = ((datafile.metadata.get("device_type"), ident),
+             (ident, ident),
+             (signal.split(",")[0] if isinstance(signal, str) else None,) * 2,
+             (os.path.splitext(os.path.basename(datafile.name or ""))[0],) * 2)
+    for text, module in texts:
         found = _specific_detector_type(
             _normalize_module_text(text if isinstance(text, str) else ""))
         if found and _RAINBOW_DETECTORS.get(found) == datafile.detector:
-            return found
-    kinds = set()
+            return found, module
+    kinds = {}
     for module in metadata.get("modules") or []:
         found = _specific_detector_type(_normalize_module_text(
             f"{module.get('name') or ''} {module.get('type') or ''}"))
         if found and _RAINBOW_DETECTORS.get(found) == datafile.detector:
-            kinds.add(found)
-    return kinds.pop() if len(kinds) == 1 else None
+            kinds.setdefault(found, module.get("name"))
+    return next(iter(kinds.items())) if len(kinds) == 1 else None
 
 
 def _build_measurements(datafile, metadata, options, has_peaks=False,
@@ -1929,8 +1966,7 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     # detector's name only where the source had none.
     control = {"device type": _channel_device_type(descriptor, technique,
                                                    datafile, metadata),
-               "device identifier": datafile.metadata.get("device_identifier")
-               or datafile.detector}
+               "device identifier": _device_identifier(datafile, metadata)}
     _append_custom(control, _RAINBOW_DETECTOR, datafile.detector)
     descriptor = _measure_from_source(datafile, descriptor, options)
     detection_type = descriptor.get("detection_type")
@@ -2467,7 +2503,8 @@ def _spectrum_measurement(datafile, metadata, device_type, options):
     cube = _spectrum_cube(datafile, options)
     if cube is None:
         return None
-    control = {"device type": device_type}
+    control = {"device type": device_type,
+               "device identifier": _device_identifier(datafile, metadata)}
     measurement = _measurement(
         datafile, metadata, control, _SPECTRUM_CUBE, cube, options)
     unit = datafile.metadata.get("unit")
