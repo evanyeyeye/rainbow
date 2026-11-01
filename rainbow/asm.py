@@ -1740,15 +1740,53 @@ def _cube_measure(measurement):
     return measures[0].get("concept"), measures[0].get("unit")
 
 
-def _channel_device_type(descriptor, technique):
+def _channel_device_type(descriptor, technique, datafile=None,
+                         metadata=None):
     """The AFO device type for a channel's detector.
 
     A detector AFO has a class for keeps it in any document; one it does not
     (charged aerosol) takes the generic class for the document's technique.
+    Where the file states which kind of its detector recorded the channel (a
+    diode array or a variable wavelength detector, both UV), that class is
+    used (see :func:`_stated_device_type`); else the detector's own.
     """
     if descriptor.get("generic"):
         return _generic_detector(technique)
-    return _for_technique(descriptor["device_type"], technique)
+    stated = (_stated_device_type(datafile, metadata or {})
+              if datafile is not None else None)
+    return _for_technique(stated or descriptor["device_type"], technique)
+
+
+def _stated_device_type(datafile, metadata):
+    """The detector class the file states for a datafile's channel, or None.
+
+    Read from the datafile's own words first: the device type an ASM
+    document stated for it, its device identifier (but the detector's own
+    name, which rainbow writes where the source had none), the module its
+    signal names ("DAD1A, Sig=254.0,4.0 ..."), its file name (DAD1A.ch,
+    DAD1.UV, VWD1A.ch); then from the run's modules, where every module of
+    the channel's detector kind names the same class (one DAD). A class of
+    another detector than the channel's is never taken: a run's fluorescence
+    module says nothing of its UV channels.
+    """
+    signal = datafile.metadata.get("signal")
+    ident = datafile.metadata.get("device_identifier")
+    texts = (datafile.metadata.get("device_type"),
+             ident if ident != datafile.detector else None,
+             signal.split(",")[0] if isinstance(signal, str) else None,
+             os.path.splitext(os.path.basename(datafile.name or ""))[0])
+    for text in texts:
+        found = _specific_detector_type(
+            _normalize_module_text(text if isinstance(text, str) else ""))
+        if found and _RAINBOW_DETECTORS.get(found) == datafile.detector:
+            return found
+    kinds = set()
+    for module in metadata.get("modules") or []:
+        found = _specific_detector_type(_normalize_module_text(
+            f"{module.get('name') or ''} {module.get('type') or ''}"))
+        if found and _RAINBOW_DETECTORS.get(found) == datafile.detector:
+            kinds.add(found)
+    return kinds.pop() if len(kinds) == 1 else None
 
 
 def _build_measurements(datafile, metadata, options, has_peaks=False,
@@ -1764,7 +1802,8 @@ def _build_measurements(datafile, metadata, options, has_peaks=False,
                 return []
             measurement = _spectrum_measurement(
                 datafile, metadata,
-                _channel_device_type(descriptor, technique), options)
+                _channel_device_type(descriptor, technique, datafile,
+                                     metadata), options)
             return [measurement] if measurement is not None else []
         if datafile.data.shape[1] == 1:
             return [_detector_measurement(
@@ -1888,7 +1927,8 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     # an analog trace. The device identifier is the source's, which names the
     # module in its device system document ("DAD", "ACQ-FLR"), and the
     # detector's name only where the source had none.
-    control = {"device type": _channel_device_type(descriptor, technique),
+    control = {"device type": _channel_device_type(descriptor, technique,
+                                                   datafile, metadata),
                "device identifier": datafile.metadata.get("device_identifier")
                or datafile.detector}
     _append_custom(control, _RAINBOW_DETECTOR, datafile.detector)
