@@ -2,6 +2,7 @@
 Methods for parsing Agilent Masshunter files. 
  
 """
+import mmap
 import os
 import re
 import struct
@@ -1595,43 +1596,20 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
 
     peak_path = os.path.join(path, "MSPeak.bin")
     times = np.array(scan_records['ScanTime'], dtype=np.float64)
-    stored_in_float32 = True        # every peak block's m/z a float32
+    # MSPeak.bin is mapped, not read into memory, and the peaks are decoded
+    # into their arrays _PEAK_CHUNK scans at a time, so what is held beside
+    # the arrays made is one chunk's bytes, not the file.
     with open(peak_path, 'rb') as f:
-        peaks = memoryview(f.read())
-    peak_size = len(peaks)
-    # The scans' peak blocks by their bytes per peak, each decoded as
-    # _decode_peak_block does (all m/z, then all intensities), the scans of
-    # one width at once: (their rows, peaks per scan, the m/z and the
-    # intensities of all of them). Scans with no peaks, or whose data was
-    # never (fully) written (an interrupted acquisition), are skipped: the
-    # complete scans are kept.
-    by_width = {}
-    for i, num_peaks, offset, byte_count in _centroid_blocks(scan_records):
-        if (num_peaks <= 0 or byte_count <= 0
-                or offset + byte_count > peak_size):
-            continue
-        by_width.setdefault(byte_count // num_peaks, []).append(
-            (i, num_peaks, offset))
-    # MSPeak.bin stores its abundances as floats, and they are returned as
-    # float64 whatever their values. They are fractional on a GC/MS .D
-    # (yellow.D's include 10242.948) and on an OpenLab single-quadrupole
-    # LC/MS alike, so the integer cast this once applied truncated them; and
-    # a dtype chosen by whether a run happens to hold a fraction would differ
-    # between runs of one sequence.
-    groups = []
-    for width, scans in by_width.items():
-        mz_dtype, inten_dtype = (np.dtype(t) for t in _PEAK_DTYPES[width])
-        if mz_dtype != np.float32:
-            stored_in_float32 = False
-        size = mz_dtype.itemsize
-        groups.append((
-            np.array([i for i, _, _ in scans], dtype=np.int64),
-            np.array([n for _, n, _ in scans], dtype=np.int64),
-            np.frombuffer(b"".join(peaks[o:o + n * size] for _, n, o in scans),
-                          dtype=mz_dtype).astype(np.float64),
-            np.frombuffer(b"".join(peaks[o + n * size:o + n * width]
-                                   for _, n, o in scans),
-                          dtype=inten_dtype).astype(np.float64)))
+        peak_size = os.fstat(f.fileno()).st_size
+        mapped = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) \
+            if peak_size else None
+    try:
+        # stored_in_float32: every peak block's m/z a float32
+        groups, stored_in_float32 = _peak_groups(
+            scan_records, mapped, peak_size)
+    finally:
+        if mapped is not None:
+            mapped.close()
 
     def per_scan():
         """Per-scan peak lists, aligned to every scan (empty where a scan has
@@ -1724,6 +1702,58 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
     return _with_mz_floor(
         DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data,
                  {'scans': scan_metadata(scan_records)}), floor)
+
+
+# Scans decoded at once by parse_mspeakdata: what it holds beside the arrays it
+# makes is the bytes of this many scans' peaks.
+_PEAK_CHUNK = 4096
+
+
+def _peak_groups(scan_records, peaks, peak_size):
+    """
+    The scans' centroid blocks in MSPeak.bin (``peaks``, the file mapped), by
+    their bytes per peak, each decoded as :obj:`_decode_peak_block` does (all
+    m/z, then all intensities): ([(their rows, peaks per scan, the m/z
+    (float64), the intensities (float64))], whether every block stores its m/z
+    as float32). Scans with no peaks, or whose data
+    was never (fully) written (an interrupted acquisition), are skipped: the
+    complete scans are kept.
+
+    MSPeak.bin stores its abundances as floats, and they are returned as
+    float64 whatever their values. They are fractional on a GC/MS .D
+    (yellow.D's include 10242.948) and on an OpenLab single-quadrupole LC/MS
+    alike, so the integer cast this once applied truncated them; and a dtype
+    chosen by whether a run happens to hold a fraction would differ between
+    runs of one sequence.
+    """
+    by_width = {}
+    for i, num_peaks, offset, byte_count in _centroid_blocks(scan_records):
+        if (num_peaks <= 0 or byte_count <= 0
+                or offset + byte_count > peak_size):
+            continue
+        by_width.setdefault(byte_count // num_peaks, []).append(
+            (i, num_peaks, offset))
+    groups, float32 = [], True
+    for width, scans in by_width.items():
+        mz_dtype, inten_dtype = (np.dtype(t) for t in _PEAK_DTYPES[width])
+        float32 = float32 and mz_dtype == np.float32
+        size = mz_dtype.itemsize
+        counts = np.array([n for _, n, _ in scans], dtype=np.int64)
+        mzs = np.empty(int(counts.sum()), dtype=np.float64)
+        intensities = np.empty(mzs.size, dtype=np.float64)
+        at = 0
+        for start in range(0, len(scans), _PEAK_CHUNK):
+            part = scans[start:start + _PEAK_CHUNK]
+            mz = np.frombuffer(b"".join(peaks[o:o + n * size]
+                                        for _, n, o in part), dtype=mz_dtype)
+            mzs[at:at + mz.size] = mz
+            intensities[at:at + mz.size] = np.frombuffer(b"".join(
+                peaks[o + n * size:o + n * width] for _, n, o in part),
+                dtype=inten_dtype)
+            at += mz.size
+        groups.append((np.array([i for i, _, _ in scans], dtype=np.int64),
+                       counts, mzs, intensities))
+    return groups, float32
 
 
 def _calibration_ids(table):
