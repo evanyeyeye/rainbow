@@ -90,6 +90,13 @@ to [Semantic Versioning](https://semver.org/).
   validate, that a channel is published relabeled or left out) is not said.
 
 ### Changed
+- **MassHunter scan records are read in one pass.** `read_scan_table` reads
+  MSScan.bin as a numpy structured array (`record_dtype`, from MSScan.xsd),
+  in place of a `struct` call per field; the MS parsers, `scan_times` and
+  `scan_metadata` use it, and MSPeak.bin is read once and decoded a block
+  width at a time. A 13,811-scan centroid read takes about 7 ms in place of
+  about 90 ms, with the same result. `read_scan_records` still gives one
+  dictionary per record.
 - **A file's scans decide its acquisition mode over the method report.**
   Where the report states another, the scans' mode and records stay, and the
   report's is kept in `metadata["method_disagrees"]`. A MassHunter file whose

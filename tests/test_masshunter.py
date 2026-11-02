@@ -1977,3 +1977,51 @@ def test_scan_metadata_names_an_unknown_code_by_its_number():
     assert scans["monitoring"].tolist() == [False, True]
     assert scans["polarity"].tolist() == ["", "+"]
     assert masshunter.scan_metadata([]) == {}
+
+
+# ---------------------------------------------------------------------------
+# The scan records read as one numpy structured array (read_scan_table).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("acqdata", [
+    YELLOW_ACQDATA, os.path.join(GOLD_D, "AcqData"),
+    os.path.join(COPPER_D, "AcqData"), os.path.join(MAGENTA_D, "AcqData"),
+    os.path.join(AMBER_D, "AcqData"), SILVER_ACQDATA])
+def test_scan_table_holds_what_the_records_state(acqdata):
+    # Each row of the table is the record read_complextype reads at its place,
+    # field by field, the extra spectrum blocks included.
+    msscan = os.path.join(acqdata, "MSScan.bin")
+    types = masshunter.parse_scan_xsd(os.path.join(acqdata, "MSScan.xsd"))
+    table = masshunter.read_scan_table(
+        msscan, types, masshunter.count_scans(acqdata))
+    records = masshunter.read_scan_records(
+        msscan, types, masshunter.count_scans(acqdata))
+    assert len(table) == len(records)
+    with open(msscan, 'rb') as f:
+        f.seek(0x58)
+        start = struct.unpack('<I', f.read(4))[0]
+        for i, record in enumerate(records):
+            f.seek(start + i * table.dtype.itemsize)
+            read = masshunter.read_complextype(f, types, "ScanRecordType")
+            assert {k: v for k, v in record.items()
+                    if k != 'SpectrumParamsBlocks'} == read
+            assert record['SpectrumParamsBlocks'][0] == \
+                read['SpectrumParamValues']
+            for block in record['SpectrumParamsBlocks'][1:]:
+                assert block == masshunter.read_complextype(
+                    f, types, "SpectrumParamsType")
+    assert table['ScanTime'].tolist() == [r['ScanTime'] for r in records]
+    by_table = masshunter.scan_metadata(table)
+    by_records = masshunter.scan_metadata(records)
+    assert list(by_table) == list(by_records)
+    for key, values in by_records.items():
+        assert by_table[key].dtype == values.dtype
+        np.testing.assert_array_equal(by_table[key], values)
+
+
+def test_record_dtype_is_the_type_size():
+    types = masshunter.parse_scan_xsd(
+        os.path.join(YELLOW_ACQDATA, "MSScan.xsd"))
+    for name in ("ScanRecordType", "SpectrumParamsType"):
+        assert masshunter.record_dtype(types, name).itemsize == \
+            masshunter.type_size(types, name)

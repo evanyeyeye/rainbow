@@ -1024,17 +1024,16 @@ def parse_msdata(path, display_precision='auto', bin_width=None,
     #   - the compressed length in bytes
     #   - the uncompressed length in bytes
     #   - the calibration id (selects a polynomial calibration; see below)
-    scan_records = read_scan_records(
+    scan_records = read_scan_table(
         os.path.join(path, "MSScan.bin"), complextypes_dict, count_scans(path))
     num_times = len(scan_records)
-    data_info = [
-        (rec['ScanTime'],
-         rec['SpectrumParamValues']['PointCount'],
-         rec['SpectrumParamValues']['SpectrumOffset'],
-         rec['SpectrumParamValues']['ByteCount'],
-         rec['SpectrumParamValues']['UncompressedByteCount'],
-         rec.get('CalibrationID'))
-        for rec in scan_records]
+    first = scan_records['SpectrumParamValues']
+    data_info = list(zip(
+        *(_field(rec, name).tolist() for rec, name in (
+            (scan_records, 'ScanTime'), (first, 'PointCount'),
+            (first, 'SpectrumOffset'), (first, 'ByteCount'),
+            (first, 'UncompressedByteCount'))),
+        _calibration_ids(scan_records)))
 
     # Mass calibration (see _load_calibration and calibrate_mz): the per-scan
     # 10 doubles and polynomial flags. A profile m/z axis is stored as raw
@@ -1257,14 +1256,13 @@ def parse_icpmsdata(path, display_precision='auto'):
     # MSScan.bin: Read one scan record per retention time. ICP-MS MSProfile.bin
     # is uncompressed, so only the retention time, point count, and data offset
     # are needed (no byte counts or calibration ids).
-    scan_records = read_scan_records(
+    scan_records = read_scan_table(
         os.path.join(path, "MSScan.bin"), complextypes_dict, count_scans(path))
     num_times = len(scan_records)
-    data_info = [
-        (rec['ScanTime'],
-         rec['SpectrumParamValues']['PointCount'],
-         rec['SpectrumParamValues']['SpectrumOffset'])
-        for rec in scan_records]
+    first = scan_records['SpectrumParamValues']
+    data_info = list(zip(
+        scan_records['ScanTime'].tolist(), _field(first, 'PointCount').tolist(),
+        _field(first, 'SpectrumOffset').tolist()))
 
     # MSTS_XSpecific.xml: Extract the number of isotope channels (masses).
     root = etree.parse(os.path.join(path, "MSTS_XSpecific.xml")).getroot()
@@ -1580,14 +1578,14 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
 
     """
     complextypes_dict = parse_scan_xsd(os.path.join(path, "MSScan.xsd"))
-    scan_records = read_scan_records(
+    scan_records = read_scan_table(
         os.path.join(path, "MSScan.bin"), complextypes_dict, count_scans(path))
     num_times = len(scan_records)
 
     # Mass calibration. GC-quadrupole MSPeak.bin already stores m/z (no
     # calibration files, so calib_vals is None), but a TOF/Q-TOF centroid axis
     # is raw time-of-flight and is calibrated exactly like the profile axis.
-    calibration_ids = [record.get('CalibrationID') for record in scan_records]
+    calibration_ids = _calibration_ids(scan_records)
     calib_vals, calib_flags = _load_calibration(path, calibration_ids)
 
     # 'auto' display_precision: TOF centroids (calibrated, high-resolution) round
@@ -1596,50 +1594,65 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
         display_precision = 4 if calib_vals is not None else 0
 
     peak_path = os.path.join(path, "MSPeak.bin")
-    peak_size = os.path.getsize(peak_path)
-    times = np.empty(num_times)
-    # Per-scan peak lists, aligned to every scan (empty where a scan has none).
-    mz_per_scan = [None] * num_times
-    inten_per_scan = [None] * num_times
+    times = np.array(scan_records['ScanTime'], dtype=np.float64)
     stored_in_float32 = True        # every peak block's m/z a float32
     with open(peak_path, 'rb') as f:
-        for i, record in enumerate(scan_records):
-            times[i] = record['ScanTime']
-            block = _select_centroid_block(record['SpectrumParamsBlocks'])
-            if block is None:
-                continue
-            num_peaks = block['PointCount']
-            offset = block['SpectrumOffset']
-            byte_count = block['ByteCount']
-            # Skip scans with no peaks, or whose data was never (fully) written
-            # (an interrupted acquisition - keep the complete scans).
-            if (num_peaks <= 0 or byte_count <= 0
-                    or offset + byte_count > peak_size):
-                continue
-            f.seek(offset)
-            mzs, intensities = _decode_peak_block(
-                f.read(byte_count), num_peaks, byte_count // num_peaks)
-            if mzs.dtype != np.float32:
-                stored_in_float32 = False
-            if calib_vals is not None:
-                mzs = calibrate_mz(np.asarray(mzs, dtype=np.float64),
-                                   calib_vals[i], calib_flags.get(
-                                       calibration_ids[i]))
-            mz_per_scan[i] = np.asarray(mzs, dtype=np.float64)
-            inten_per_scan[i] = intensities
-
+        peaks = memoryview(f.read())
+    peak_size = len(peaks)
+    # The scans' peak blocks by their bytes per peak, each decoded as
+    # _decode_peak_block does (all m/z, then all intensities), the scans of
+    # one width at once: (their rows, peaks per scan, the m/z and the
+    # intensities of all of them). Scans with no peaks, or whose data was
+    # never (fully) written (an interrupted acquisition), are skipped: the
+    # complete scans are kept.
+    by_width = {}
+    for i, num_peaks, offset, byte_count in _centroid_blocks(scan_records):
+        if (num_peaks <= 0 or byte_count <= 0
+                or offset + byte_count > peak_size):
+            continue
+        by_width.setdefault(byte_count // num_peaks, []).append(
+            (i, num_peaks, offset))
     # MSPeak.bin stores its abundances as floats, and they are returned as
     # float64 whatever their values. They are fractional on a GC/MS .D
     # (yellow.D's include 10242.948) and on an OpenLab single-quadrupole
     # LC/MS alike, so the integer cast this once applied truncated them; and
     # a dtype chosen by whether a run happens to hold a fraction would differ
     # between runs of one sequence.
-    for i in range(num_times):
-        if mz_per_scan[i] is None:
-            mz_per_scan[i] = np.array([], dtype=np.float64)
-            inten_per_scan[i] = np.array([], dtype=np.float64)
-        else:
-            inten_per_scan[i] = np.asarray(inten_per_scan[i], dtype=np.float64)
+    groups = []
+    for width, scans in by_width.items():
+        mz_dtype, inten_dtype = (np.dtype(t) for t in _PEAK_DTYPES[width])
+        if mz_dtype != np.float32:
+            stored_in_float32 = False
+        size = mz_dtype.itemsize
+        groups.append((
+            np.array([i for i, _, _ in scans], dtype=np.int64),
+            np.array([n for _, n, _ in scans], dtype=np.int64),
+            np.frombuffer(b"".join(peaks[o:o + n * size] for _, n, o in scans),
+                          dtype=mz_dtype).astype(np.float64),
+            np.frombuffer(b"".join(peaks[o + n * size:o + n * width]
+                                   for _, n, o in scans),
+                          dtype=inten_dtype).astype(np.float64)))
+
+    def per_scan():
+        """Per-scan peak lists, aligned to every scan (empty where a scan has
+        none), each scan's m/z calibrated where the file is."""
+        mz_per_scan = [None] * num_times
+        inten_per_scan = [None] * num_times
+        for rows, counts, mzs, intensities in groups:
+            ends = np.cumsum(counts)
+            for i, a, b in zip(rows.tolist(), (ends - counts).tolist(),
+                               ends.tolist()):
+                mz = mzs[a:b]
+                if calib_vals is not None:
+                    mz = calibrate_mz(mz, calib_vals[i], calib_flags.get(
+                        calibration_ids[i]))
+                mz_per_scan[i] = np.asarray(mz, dtype=np.float64)
+                inten_per_scan[i] = intensities[a:b]
+        for i in range(num_times):
+            if mz_per_scan[i] is None:
+                mz_per_scan[i] = np.array([], dtype=np.float64)
+                inten_per_scan[i] = np.array([], dtype=np.float64)
+        return mz_per_scan, inten_per_scan
 
     if bin_width is None or (is_recorded(bin_width) and calib_vals is not None):
         # The per-scan (faithful) representation, like the HRMS profile default.
@@ -1652,7 +1665,7 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
         # discard measured precision under a control documented as cosmetic.
         # The lossy control for this channel is bin_width, below.
         centroid = CentroidDataFile(
-            "MSPeak.bin", times, mz_per_scan, inten_per_scan,
+            "MSPeak.bin", times, *per_scan(),
             {'scans': scan_metadata(scan_records)})
         # Whether the peak m/z land on a lattice. An uncalibrated quadrupole
         # writes them near nominal mass, so pooling the run shows a real
@@ -1679,16 +1692,28 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
     # which is the same reason no floor is recorded here.
     floor = None
 
-    mz_arr = np.concatenate(mz_per_scan)
+    if calib_vals is not None:
+        mz_per_scan, inten_per_scan = per_scan()
+        mz_arr = np.concatenate(mz_per_scan)
+        intensities = np.concatenate(inten_per_scan)
+        rows = np.repeat(np.arange(num_times), np.array(
+            [len(m) for m in mz_per_scan], dtype=np.int64))
+    elif groups:
+        # the peaks in scan order, each scan's in its own order
+        rows = np.concatenate([np.repeat(r, n) for r, n, _, _ in groups])
+        mz_arr = np.concatenate([m for _, _, m, _ in groups])
+        intensities = np.concatenate([v for _, _, _, v in groups])
+        if len(groups) > 1:
+            order = np.argsort(rows, kind='stable')
+            rows, mz_arr, intensities = (
+                rows[order], mz_arr[order], intensities[order])
+    else:
+        mz_arr = np.array([], dtype=np.float64)
     if mz_arr.size == 0:
         return _with_mz_floor(DataFile(
             "MSPeak.bin", 'MS', times, np.array([], dtype=np.float64),
             np.zeros((num_times, 0), dtype=np.float64),
             {'scans': scan_metadata(scan_records)}), floor)
-    intensities = np.concatenate(inten_per_scan)
-    num_peaks_per_time = np.array(
-        [len(m) for m in mz_per_scan], dtype=np.int64)
-    rows = np.repeat(np.arange(num_times), num_peaks_per_time)
     if is_recorded(bin_width) and stored_in_float32:
         # Back to the float32 the file stores (exact), so the m/z are
         # labelled as written; see rainbow._binning.recorded_columns.
@@ -1699,6 +1724,50 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
     return _with_mz_floor(
         DataFile("MSPeak.bin", 'MS', times, mz_ylabels, data,
                  {'scans': scan_metadata(scan_records)}), floor)
+
+
+def _calibration_ids(table):
+    """Each record's CalibrationID of a scan table, as a list; None for each
+    where its schema has none."""
+    ids = _scan_field(table, 'CalibrationID')
+    return [None] * len(table) if ids is None else ids.tolist()
+
+
+def _field(table, name):
+    """A field of a structured array; KeyError, as a record's dictionary
+    raises, where it has none."""
+    values = _scan_field(table, name)
+    if values is None:
+        raise KeyError(name)
+    return values
+
+
+def _centroid_blocks(table):
+    """
+    (row, PointCount, SpectrumOffset, ByteCount) of each record's centroid
+    block in a scan table, as :obj:`_select_centroid_block` picks it: the
+    first of its blocks whose ByteCount is a whole number of peaks of a known
+    width; records with none are left out.
+    """
+    chosen = np.full(len(table), -1, dtype=np.int64)
+    counts = np.zeros(len(table), dtype=np.int64)
+    offsets = np.zeros(len(table), dtype=np.int64)
+    sizes = np.zeros(len(table), dtype=np.int64)
+    for k, block in enumerate(_spectrum_blocks(table)):
+        n = block['PointCount'].astype(np.int64)
+        size = block['ByteCount'].astype(np.int64)
+        whole = np.zeros(len(table), dtype=bool)
+        some = n > 0
+        whole[some] = (size[some] % n[some] == 0) & np.isin(
+            size[some] // n[some], list(_PEAK_DTYPES))
+        take = whole & (chosen < 0)
+        chosen[take] = k
+        counts[take] = n[take]
+        offsets[take] = block['SpectrumOffset'][take].astype(np.int64)
+        sizes[take] = size[take]
+    rows = np.nonzero(chosen >= 0)[0]
+    return zip(rows.tolist(), counts[rows].tolist(), offsets[rows].tolist(),
+               sizes[rows].tolist())
 
 
 def _select_centroid_block(blocks):
@@ -2094,26 +2163,64 @@ def type_size(complextypes_dict, name):
                for _, subtype in complextypes_dict[name.split(':')[-1]])
 
 
-def read_scan_records(msscan_path, complextypes_dict, num_records=None):
+# The numpy types of the MSScan.xsd "simple" types, as read_type reads them:
+# integers unsigned, little-endian.
+_SIMPLE_DTYPES = {
+    'xs:byte': 'u1', 'xs:short': '<u2', 'xs:int': '<u4',
+    'xs:long': '<u8', 'xs:float': '<f4', 'xs:double': '<f8',
+}
+# The field of a scan table holding each record's SpectrumParamValues blocks
+# after its first (see read_scan_table).
+MORE_BLOCKS = 'MoreSpectrumParamValues'
+
+
+def record_dtype(complextypes_dict, name):
+    """
+    The numpy dtype of one MSScan.bin record of the given type, laid out as
+    :obj:`read_complextype` reads it: each member once, packed, in schema
+    order, so its itemsize is :obj:`type_size`. A member named twice keeps
+    its name on the last one, the value :obj:`read_complextype`'s dictionary
+    keeps; an earlier one is named ``"<name>#<position>"``.
+
+    Args:
+        complextypes_dict (dict): Output of :obj:`parse_scan_xsd`.
+        name (str): A simple ("xs:int", ...) or complex type name.
+
+    Returns:
+        numpy.dtype.
+
+    """
+    if name in _SIMPLE_DTYPES:
+        return np.dtype(_SIMPLE_DTYPES[name])
+    members = complextypes_dict[name.split(':')[-1]]
+    last = {subname: i for i, (subname, _) in enumerate(members)}
+    return np.dtype([
+        (subname if last[subname] == i else f"{subname}#{i}",
+         record_dtype(complextypes_dict, subtype))
+        for i, (subname, subtype) in enumerate(members)])
+
+
+def read_scan_table(msscan_path, complextypes_dict, num_records=None):
     """
     Reads the scan records (ScanRecordType) from MSScan.bin, one per retention
-    time.
+    time, as a numpy structured array: one row per record, one field per
+    ScanRecordType member (:obj:`record_dtype`), read in one pass.
 
     Each record holds the scalar scan fields followed by one or more
     ``SpectrumParamValues`` blocks - the schema element is
     ``maxOccurs="unbounded"``. A profile-only acquisition writes a single block,
     but an acquisition that also stores centroids (MSPeak.bin) writes a profile
-    block *and* a centroid block, making the record larger.
-    :obj:`read_complextype` reads only the first block, so reading records
-    back-to-back would mis-parse the trailing block(s) as the next record.
+    block *and* a centroid block, making the record larger. The first block is
+    the ``SpectrumParamValues`` field, the profile spectrum
+    :obj:`parse_msdata` consumes; any further ones are the
+    :data:`MORE_BLOCKS` field, an array of blocks per record.
 
-    To stay aligned we read each record at the true record stride and skip to
-    the next. The stride is ``scalar + n * block`` for some block count ``n``;
+    The record stride is ``scalar + n * block`` for some block count ``n``;
     it is taken from the MSTS.xml scan count when that is consistent, otherwise
-    inferred as the value of ``n`` that tiles the record region exactly. The
-    first block of each record is the profile spectrum, which is what
-    :obj:`parse_msdata` consumes. Only when no stride tiles the region (a record
-    truncated mid-write) do we fall back to reading single-block records to EOF.
+    inferred as the value of ``n`` that tiles the record region exactly. Only
+    when no stride tiles the region (a record truncated mid-write) are records
+    read as single-block ones to the end of the file, which raises
+    ``struct.error`` on the truncated one.
 
     Args:
         msscan_path (str): Path to MSScan.bin.
@@ -2124,14 +2231,14 @@ def read_scan_records(msscan_path, complextypes_dict, num_records=None):
             the file geometry either way.
 
     Returns:
-        List of dictionaries, one per retention time, each mapping the
-        ScanRecordType member names to their parsed values.
+        numpy structured array, one row per retention time.
 
     """
     file_size = os.path.getsize(msscan_path)
-    block = type_size(complextypes_dict, "SpectrumParamsType")
-    scalar = type_size(complextypes_dict, "ScanRecordType") - block
-    records = []
+    block_type = record_dtype(complextypes_dict, "SpectrumParamsType")
+    record_type = record_dtype(complextypes_dict, "ScanRecordType")
+    block = block_type.itemsize
+    scalar = record_type.itemsize - block
     with open(msscan_path, 'rb') as f:
         f.seek(0x58)  # offset to the uint32 pointer at the start of records
         rec_start = struct.unpack('<I', f.read(4))[0]
@@ -2156,29 +2263,97 @@ def read_scan_records(msscan_path, complextypes_dict, num_records=None):
 
         if stride is not None:
             # Number of SpectrumParamValues blocks per record (e.g. a profile
-            # block plus a centroid block). read_complextype consumes the scalar
-            # fields and the first block; read any remaining blocks explicitly so
-            # callers that need the centroid block (parse_mspeakdata) can see it.
+            # block plus a centroid block); those after the first follow the
+            # record's own fields.
             num_blocks = (stride - scalar) // block
-            for i in range(body // stride):
-                f.seek(rec_start + i * stride)
-                record = read_complextype(
-                    f, complextypes_dict, "ScanRecordType")
-                blocks = [record['SpectrumParamValues']]
-                for _ in range(num_blocks - 1):
-                    blocks.append(read_complextype(
-                        f, complextypes_dict, "SpectrumParamsType"))
-                record['SpectrumParamsBlocks'] = blocks
-                records.append(record)
+            dtype = record_type if num_blocks == 1 else np.dtype(
+                record_type.descr + [(MORE_BLOCKS, block_type,
+                                      (num_blocks - 1,))])
+            count = max(body // stride, 0)
         else:
-            # No stride tiles the region (e.g. truncated mid-record): best-effort
-            # single-block read to EOF.
-            f.seek(rec_start)
-            while f.tell() < file_size:
-                record = read_complextype(
-                    f, complextypes_dict, "ScanRecordType")
-                record['SpectrumParamsBlocks'] = [record['SpectrumParamValues']]
-                records.append(record)
+            # No stride tiles the region (e.g. truncated mid-record): records
+            # of a single block to the end of the file, the last one short.
+            dtype = record_type
+            count = max(body, 0) // record_type.itemsize
+            if body > 0 and body % record_type.itemsize:
+                raise struct.error(
+                    f"MSScan.bin ends {body % record_type.itemsize} bytes "
+                    "into a scan record")
+        f.seek(rec_start)
+        raw = f.read(count * dtype.itemsize)
+    return np.frombuffer(raw, dtype=dtype, count=count)
+
+
+def _spectrum_blocks(table):
+    """
+    Each record's SpectrumParamValues blocks of a scan table
+    (:obj:`read_scan_table`): a list, one structured array per block position,
+    the first the ``SpectrumParamValues`` field.
+    """
+    blocks = [table['SpectrumParamValues']]
+    if MORE_BLOCKS in (table.dtype.names or ()):
+        more = table[MORE_BLOCKS]
+        blocks += [more[:, k] for k in range(more.shape[1])]
+    return blocks
+
+
+def _scan_field(table, name):
+    """
+    One field of a scan table (:obj:`read_scan_table`) as an array, or None
+    where its schema has no such member.
+    """
+    return table[name] if name in (table.dtype.names or ()) else None
+
+
+def _as_dicts(dtype):
+    """A function turning one row of ``dtype``, as ``tolist`` gives it, into
+    the dictionary :obj:`read_complextype` reads."""
+    if dtype.names is None:
+        if dtype == np.dtype('u1'):
+            return lambda v: bytes((v,))     # read_type's 'c': a 1-byte bytes
+        return None
+    names = [n.rsplit('#', 1)[0] if '#' in n and n.rsplit('#', 1)[1].isdigit()
+             else n for n in dtype.names]
+    convert = [_as_dicts(dtype.fields[n][0]) for n in dtype.names]
+
+    def row(values):
+        out = {}
+        for name, c, v in zip(names, convert, values):
+            out[name] = v if c is None else c(v)
+        return out
+    return row
+
+
+def read_scan_records(msscan_path, complextypes_dict, num_records=None):
+    """
+    Reads the scan records (ScanRecordType) from MSScan.bin, one per retention
+    time, as dictionaries: :obj:`read_scan_table`'s rows, each mapping the
+    ScanRecordType member names to their values as :obj:`read_complextype`
+    reads them, with ``SpectrumParamsBlocks``: every SpectrumParamValues
+    block of the record, the first one included.
+
+    Args:
+        msscan_path (str): Path to MSScan.bin.
+        complextypes_dict (dict): Output of :obj:`parse_scan_xsd`.
+        num_records (int, optional): Scan count from MSTS.xml (:obj:`count_scans`),
+            used as a hint; see :obj:`read_scan_table`.
+
+    Returns:
+        List of dictionaries, one per retention time.
+
+    """
+    table = read_scan_table(msscan_path, complextypes_dict, num_records)
+    names = [n for n in table.dtype.names if n != MORE_BLOCKS]
+    row = _as_dicts(np.dtype([(n, table.dtype.fields[n][0]) for n in names]))
+    block = _as_dicts(table.dtype.fields['SpectrumParamValues'][0])
+    more = [[block(b) for b in blocks.tolist()]
+            for blocks in _spectrum_blocks(table)[1:]]
+    records = []
+    for i, values in enumerate(table[names].tolist()):
+        record = row(values)
+        record['SpectrumParamsBlocks'] = [record['SpectrumParamValues']] + [
+            blocks[i] for blocks in more]
+        records.append(record)
     return records
 
 
@@ -2199,9 +2374,9 @@ def scan_times(acqdata_path):
     scan_bin = os.path.join(acqdata_path, "MSScan.bin")
     if not (os.path.isfile(xsd) and os.path.isfile(scan_bin)):
         return None
-    records = read_scan_records(
+    table = read_scan_table(
         scan_bin, parse_scan_xsd(xsd), count_scans(acqdata_path))
-    return np.array([r['ScanTime'] for r in records], dtype=np.float64)
+    return np.array(table['ScanTime'], dtype=np.float64)
 
 
 def count_scans(acqdata_path):
@@ -2283,30 +2458,41 @@ def scan_metadata(scan_records):
       ran in (TimeSegmentID); a segment runs its own scan program.
 
     Args:
-        scan_records (list): Output of :obj:`read_scan_records`.
+        scan_records (numpy.ndarray or list): Output of
+            :obj:`read_scan_table`, or of :obj:`read_scan_records`.
 
     Returns:
         Dictionary mapping each field above to a numpy array.
 
     """
     def column(name):
-        if not scan_records or not all(name in r for r in scan_records):
+        if not len(scan_records):
+            return None
+        if isinstance(scan_records, np.ndarray):
+            return _scan_field(scan_records, name)
+        if not all(name in r for r in scan_records):
             return None
         return [r[name] for r in scan_records]
+
+    def named(codes, names, dtype=None):
+        """Each code's name, looked up once per distinct code."""
+        distinct, at = np.unique(np.asarray(codes), return_inverse=True)
+        return np.array([names(code) for code in distinct.tolist()],
+                        dtype=dtype)[at]
 
     scans = {}
     types = column('ScanType')
     if types is not None:
-        names = [SCAN_TYPES.get(code, str(code)) for code in types]
-        scans['scan_type'] = np.array(names)
+        names = named(types, lambda code: SCAN_TYPES.get(code, str(code)))
+        scans['scan_type'] = names
         scans['monitoring'] = np.isin(names, MONITORING_SCAN_TYPES)
     level = column('MSLevel')
     if level is not None:
         scans['ms_level'] = np.array(level, dtype=np.int64)
     polarity = column('IonPolarity')
     if polarity is not None:
-        scans['polarity'] = np.array(
-            [_POLARITIES.get(code, '') for code in polarity], dtype='<U1')
+        scans['polarity'] = named(
+            polarity, lambda code: _POLARITIES.get(code, ''), '<U1')
     energy = column('CollisionEnergy')
     if energy is not None:
         scans['collision_energy'] = np.array(energy, dtype=np.float64)

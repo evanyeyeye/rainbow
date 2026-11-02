@@ -26,7 +26,9 @@
       read_dad_signals
       read_default_masscal_rows
       read_scan_records
+      read_scan_table
       read_type
+      record_dtype
       segment_is_rle
       type_size
    
