@@ -51,10 +51,13 @@ provides the directory-level date, method, sample name, and vial position.
 
 **The .UV spectrum** uses the same :code:`131` / :code:`OL` layout as the
 older :ref:`.uv format <uv>` (raw little-endian doubles), but the OpenLab
-values carry an additional 17-bit fixed-point shift. **rainbow** therefore
-scales :obj:`parse_uv`'s output by :code:`2**-17` to recover the physical
-absorbance in mAU. This was confirmed against the ``.CH`` single-wavelength
-channels, which sample the same run and are already correctly scaled.
+values carry an additional fixed-point factor, recorded in the manifest as the
+spectrum's ``<ScaleFactor>``. It depends on the detector: :code:`1000 * 2**-27`
+for a UHPLC DAD, :code:`1000 * 2**-21` for an HPLC DAD. **rainbow** scales
+:obj:`parse_uv`'s output by the manifest's factor (falling back to
+:code:`1000 * 2**-27` when it is absent) to recover the physical absorbance in
+mAU. This was confirmed against the ``.CH`` single-wavelength channels, which
+sample the same run and are already correctly scaled.
 
 **The .CH and .IT traces** are single-channel :code:`179` files, decoded by the
 existing :ref:`.ch parser <ch_fid>` with no scaling change. The ``.CH`` files

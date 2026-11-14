@@ -11,10 +11,10 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
          telemetry=False, centroid=False, bin_width=None, peaks=False,
          _labels_only=False, **removed):
     """
-    Reads an Agilent .D directory or .dx archive.
+    Reads an Agilent .D directory, .dx archive, or OpenLab .sirslt folder.
 
     Args:
-        path (str): Path of the directory or .dx file.
+        path (str): Path of the directory, .dx file, or .sirslt folder.
         display_precision (int or 'auto', optional): Decimals for the displayed
             m/z labels (cosmetic). ``'auto'`` picks per file: 4 for the
             high-resolution MassHunter profile and TOF centroids, and 0 (whole
@@ -61,6 +61,12 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
                     os.path.basename(path)))
             datadir.peaks = []
         return datadir
+
+    from rainbow.agilent import sirslt
+    if sirslt.is_sirslt(path):
+        return sirslt.read(
+            path, display_precision, hrms, requested_files, telemetry,
+            centroid, bin_width, peaks, _labels_only)
 
     datafiles = []
     datafiles.extend(chemstation.parse_allfiles(
@@ -341,6 +347,10 @@ def read_metadata(path):
     if os.path.splitext(path)[1].lower() == '.dx':
         from rainbow.agilent import openlab
         return openlab.read_metadata(path)
+
+    from rainbow.agilent import sirslt
+    if sirslt.is_sirslt(path):
+        return sirslt.read_metadata(path)
 
     datafiles = []
     metadata = chemstation.parse_metadata(path, datafiles)

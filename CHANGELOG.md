@@ -3,6 +3,40 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Agilent OpenLab CDS `.sirslt` result folders.** `rb.read` and
+  `rb.read_metadata` accept a `.sirslt` folder (or one renamed without the
+  suffix, recognized by the `.dx` and `.acaml` inside it). The detector
+  signals come from the folder's `.dx` archive; the single-quad LC/MS or GC/MS
+  centroid spectrum (`MSPeak.bin`, written beside the archive) is read under
+  `centroid=True`, and flagged as `centroid_available` otherwise. A run with no
+  detector signal (a flush) returns its metadata rather than raising.
+- **LC or GC.** A `.sirslt` run's `metadata['technique']` is `'LC'` or `'GC'`,
+  read from the instrument in its `.acaml`, else from the MS `Contents.xml`,
+  else from a GC injection source or GC-only detector in the manifest.
+  `rainbow.agilent.sirslt.technique(path)` answers it without reading the data.
+  The instrument and its modules are in `metadata['instrument']`, and an MS
+  run's spectrometer in `metadata['ms_devices']`.
+
+### Fixed
+- **A `.dx` DAD spectrum is scaled by its manifest's factor.** The spectrum
+  was multiplied by a constant `2**-17`, but the manifest records the factor as
+  `<ScaleFactor>` and it depends on the detector: `1000 * 2**-27` on a UHPLC
+  DAD, `1000 * 2**-21` on an HPLC DAD. The constant read UHPLC spectra 2.4%
+  high and HPLC spectra 62x low. With the manifest's factor a spectrum matches
+  its run's single-wavelength channels to within about 1%. The `teal` expected
+  output is regenerated accordingly (every value x 0.9765625).
+- **MassHunter centroid abundances are no longer truncated.** `MSPeak.bin`
+  intensities were cast to integers, dropping the fractional part the file
+  stores. A run whose centroid intensities are fractional now returns them as
+  float64 (and so does a `bin_width` grid built from them); a run of whole
+  numbers is unchanged.
+- **`MSScan.xsd` version 2.1 is read.** An element with no type (the optional
+  `Padding` that ends a scan record) made the schema unreadable; it has no
+  stored bytes and is now skipped.
+
 ## [1.5.5] - 2026-10-17
 
 ### Added
