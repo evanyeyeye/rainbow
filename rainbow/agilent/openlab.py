@@ -25,13 +25,18 @@ from rainbow.datafile import DataFile
 from rainbow.datadirectory import DataDirectory
 
 # The DAD spectrum (.UV) in a .dx stores absorbance as doubles carrying an
-# extra 17-bit fixed-point shift relative to the older Chemstation .uv format.
+# extra fixed-point shift relative to the older Chemstation .uv format.
 # parse_uv applies the in-file scaling factor but not this shift, so its output
-# must be multiplied by 2**-17 to recover the physical mAU. This was verified
-# against the .CH single-wavelength channels, which share the run and are
-# already correctly scaled by parse_ch. The .CH and .IT ("179") payloads need
-# no correction.
-UV_FIXED_POINT_SHIFT = 2 ** -17
+# must be multiplied by the shift to recover the physical mAU. The manifest
+# records the factor as the spectrum's <ScaleFactor>, and it is not a
+# constant: UHPLC DADs have been seen writing 1000 * 2**-27 and HPLC DADs
+# 1000 * 2**-21, 64 times larger. With the manifest's factor the spectrum at a
+# channel's wavelength matches that .CH single-wavelength channel of the same
+# run (which parse_ch already scales correctly) to within about 1%; the 2**-17
+# rainbow applied before was 2.4% high on the first and 62x low on the second.
+# This is the fallback for a manifest that omits the factor. The .CH and .IT
+# ("179") payloads need no correction.
+UV_FIXED_POINT_SHIFT = 1000 * 2 ** -27
 
 # Namespace of the injection.acmd manifest.
 _ACMD_NS = {'a': 'urn:schemas-agilent-com:acmd20'}
@@ -61,6 +66,30 @@ def read(path, display_precision='auto', requested_files=None, telemetry=False,
 
     Returns:
         DataDirectory representing the .dx archive, or None if it is empty.
+
+    """
+    datafiles, dir_metadata, _ = read_archive(path, requested_files, telemetry)
+    if not datafiles:
+        return None
+    return DataDirectory(path, datafiles, dir_metadata)
+
+
+def read_archive(path, requested_files=None, telemetry=False):
+    """
+    Decodes a .dx archive's payloads without wrapping them in a DataDirectory.
+
+    The OpenLab result-folder reader (:mod:`rainbow.agilent.sirslt`) builds on
+    this: it adds the MS data written beside the archive, and keeps the run's
+    metadata even when the archive held no detector signal.
+
+    Args:
+        path (str): Path of the .dx file.
+        requested_files (list, optional): Lowercased names to parse.
+        telemetry (bool, optional): Flag for parsing .IT telemetry traces.
+
+    Returns:
+        Tuple of ``(datafiles, dir_metadata, signals)``; ``signals`` maps each
+        lowercased trace GUID to its manifest entry.
 
     """
     with zipfile.ZipFile(path) as archive:
@@ -93,9 +122,7 @@ def read(path, display_precision='auto', requested_files=None, telemetry=False,
                 if datafile is not None:
                     datafiles.append(datafile)
 
-    if not datafiles:
-        return None
-    return DataDirectory(path, datafiles, dir_metadata)
+    return datafiles, dir_metadata, signals
 
 
 def read_metadata(path):
@@ -131,7 +158,8 @@ def _parse_member(tmppath, name, ext, signal):
         datafile = chemstation.parse_uv(tmppath)
         if datafile is None:
             return None
-        data = datafile.data * UV_FIXED_POINT_SHIFT
+        data = datafile.data * (
+            signal.get('scale_factor') or UV_FIXED_POINT_SHIFT)
         detector = 'UV'
     else:
         # .ch and .it share the single-channel "179" container.
@@ -179,6 +207,18 @@ def _parse_manifest(archive):
             'unit': _text(sig, 'Units'),
         }
         entry.update(chemstation.parse_optics(entry['description']))
+        try:
+            scale_factor = float(_text(sig, 'ScaleFactor'))
+        except ValueError:
+            scale_factor = 0.0
+        if scale_factor > 0:
+            entry['scale_factor'] = scale_factor
+        # Data too large for the archive (the MS scans) is written beside it,
+        # and the manifest names those files here.
+        external = _text(sig, 'ExternalElementPaths')
+        if external:
+            entry['external'] = [
+                name.strip() for name in external.split(',') if name.strip()]
         signals[guid] = entry
 
     info = root.find('.//a:InjectionInfo', _ACMD_NS)

@@ -1361,6 +1361,10 @@ def _scatter_sum(idx, intensities, size):
     """
     if intensities.size == 0:
         return np.zeros(size, dtype=np.uint64)
+    if intensities.dtype.kind == 'f':
+        # Fractional intensities (see parse_mspeakdata) are summed as they
+        # are; there is no integer grid to reproduce exactly.
+        return np.bincount(idx, weights=intensities, minlength=size)
 
     def _bincount():
         return np.bincount(
@@ -1573,12 +1577,23 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
                                    calib_vals[i], calib_flags.get(
                                        calibration_ids[i]))
             mz_per_scan[i] = np.asarray(mzs, dtype=np.float64)
-            inten_per_scan[i] = np.asarray(intensities, dtype=np.uint64)
+            inten_per_scan[i] = intensities
 
+    # Intensities are counts on the instruments this was first written for,
+    # stored as whole numbers in a float field, and are returned as uint64.
+    # An OpenLab CDS single-quadrupole LC/MS writes fractional abundances,
+    # which a cast to an integer would truncate, so a
+    # run holding any fractional intensity keeps them all as float64.
+    fractional = any(
+        values is not None and values.dtype.kind == 'f'
+        and np.any(values != np.floor(values)) for values in inten_per_scan)
+    inten_dtype = np.float64 if fractional else np.uint64
     for i in range(num_times):
         if mz_per_scan[i] is None:
             mz_per_scan[i] = np.array([], dtype=np.float64)
-            inten_per_scan[i] = np.array([], dtype=np.uint64)
+            inten_per_scan[i] = np.array([], dtype=inten_dtype)
+        else:
+            inten_per_scan[i] = np.asarray(inten_per_scan[i], dtype=inten_dtype)
 
     if bin_width is None:
         # The per-scan (faithful) representation, like the HRMS profile default.
@@ -1965,6 +1980,14 @@ def parse_scan_xsd(xsd_path):
     for complextype in root.findall(f"{{{namespace}}}complexType"):
         innertypes = []
         for element in complextype[0].findall(f"{{{namespace}}}element"):
+            # An element with no type attribute declares its type inline. The
+            # one MSScan.xsd does this for is the trailing "Padding" of a
+            # ScanRecordType (version 2.1, as OpenLab CDS writes for its
+            # single-quad LC/MS), a minOccurs="0" run of optional PadBytes.
+            # No bytes are stored for it: the records tile MSScan.bin exactly
+            # without it. It has no fixed size to read, so it is left out.
+            if element.get('type') is None:
+                continue
             innertypes.append((element.get('name'), element.get('type')))
         complextypes_dict[complextype.get('name')] = innertypes
     return complextypes_dict

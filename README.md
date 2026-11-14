@@ -15,6 +15,9 @@
 | **Agilent `.dx`** (OpenLab CDS) | `.UV` | DAD spectrum | |
 | | `.CH` | single-wavelength UV/DAD signals | |
 | | `.IT` | instrument telemetry, as analog data | `telemetry=True` |
+| **Agilent `.sirslt`** (OpenLab CDS result folder) | `.dx` | everything a `.dx` holds (UV/DAD, FID, telemetry) | |
+| | `MSPeak.bin` | single-quad LC/MS or GC/MS centroid spectrum | `centroid=True` |
+| | `.acaml` | instrument, and whether the run is LC or GC (`metadata['technique']`) | |
 | **Waters `.raw`** | `CHRO` | CAD and ELSD, plus miscellaneous analog data | |
 | | `FUNC` | UV and MS | |
 
@@ -55,7 +58,7 @@ datafile = datadir.get_file("DAD1A.uv")
 
 Here, the `datadir` DataDirectory object contains a DataFile object for `DAD1A.uv`. 
 
-*rainbow* normally infers the vendor from the path suffix (`.D`/`.dx` for Agilent, `.raw` for Waters). A directory whose name lacks that suffix is identified from its contents instead, so renamed datasets still parse. To force a parser explicitly, pass `format`:
+*rainbow* normally infers the vendor from the path suffix (`.D`/`.dx`/`.sirslt` for Agilent, `.raw` for Waters). A directory whose name lacks that suffix is identified from its contents instead, so renamed datasets still parse. To force a parser explicitly, pass `format`:
 
 ```python
 datadir = rb.read("Caffeine 3", format="waters")
