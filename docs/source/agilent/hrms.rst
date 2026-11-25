@@ -24,7 +24,7 @@ The HRMS data is encoded across several files in a subdirectory named AcqData:
    * - MSProfile.bin
      - Mz and intensity values
 
-The number of retention times is obtained from **MSScan.bin** itself by reading its scan records until the end of the file (see below). Some acquisitions also include an **MSTS.xml** document whose :code:`NumOfScans` elements sum to the same total, but **rainbow** does not require it. This matters because OpenLab :code:`.rslt`/:code:`.sirslt` result folders omit MSTS.xml.
+The number of retention times is obtained from **MSScan.bin** itself by reading its scan records until the end of the file (see below). Most acquisitions also include an **MSTS.xml** document whose :code:`NumOfScans` elements sum to the same total (an OpenLab :ref:`.sirslt <sirslt>` folder keeps it under ``MSData/`` in its archive), but **rainbow** does not require it, so data whose MSTS.xml is missing is still read.
 
 .. code-block:: xml
 
@@ -117,3 +117,50 @@ The entirety of the file can be visualized by the following diagram. The inner s
    +-------------+----------+-----------+-----------+-----------+-----------+-----------+
    |                          repeats for every retention time                          |
    +------------------------------------------------------------------------------------+
+
+.. _mspeak:
+
+MSPeak.bin
+----------
+
+**MSPeak.bin** holds the centroid (peak-picked) spectrum of each scan: a list of
+(m/z, intensity) peaks rather than the dense profile above. It is indexed by the
+same **MSScan.bin** records. A scan record can carry more than one
+:code:`SpectrumParamValues` block (a Q-TOF stores a profile block and a centroid
+block); the centroid block is the one whose :code:`ByteCount` is an exact
+multiple of its :code:`PointCount`, at 8, 12 or 16 bytes per peak. A profile
+block's :code:`ByteCount` is a compressed length and does not divide that way.
+
+The block at :code:`SpectrumOffset` holds the scan's :code:`PointCount` m/z
+values followed by as many intensities. The bytes per peak give their types,
+all little-endian:
+
+.. list-table::
+   :widths: 30 35 35
+   :header-rows: 1
+
+   * - Bytes per peak
+     - m/z
+     - intensity
+   * - 8
+     - float32
+     - float32
+   * - 12
+     - float64
+     - float32
+   * - 16
+     - float64
+     - float64
+
+A GC or LC single-quadrupole centroid stores m/z directly. A TOF or Q-TOF
+centroid stores raw time of flight, which is calibrated with **MSMassCal.bin**
+exactly as the profile is. Intensities are stored as floats and are often
+fractional, so **rainbow** returns them as float64 (see
+:ref:`hrms-data-model`).
+
+Version 2.1 of **MSScan.xsd**, which an OpenLab CDS single-quadrupole LC/MS
+writes, ends :code:`ScanRecordType` with an optional :code:`Padding` element
+whose type is declared inline (a run of :code:`PadBytes`). No pad bytes are
+stored, since the records tile MSScan.bin exactly without them, so **rainbow**
+leaves that element out. Any other inline type has no size **rainbow** can
+know, and the schema is refused rather than misread.

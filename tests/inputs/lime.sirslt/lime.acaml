@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ACAML xmlns="urn:schemas-agilent-com:acaml21" schemaversion="2.1.30.999">
+  <Doc>
+    <DocID>2646bfaa-e6d4-4394-a185-2bbcf2f1fa96</DocID>
+    <DocInfo>
+      <Description>lime</Description>
+      <CreatedByUser>SYSTEM (SYSTEM)</CreatedByUser>
+      <CreationDate>2026-10-02T13:05:19.0973025Z</CreationDate>
+    </DocInfo>
+    <Content>
+      <Resources>
+        <Instrument id="9d9c59cc-c168-4b27-b857-ff2915cc9569" ver="0">
+          <Name>HPLC1</Name>
+          <Technique>LiquidChromatography</Technique>
+          <Module id="c53c2a5d-84f7-4ab4-8e27-cfee9d5f52e8">
+            <Name>Grad. Pump</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Pump</Type>
+            <PartNo>G4294B</PartNo>
+            <SerialNo>DE00000011</SerialNo>
+            <FirmwareRevision>B.07.20 [0007]</FirmwareRevision>
+          </Module>
+          <Module id="ccbf8de4-d42a-436b-a4e2-603f25ebc634">
+            <Name>Sampler</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Sampler</Type>
+            <PartNo>G4294B</PartNo>
+            <SerialNo>DE00000011</SerialNo>
+            <FirmwareRevision>B.07.20 [0007]</FirmwareRevision>
+          </Module>
+          <Module id="663a35ff-fded-4924-a4fa-7aaeaa09ee83">
+            <Name>Column Oven</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>ColumnCompartment</Type>
+            <PartNo>G4294B</PartNo>
+            <SerialNo>DE00000011</SerialNo>
+            <FirmwareRevision>B.07.20 [0007]</FirmwareRevision>
+          </Module>
+          <Module id="233a8427-7f68-4aa3-b64e-a7a12ff35586">
+            <Name>DAD</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Detector</Type>
+            <PartNo>G4294B</PartNo>
+            <SerialNo>DE00000011</SerialNo>
+            <FirmwareRevision>B.07.20 [0007]</FirmwareRevision>
+          </Module>
+        </Instrument>
+      </Resources>
+    </Content>
+  </Doc>
+</ACAML>

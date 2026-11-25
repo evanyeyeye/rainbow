@@ -8,9 +8,10 @@ folder. Its files share the folder's stem::
                          ...) and instrument telemetry. For an LC/MS run it
                          also carries the MS sidecars under MSData/
                          (MSScan.xsd, MSTS.xml, Contents.xml, Devices.xml).
-    <name>.MSScan.bin    MassHunter scan records, written beside the archive
-    <name>.MSPeak.bin    because they are too large for it. The manifest names
-                         them in the MS signal's <ExternalElementPaths>.
+    <name>.MSScan.bin    MassHunter scan records and centroid peaks, written
+    <name>.MSPeak.bin    beside the archive; the manifest names them in the
+                         MS signal's <ExternalElementPaths>. Binaries found
+                         under the archive's MSData/ are read as well.
     <name>.acaml         the result-set document: instrument (with its
                          separation technique and modules), sample, method.
     <name>.rx            processing results (not read).
@@ -33,6 +34,7 @@ import os
 import re
 import shutil
 import tempfile
+import warnings
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -49,11 +51,22 @@ _ACAML_TECHNIQUES = {
 _CONTENTS_TECHNIQUES = {'2': 'GC', '3': 'LC'}
 
 # Detectors that only exist on a gas chromatograph, as OpenLab names them.
-_GC_DEVICES = ('FID', 'TCD', 'ECD', 'NPD', 'FPD', 'SCD', 'NCD')
+# ECD is not among them: it names a GC electron-capture detector and an HPLC
+# electrochemical detector alike, so it is no evidence either way.
+_GC_DEVICES = ('FID', 'TCD', 'NPD', 'FPD', 'SCD', 'NCD')
 
 # MS binaries are written beside the archive as "<name>.<file>", where <file>
 # is the name MassHunter gives it inside a .D's AcqData folder.
 _MS_FILE_RE = re.compile(r'(MS[A-Za-z_]*\.bin)$', re.IGNORECASE)
+
+# The names the MassHunter readers open in an AcqData folder, as they spell
+# them. A .sirslt's own spelling of a sidecar or binary is mapped onto these,
+# so a case-sensitive filesystem finds it whatever case it was written in.
+_ACQDATA_NAMES = {name.lower(): name for name in (
+    'MSScan.xsd', 'MSScan.bin', 'MSPeak.bin', 'MSProfile.bin',
+    'MSMassCal.bin', 'MSTS.xml', 'Contents.xml', 'Devices.xml',
+    'DefaultMassCal.xml', 'MSScan_XSpecific.bin', 'MSScan_XSpecific.xsd',
+    'MSTS_XSpecific.xml')}
 
 
 def is_sirslt(path):
@@ -62,15 +75,26 @@ def is_sirslt(path):
 
     A folder named ``*.sirslt`` qualifies by its name; one renamed without the
     suffix qualifies by its contents (a .dx archive beside a .acaml document).
+    A ``*.D`` folder never does, whatever it holds, and nor does a renamed
+    one that still holds a .D's AcqData folder or Chemstation files: each is
+    read as the Chemstation/MassHunter run it is.
 
     """
     if not isinstance(path, str) or not os.path.isdir(path):
         return False
-    if os.path.splitext(os.path.normpath(path))[1].lower() == '.sirslt':
+    ext = os.path.splitext(os.path.normpath(path))[1].lower()
+    if ext == '.sirslt':
         return True
+    if ext == '.d':
+        return False
     try:
-        exts = {os.path.splitext(name)[1].lower() for name in os.listdir(path)}
+        names = [name.lower() for name in os.listdir(path)]
     except OSError:
+        return False
+    exts = {os.path.splitext(name)[1] for name in names}
+    # A renamed .D that happens to hold a .dx and a .acaml is still a .D: its
+    # AcqData folder or Chemstation files say so, and they would be lost.
+    if 'acqdata' in names or exts & {'.ch', '.uv', '.ms'}:
         return False
     return '.dx' in exts and '.acaml' in exts
 
@@ -139,28 +163,27 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     if dx_path is None:
         raise Exception(f"{path} holds no .dx archive to read.")
 
-    datafiles, metadata, signals = openlab.read_archive(
-        dx_path, requested_files, telemetry)
-
-    ms_files = _ms_files(path, signals)
-    if ms_files:
-        names = {name.lower() for name in ms_files}
-        want_centroid = centroid and 'mspeak.bin' in names
-        want_profile = hrms and 'msprofile.bin' in names
+    with zipfile.ZipFile(dx_path) as archive:
+        run = _Run(path, acaml_path, archive)
+        datafiles = openlab.decode_archive(
+            archive, run.signals, requested_files, telemetry)
+        metadata = run.metadata
+        ms = run.ms
+        if ms.warning:
+            warnings.warn(ms.warning)
+        want_centroid = centroid and 'MSPeak.bin' in ms.available
+        want_profile = hrms and 'MSProfile.bin' in ms.available
         if want_centroid or want_profile:
             datafiles.extend(_read_ms(
-                dx_path, ms_files, display_precision, hrms, centroid,
-                bin_width, labels_only))
-        if not centroid and 'mspeak.bin' in names:
-            metadata['centroid_available'] = True
-        if not hrms and 'msprofile.bin' in names:
-            metadata['hrms_available'] = True
-
-    _add_result_metadata(metadata, dx_path, acaml_path, signals)
+                archive, ms, display_precision, hrms, centroid, bin_width,
+                labels_only))
+    if not centroid and 'MSPeak.bin' in ms.available:
+        metadata['centroid_available'] = True
+    if not hrms and 'MSProfile.bin' in ms.available:
+        metadata['hrms_available'] = True
 
     datadir = DataDirectory(path, datafiles, metadata)
     if peaks:
-        import warnings
         warnings.warn(
             "rainbow does not read integrated peaks from an OpenLab .sirslt "
             "folder; {} is read without them.".format(os.path.basename(path)))
@@ -182,20 +205,20 @@ def read_metadata(path):
     dx_path, acaml_path = find_files(path)
     if dx_path is None:
         return None
-    listing = openlab.read_metadata(dx_path)
     with zipfile.ZipFile(dx_path) as archive:
-        _, signals = openlab._parse_manifest(archive)
-    metadata = listing['metadata']
-    datafiles = list(listing['datafiles'])
-    ms_files = _ms_files(path, signals)
-    for name in ms_files:
-        if name.lower() in ('mspeak.bin', 'msprofile.bin'):
+        run = _Run(path, acaml_path, archive)
+        datafiles = openlab.payload_names(archive)
+    metadata = run.metadata
+    ms = run.ms
+    if ms.warning:
+        warnings.warn(ms.warning)
+    for name in ('MSPeak.bin', 'MSProfile.bin'):
+        if name in ms.available:
             datafiles.append(name)
-    if any(name.lower() == 'mspeak.bin' for name in ms_files):
+    if 'MSPeak.bin' in ms.available:
         metadata['centroid_available'] = True
-    if any(name.lower() == 'msprofile.bin' for name in ms_files):
+    if 'MSProfile.bin' in ms.available:
         metadata['hrms_available'] = True
-    _add_result_metadata(metadata, dx_path, acaml_path, signals)
     return {'datafiles': datafiles, 'metadata': metadata}
 
 
@@ -211,7 +234,7 @@ def technique(path):
     2. the ``<SeparationTechnique>`` of the MS sidecar ``MSData/Contents.xml``
        in the archive (LC/MS and GC/MS runs only);
     3. the manifest: a "GC" injection source, or a GC-only detector (FID,
-       TCD, ECD, NPD, FPD, SCD, NCD).
+       TCD, NPD, FPD, SCD, NCD).
 
     Args:
         path (str): Path of the .sirslt folder.
@@ -221,66 +244,105 @@ def technique(path):
 
     """
     dx_path, acaml_path = find_files(path)
-    signals = {}
-    if dx_path is not None:
-        with zipfile.ZipFile(dx_path) as archive:
-            _, signals = openlab._parse_manifest(archive)
-    return _technique(dx_path, acaml_path, signals)
+    if dx_path is None:
+        return _technique(_instrument(acaml_path) if acaml_path else None,
+                          None, '', {})
+    with zipfile.ZipFile(dx_path) as archive:
+        return _Run(path, acaml_path, archive).technique
 
 
-def _technique(dx_path, acaml_path, signals, instrument=None):
-    """:func:`technique`, from files the caller has already located."""
-    if instrument is None and acaml_path is not None:
-        instrument = _instrument(acaml_path)
+class _MSLayout:
+    """
+    Where a run's MS data is, and whether it can be decoded.
+
+    Attributes:
+        beside (dict): MassHunter name -> path of a binary beside the archive.
+        archived (dict): MassHunter name -> archive member, for everything
+            under the archive's MSData/ (sidecars, and any binaries there).
+        available (set): The data binaries (MSPeak.bin, MSProfile.bin) that
+            can be decoded: MSScan.bin and MSData/MSScan.xsd are both present.
+        warning (str or None): Why MS data that is present cannot be decoded.
+
+    """
+
+    def __init__(self, beside, archived, available, warning):
+        self.beside = beside
+        self.archived = archived
+        self.available = available
+        self.warning = warning
+
+
+class _Run:
+    """
+    What a .sirslt's archive and result-set document say, each read once.
+
+    Built on an archive the caller keeps open, so that the manifest, the MS
+    sidecars and the .acaml are parsed a single time however many of the
+    run's properties are asked for.
+
+    """
+
+    def __init__(self, path, acaml_path, archive):
+        root = openlab.manifest_root(archive)
+        self.metadata, self.signals = openlab.parse_manifest_root(root)
+        archived = {}
+        for member in archive.namelist():
+            parts = member.replace('\\', '/').split('/')
+            if len(parts) == 2 and parts[0].lower() == 'msdata' and parts[1]:
+                archived[_canonical_name(parts[1])] = member
+        contents = _archive_xml(archive, archived.get('Contents.xml'))
+        devices = _archive_xml(archive, archived.get('Devices.xml'))
+        self.ms = _ms_layout(path, self.signals, archived)
+
+        instrument = _instrument(acaml_path) if acaml_path else None
+        if instrument:
+            self.metadata.setdefault('instrument', instrument)
+        self.technique = _technique(
+            instrument, contents, _injection_source(root), self.signals)
+        if self.technique:
+            self.metadata['technique'] = self.technique
+        ms_devices = _ms_devices(devices)
+        if ms_devices:
+            self.metadata['ms_devices'] = ms_devices
+
+
+def _technique(instrument, contents, injection_source, signals):
+    """:func:`technique`, from what the caller has already read."""
     if instrument and instrument.get('technique'):
         found = _ACAML_TECHNIQUES.get(instrument['technique'].lower())
         if found:
             return found
-
-    if dx_path is not None:
-        with zipfile.ZipFile(dx_path) as archive:
-            contents = _archive_xml(archive, 'MSData/Contents.xml')
-            source = _injection_source(archive)
-        if contents is not None:
-            code = (contents.findtext('SeparationTechnique') or '').strip()
-            if code in _CONTENTS_TECHNIQUES:
-                return _CONTENTS_TECHNIQUES[code]
-        if source and re.search(r'\bGC\b', source, re.IGNORECASE):
-            return 'GC'
-
+    if contents is not None:
+        code = (contents.findtext('SeparationTechnique') or '').strip()
+        if code in _CONTENTS_TECHNIQUES:
+            return _CONTENTS_TECHNIQUES[code]
+    if injection_source and re.search(r'\bGC\b', injection_source,
+                                      re.IGNORECASE):
+        return 'GC'
     devices = {signal.get('device', '').upper() for signal in signals.values()}
     if any(device.startswith(_GC_DEVICES) for device in devices):
         return 'GC'
     return None
 
 
-def _add_result_metadata(metadata, dx_path, acaml_path, signals):
-    """Fills the run metadata from the result-set document and MS sidecars."""
-    instrument = _instrument(acaml_path) if acaml_path else None
-    if instrument:
-        metadata.setdefault('instrument', instrument)
-    found = _technique(dx_path, acaml_path, signals, instrument)
-    if found:
-        metadata['technique'] = found
-
-    with zipfile.ZipFile(dx_path) as archive:
-        devices = _archive_xml(archive, 'MSData/Devices.xml')
-    if devices is not None:
-        ms_devices = []
-        for device in devices.iter('Device'):
-            entry = {
-                'name': (device.findtext('Name') or '').strip() or None,
-                'model': (device.findtext('ModelNumber') or '').strip()
-                or None,
-                'serial_no': (device.findtext('SerialNumber') or '').strip()
-                or None,
-                'firmware': (device.findtext('FirmwareVersion') or '').strip()
-                or None,
-            }
-            ms_devices.append(
-                {key: value for key, value in entry.items() if value})
-        if ms_devices:
-            metadata['ms_devices'] = ms_devices
+def _ms_devices(devices):
+    """The spectrometers MSData/Devices.xml lists, or []."""
+    if devices is None:
+        return []
+    found = []
+    for device in devices.iter('Device'):
+        entry = {
+            'name': (device.findtext('Name') or '').strip() or None,
+            'model': (device.findtext('ModelNumber') or '').strip() or None,
+            'serial_no': (device.findtext('SerialNumber') or '').strip()
+            or None,
+            'firmware': (device.findtext('FirmwareVersion') or '').strip()
+            or None,
+        }
+        entry = {key: value for key, value in entry.items() if value}
+        if entry:
+            found.append(entry)
+    return found
 
 
 def _instrument(acaml_path):
@@ -289,55 +351,86 @@ def _instrument(acaml_path):
     return sequence.parse_header(acaml_path).get('instrument')
 
 
-def _ms_files(path, signals):
+def _ms_layout(path, signals, archived):
     """
-    Maps each MS binary beside the archive to its MassHunter name.
+    Finds a run's MS binaries and decides which can be decoded.
 
-    The manifest's <ExternalElementPaths> name them; with no manifest entry,
-    the folder is scanned for ``*.MS*.bin`` files instead.
+    The binaries beside the archive are the ones the MS signal's
+    <ExternalElementPaths> names, matched by file name alone (so a name
+    written with a directory, relative or absolute, still finds the file
+    beside the archive) and without regard to case. If those names find no
+    MSScan.bin, the folder is scanned for ``*.MS*.bin`` files instead.
+    Binaries under the archive's MSData/ count too; one beside the archive
+    takes precedence over an archived one of the same name.
 
-    Returns:
-        dict: ``{'MSScan.bin': <path>, 'MSPeak.bin': <path>, ...}``.
+    Both :func:`read` and :func:`read_metadata` decide availability here, so
+    neither can report MS data the other cannot read.
 
     """
-    names = []
+    listing = {}
+    for name in os.listdir(path):
+        if os.path.isfile(os.path.join(path, name)):
+            listing[name.lower()] = name
+
+    def collect(names):
+        found = {}
+        for name in names:
+            actual = listing.get(name.lower())
+            match = _MS_FILE_RE.search(actual) if actual else None
+            if match:
+                found.setdefault(_canonical_name(match.group(1)),
+                                 os.path.join(path, actual))
+        return found
+
+    named = []
     for signal in signals.values():
         if signal.get('encoding', '').endswith('/MSData'):
-            names.extend(signal.get('external', []))
-    if not names:
-        names = [name for name in os.listdir(path)
-                 if _MS_FILE_RE.search(name)]
+            named.extend(
+                _basename(name) for name in signal.get('external', []))
+    beside = collect(named)
+    if 'MSScan.bin' not in beside:
+        scanned = collect(sorted(listing))
+        beside = dict(scanned, **beside) if 'MSScan.bin' in scanned else beside
 
-    found = {}
-    for name in names:
-        full = os.path.join(path, name)
-        match = _MS_FILE_RE.search(name)
-        if match and os.path.isfile(full):
-            found[_canonical_ms_name(match.group(1))] = full
-    # The scan index is what every MS reader starts from; without it the data
-    # files beside it cannot be decoded.
-    if not any(name.lower() == 'msscan.bin' for name in found):
-        return {}
-    return found
+    binaries = set(beside) | {name for name in archived
+                              if name.lower().endswith('.bin')}
+    data = binaries & {'MSPeak.bin', 'MSProfile.bin'}
+    available, warning = set(), None
+    if data and 'MSScan.bin' not in binaries:
+        warning = ("{} holds MS data ({}) but no MSScan.bin, the scan index "
+                   "it is decoded through; the MS data is not read.").format(
+                       os.path.basename(os.path.normpath(path)),
+                       ', '.join(sorted(data)))
+    elif data and 'MSScan.xsd' not in archived:
+        warning = ("{} holds MS data ({}) but its archive has no "
+                   "MSData/MSScan.xsd, the schema MSScan.bin is decoded "
+                   "with; the MS data is not read.").format(
+                       os.path.basename(os.path.normpath(path)),
+                       ', '.join(sorted(data)))
+    else:
+        available = data
+    return _MSLayout(beside, archived, available, warning)
 
 
-def _canonical_ms_name(name):
-    """``mspeak.bin`` -> ``MSPeak.bin``, as MassHunter spells them."""
-    canonical = {'msscan.bin': 'MSScan.bin', 'mspeak.bin': 'MSPeak.bin',
-                 'msprofile.bin': 'MSProfile.bin',
-                 'msmasscal.bin': 'MSMassCal.bin'}
-    return canonical.get(name.lower(), name)
+def _basename(name):
+    """The file name of a Windows or POSIX path, on any platform."""
+    return name.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1]
 
 
-def _read_ms(dx_path, ms_files, display_precision, hrms, centroid, bin_width,
+def _canonical_name(name):
+    """``mspeak.bin`` -> ``MSPeak.bin``, as MassHunter spells it."""
+    return _ACQDATA_NAMES.get(name.lower(), name)
+
+
+def _read_ms(archive, ms, display_precision, hrms, centroid, bin_width,
              labels_only):
     """
     Reads the MS data of a .sirslt with the MassHunter decoders.
 
     Those decoders read a .D's AcqData folder. One is assembled in a temporary
-    directory from the sidecars inside the archive (MSScan.xsd above all,
-    which describes the MSScan.bin records) and the binaries beside it, linked
-    where the filesystem allows and copied where it does not.
+    directory from what is under the archive's MSData/ (MSScan.xsd above all,
+    which describes the MSScan.bin records) and the binaries beside the
+    archive, linked where the filesystem allows and copied where it does not.
 
     """
     from rainbow.agilent import masshunter
@@ -346,16 +439,12 @@ def _read_ms(dx_path, ms_files, display_precision, hrms, centroid, bin_width,
     try:
         acqdata = os.path.join(tmp, 'AcqData')
         os.mkdir(acqdata)
-        with zipfile.ZipFile(dx_path) as archive:
-            for member in archive.namelist():
-                parts = member.replace('\\', '/').split('/')
-                if len(parts) == 2 and parts[0].lower() == 'msdata' \
-                        and parts[1]:
-                    with open(os.path.join(acqdata, parts[1]), 'wb') as out:
-                        out.write(archive.read(member))
-        if not os.path.isfile(os.path.join(acqdata, 'MSScan.xsd')):
-            return []
-        for name, source in ms_files.items():
+        for name, member in ms.archived.items():
+            if name in ms.beside:
+                continue
+            with open(os.path.join(acqdata, name), 'wb') as out:
+                out.write(archive.read(member))
+        for name, source in ms.beside.items():
             target = os.path.join(acqdata, name)
             try:
                 os.link(source, target)
@@ -368,20 +457,18 @@ def _read_ms(dx_path, ms_files, display_precision, hrms, centroid, bin_width,
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _archive_xml(archive, name):
+def _archive_xml(archive, member):
     """A small XML member of the archive, parsed, or None."""
-    for member in archive.namelist():
-        if member.replace('\\', '/').lower() == name.lower():
-            try:
-                return ET.fromstring(archive.read(member))
-            except ET.ParseError:
-                return None
-    return None
+    if member is None:
+        return None
+    try:
+        return ET.fromstring(archive.read(member))
+    except (KeyError, ET.ParseError):
+        return None
 
 
-def _injection_source(archive):
+def _injection_source(root):
     """The manifest's <InjectionSource> (e.g. "GC Injector"), or ''."""
-    root = _archive_xml(archive, 'injection.acmd')
     if root is None:
         return ''
     for element in root.iter():

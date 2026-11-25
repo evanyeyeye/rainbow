@@ -4,9 +4,9 @@ Agilent OpenLab CDS (.sirslt) Folder Structure
 ==============================================
 
 OpenLab CDS 2.x stores each single-injection result set as a :code:`.sirslt`
-folder. The detector signals are in a :ref:`.dx archive <dx>` inside it; MS
-data too large for the archive is written beside it. The same layout is used
-for LC and GC instruments. Every file in the folder shares the folder's name:
+folder. The detector signals are in a :ref:`.dx archive <dx>` inside it, and
+the MS binaries are written beside it. The same layout is used for LC and GC
+instruments. Every file in the folder shares the folder's name:
 
 .. list-table::
    :widths: 35 65
@@ -21,8 +21,9 @@ for LC and GC instruments. Every file in the folder shares the folder's name:
        ``Contents.xml`` and ``Devices.xml``.
    * - ``<name>.MSScan.bin``, ``<name>.MSPeak.bin``
      - The MassHunter scan index and centroid spectra, in the same formats as
-       a .D's ``AcqData`` folder (see :ref:`hrms`). The archive's manifest
-       names them in the MS signal's ``<ExternalElementPaths>``.
+       a .D's ``AcqData`` folder (see :ref:`MSPeak.bin <mspeak>`). The
+       archive's manifest names them in the MS signal's
+       ``<ExternalElementPaths>``.
    * - ``<name>.acaml``
      - The result-set document: the instrument (its name, modules, and
        separation technique), the sample, and the method.
@@ -47,11 +48,30 @@ run whose MS data was not asked for says so with
     datadir.metadata['technique']      # 'LC' or 'GC'
     datadir.get_file("MSPeak.bin")     # per-scan centroid peak lists
 
+The binaries are found by the names ``<ExternalElementPaths>`` gives, matched
+by file name alone and without regard to case, so a name written with a
+directory still finds the file beside the archive. If those names find no
+``MSScan.bin``, the folder is searched for ``*.MS*.bin`` files instead, and
+binaries kept under the archive's ``MSData/`` are read too. MS data that is
+present but cannot be decoded (no ``MSScan.bin``, or no ``MSData/MSScan.xsd``
+to decode it with) is not reported as available, and reading the folder warns
+why.
+
 An OpenLab single-quadrupole LC/MS writes version 2.1 of ``MSScan.xsd``, whose
 scan record ends in an optional ``Padding`` element with no fixed size. No pad
 bytes are stored: the records tile ``MSScan.bin`` exactly without it. Its
-centroid abundances are fractional, and are returned as floats; each scan's
+centroid abundances are fractional, and are returned as float64; each scan's
 peaks sum to the TIC the instrument recorded for it.
+
+Like a .D's centroid, a ``.sirslt``'s is returned per scan by default: a
+:class:`~rainbow.agilent.masshunter.CentroidDataFile` of peak lists with no
+``ylabels`` (see :ref:`hrms-data-model`). Unlike a Chemstation ``.ms`` file,
+which ``rb.read`` bins to 1 Da by default (see :ref:`ms`), it is not binned
+unless asked. Pass :code:`bin_width=1` for the same nominal-mass grid a single
+quadrupole's ``.ms`` gives::
+
+    datadir = rb.read("path/to/run.sirslt", centroid=True, bin_width=1)
+    datadir.get_file("MSPeak.bin").ylabels   # whole-dalton m/z
 
 LC or GC
 --------
@@ -66,7 +86,9 @@ from:
 2. the ``<SeparationTechnique>`` of ``MSData/Contents.xml`` in the archive,
    for an MS run (``2`` is GC, ``3`` is LC);
 3. the manifest: a "GC" injection source, or a detector only a gas
-   chromatograph has (FID, TCD, ECD, NPD, FPD, SCD, NCD).
+   chromatograph has (FID, TCD, NPD, FPD, SCD, NCD). An ECD is not counted:
+   the name is used for a GC electron-capture detector and an HPLC
+   electrochemical detector alike.
 
 A run that recorded no detector signal, such as a column flush whose archive
 holds only telemetry, is still read: it returns its metadata and no

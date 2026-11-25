@@ -15,6 +15,7 @@ Learn more about this file format :ref:`here <dx>`.
 """
 import os
 import tempfile
+import warnings
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -34,8 +35,9 @@ from rainbow.datadirectory import DataDirectory
 # channel's wavelength matches that .CH single-wavelength channel of the same
 # run (which parse_ch already scales correctly) to within about 1%; the 2**-17
 # rainbow applied before was 2.4% high on the first and 62x low on the second.
-# This is the fallback for a manifest that omits the factor. The .CH and .IT
-# ("179") payloads need no correction.
+# This is the fallback for a manifest that omits the factor, which warns: it
+# is right for a UHPLC DAD and 64 times too small for an HPLC one. The .CH and
+# .IT ("179") payloads need no correction.
 UV_FIXED_POINT_SHIFT = 1000 * 2 ** -27
 
 # Namespace of the injection.acmd manifest.
@@ -78,10 +80,6 @@ def read_archive(path, requested_files=None, telemetry=False):
     """
     Decodes a .dx archive's payloads without wrapping them in a DataDirectory.
 
-    The OpenLab result-folder reader (:mod:`rainbow.agilent.sirslt`) builds on
-    this: it adds the MS data written beside the archive, and keeps the run's
-    metadata even when the archive held no detector signal.
-
     Args:
         path (str): Path of the .dx file.
         requested_files (list, optional): Lowercased names to parse.
@@ -94,35 +92,56 @@ def read_archive(path, requested_files=None, telemetry=False):
     """
     with zipfile.ZipFile(path) as archive:
         dir_metadata, signals = _parse_manifest(archive)
-
-        datafiles = []
-        used_names = set()
-        with tempfile.TemporaryDirectory() as tmp:
-            for member in archive.namelist():
-                base = os.path.basename(member)
-                guid, ext = os.path.splitext(base)
-                if ext.lower() not in _DATA_EXTS:
-                    continue
-                signal = signals.get(guid.lower(), {})
-                name = _name_for(signal, guid, ext, used_names)
-                requested = requested_files is not None and (
-                    name.lower() in requested_files or
-                    base.lower() in requested_files)
-                if requested_files is not None and not requested:
-                    continue
-                # Telemetry is opt-in unless requested by name.
-                if ext.lower() == '.it' and not telemetry and not requested:
-                    continue
-
-                tmppath = os.path.join(tmp, base)
-                with open(tmppath, 'wb') as out:
-                    out.write(archive.read(member))
-
-                datafile = _parse_member(tmppath, name, ext, signal)
-                if datafile is not None:
-                    datafiles.append(datafile)
-
+        datafiles = decode_archive(
+            archive, signals, requested_files, telemetry)
     return datafiles, dir_metadata, signals
+
+
+def decode_archive(archive, signals, requested_files=None, telemetry=False):
+    """
+    Decodes the payloads of an open .dx archive whose manifest is parsed.
+
+    The OpenLab result-folder reader (:mod:`rainbow.agilent.sirslt`) builds on
+    this, so that it opens the archive and parses its manifest once for the
+    detector signals, the MS sidecars and the run's metadata alike.
+
+    Args:
+        archive (zipfile.ZipFile): The open .dx archive.
+        signals (dict): Its manifest entries, from :func:`_parse_manifest`.
+        requested_files (list, optional): Lowercased names to parse.
+        telemetry (bool, optional): Flag for parsing .IT telemetry traces.
+
+    Returns:
+        List of DataFiles.
+
+    """
+    datafiles = []
+    used_names = set()
+    with tempfile.TemporaryDirectory() as tmp:
+        for member in archive.namelist():
+            base = os.path.basename(member)
+            guid, ext = os.path.splitext(base)
+            if ext.lower() not in _DATA_EXTS:
+                continue
+            signal = signals.get(guid.lower(), {})
+            name = _name_for(signal, guid, ext, used_names)
+            requested = requested_files is not None and (
+                name.lower() in requested_files or
+                base.lower() in requested_files)
+            if requested_files is not None and not requested:
+                continue
+            # Telemetry is opt-in unless requested by name.
+            if ext.lower() == '.it' and not telemetry and not requested:
+                continue
+
+            tmppath = os.path.join(tmp, base)
+            with open(tmppath, 'wb') as out:
+                out.write(archive.read(member))
+
+            datafile = _parse_member(tmppath, name, ext, signal)
+            if datafile is not None:
+                datafiles.append(datafile)
+    return datafiles
 
 
 def read_metadata(path):
@@ -138,10 +157,14 @@ def read_metadata(path):
     """
     with zipfile.ZipFile(path) as archive:
         dir_metadata, _ = _parse_manifest(archive)
-        datafiles = [
-            os.path.basename(member) for member in archive.namelist()
-            if os.path.splitext(member)[1].lower() in _DATA_EXTS]
+        datafiles = payload_names(archive)
     return {'datafiles': datafiles, 'metadata': dir_metadata}
+
+
+def payload_names(archive):
+    """The names of the decodable payloads in an open .dx archive."""
+    return [os.path.basename(member) for member in archive.namelist()
+            if os.path.splitext(member)[1].lower() in _DATA_EXTS]
 
 
 def _parse_member(tmppath, name, ext, signal):
@@ -158,8 +181,16 @@ def _parse_member(tmppath, name, ext, signal):
         datafile = chemstation.parse_uv(tmppath)
         if datafile is None:
             return None
-        data = datafile.data * (
-            signal.get('scale_factor') or UV_FIXED_POINT_SHIFT)
+        scale_factor = signal.get('scale_factor')
+        if scale_factor is None:
+            warnings.warn(
+                "The manifest records no <ScaleFactor> for the spectrum {}; "
+                "it is scaled by 1000 * 2**-27, the factor a UHPLC DAD "
+                "records. An HPLC DAD records one 64 times larger, so compare "
+                "the spectrum with a single-wavelength channel of the same "
+                "run before relying on its absolute values.".format(name))
+            scale_factor = UV_FIXED_POINT_SHIFT
+        data = datafile.data * scale_factor
         detector = 'UV'
     else:
         # .ch and .it share the single-channel "179" container.
@@ -188,12 +219,28 @@ def _parse_manifest(archive):
         lowercased trace GUID to its per-trace metadata.
 
     """
+    return parse_manifest_root(manifest_root(archive))
+
+
+def manifest_root(archive):
+    """The parsed injection.acmd of an open .dx archive, or None."""
+    try:
+        return ET.fromstring(archive.read('injection.acmd'))
+    except (KeyError, ET.ParseError):
+        return None
+
+
+def parse_manifest_root(root):
+    """
+    :func:`_parse_manifest`, from an injection.acmd already parsed.
+
+    Returns:
+        Tuple of ``(dir_metadata, signals)``.
+
+    """
     dir_metadata = {'vendor': "Agilent"}
     signals = {}
-
-    try:
-        root = ET.fromstring(archive.read('injection.acmd'))
-    except (KeyError, ET.ParseError):
+    if root is None:
         return dir_metadata, signals
 
     for sig in root.findall('.//a:Signal', _ACMD_NS):
@@ -213,8 +260,8 @@ def _parse_manifest(archive):
             scale_factor = 0.0
         if scale_factor > 0:
             entry['scale_factor'] = scale_factor
-        # Data too large for the archive (the MS scans) is written beside it,
-        # and the manifest names those files here.
+        # The MS binaries are written beside the archive, and the manifest
+        # names those files here.
         external = _text(sig, 'ExternalElementPaths')
         if external:
             entry['external'] = [

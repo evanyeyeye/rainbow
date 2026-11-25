@@ -1,0 +1,67 @@
+{
+    "metadata": {
+        "vendor": "Agilent",
+        "date": "2026-10-02T13:53:00.0351825+01:00",
+        "method": "HPLC_method.amx",
+        "sample": "blank",
+        "vialpos": "51",
+        "operator": "SYSTEM (SYSTEM)",
+        "seqline": 1,
+        "injection_volume": {
+            "value": 2.0,
+            "unit": "µL"
+        },
+        "instrument": {
+            "name": "HPLC1",
+            "technique": "LiquidChromatography",
+            "modules": [
+                {
+                    "name": "Grad. Pump",
+                    "type": "Pump",
+                    "part_no": "G4294B",
+                    "serial_no": "DE00000011",
+                    "firmware": "B.07.20 [0007]"
+                },
+                {
+                    "name": "Sampler",
+                    "type": "Sampler",
+                    "part_no": "G4294B",
+                    "serial_no": "DE00000011",
+                    "firmware": "B.07.20 [0007]"
+                },
+                {
+                    "name": "Column Oven",
+                    "type": "ColumnCompartment",
+                    "part_no": "G4294B",
+                    "serial_no": "DE00000011",
+                    "firmware": "B.07.20 [0007]"
+                },
+                {
+                    "name": "DAD",
+                    "type": "Detector",
+                    "part_no": "G4294B",
+                    "serial_no": "DE00000011",
+                    "firmware": "B.07.20 [0007]"
+                }
+            ]
+        },
+        "technique": "LC"
+    },
+    "datafiles": {
+        "DAD1A.CH": {
+            "detector": "UV",
+            "shape": [
+                3300,
+                1
+            ],
+            "metadata": {
+                "device": "DAD",
+                "description": "DAD1A,Sig=220,4  Ref=off",
+                "unit": "mAU",
+                "wavelength": 220.0,
+                "bandwidth": 4.0,
+                "reference_wavelength": null
+            }
+        }
+    }
+}
