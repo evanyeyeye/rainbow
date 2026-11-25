@@ -7,9 +7,10 @@ MSScan.xsd, inside it). The folders here are assembled from the repository's
 own fixtures: teal.dx for the detector signals, yellow.D's AcqData for the MS
 binaries, so each part can be checked against reading its source directly.
 
-Two real, anonymised folders are read as well (see
+Three real, anonymised folders are read as well (see
 tests/inputs/README_sirslt.md): olive.sirslt, a UHPLC single-quadrupole LC/MS
-run (DAD spectrum, one DAD signal, MS centroids), and lime.sirslt, an HPLC run
+run (DAD spectrum, one DAD signal, MS centroids); plum.sirslt, an HPLC run
+whose DAD spectrum carries the HPLC scale factor; and lime.sirslt, an HPLC run
 with one DAD signal.
 
 Set RAINBOW_SIRSLT_EXAMPLES to a directory of real .sirslt folders to also run
@@ -466,7 +467,18 @@ def _assert_centroid_matches_recorded_tic(folder, datadir):
 # --- real, anonymised folders ------------------------------------------------
 
 OLIVE = os.path.join(INPUTS, "olive.sirslt")
+PLUM = os.path.join(INPUTS, "plum.sirslt")
 LIME = os.path.join(INPUTS, "lime.sirslt")
+
+
+def _spectrum_over_channel_at_peak(datadir):
+    """The spectrum at the channel's wavelength over the channel, at its
+    largest peak."""
+    spectrum = datadir.get_file("DAD1I.UV")
+    channel = datadir.get_file("DAD1A.CH")
+    column = int(np.argmin(np.abs(spectrum.ylabels - 220)))
+    peak = int(np.argmax(channel.data[:, 0]))
+    return spectrum.data[peak, column] / channel.data[peak, 0]
 
 
 def test_olive_reads_its_detector_signals_and_metadata():
@@ -503,13 +515,43 @@ def test_olive_spectrum_is_scaled_like_its_channel():
     # it, the spectrum at 220 nm agrees with the 220 nm signal of the same run
     # at the run's largest peak; the 2**-17 rainbow applied before read it
     # 2.4% high.
-    datadir = rb.read(OLIVE)
+    assert abs(_spectrum_over_channel_at_peak(rb.read(OLIVE)) - 1) < 0.01
+
+
+def test_plum_hplc_spectrum_is_scaled_like_its_channel():
+    # An HPLC DAD records <ScaleFactor> 1000 * 2**-21, 64 times a UHPLC DAD's.
+    # Scaled by it, the spectrum at 220 nm agrees with the 220 nm signal of
+    # the same run; the 2**-17 rainbow applied before read it 62.5x low.
+    with zipfile.ZipFile(os.path.join(PLUM, "plum.dx")) as archive:
+        _, signals = openlab._parse_manifest(archive)
+    factors = [s['scale_factor'] for s in signals.values()
+               if s['encoding'].endswith('Spectra131')]
+    assert factors == [1000 * 2 ** -21]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        datadir = rb.read(PLUM)
+    assert abs(_spectrum_over_channel_at_peak(datadir) - 1) < 0.01
     spectrum = datadir.get_file("DAD1I.UV")
-    channel = datadir.get_file("DAD1A.CH")
-    column = int(np.argmin(np.abs(spectrum.ylabels - 220)))
-    peak = int(np.argmax(channel.data[:, 0]))
-    ratio = spectrum.data[peak, column] / channel.data[peak, 0]
-    assert abs(ratio - 1) < 0.01
+    assert spectrum.data.shape == (7200, 106)
+    np.testing.assert_array_equal(spectrum.ylabels[[0, -1]], [190, 400])
+    np.testing.assert_allclose(spectrum.data.max(), 1152.9016494750977,
+                               rtol=1e-12)
+    np.testing.assert_allclose(datadir.get_file("DAD1A.CH").data.max(),
+                               726.5162467956543, rtol=1e-12)
+
+
+def test_plum_metadata():
+    datadir = rb.read(PLUM, telemetry=True)
+    assert sorted(df.name for df in datadir.datafiles) == \
+        ["DAD1A.CH", "DAD1I.UV"]
+    assert len(datadir.analog) == 11
+    metadata = datadir.metadata
+    assert metadata['technique'] == 'LC'
+    assert metadata['instrument']['name'] == 'HPLC2'
+    assert [m['part_no'] for m in metadata['instrument']['modules']] == \
+        ['G7112B', 'G7129A', 'G7116A', 'G7115A']
+    assert 'centroid_available' not in metadata
+    assert rb.read_metadata(PLUM)['metadata'] == rb.read(PLUM).metadata
 
 
 def test_olive_centroids_are_the_recorded_scans():

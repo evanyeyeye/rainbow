@@ -24,8 +24,10 @@ to [Semantic Versioning](https://semver.org/).
   The instrument and its modules are in `metadata['instrument']`, and an MS
   run's spectrometer in `metadata['ms_devices']`.
 - **Real `.sirslt` test data.** `tests/inputs/olive.sirslt` (a UHPLC
-  single-quadrupole LC/MS run) and `tests/inputs/lime.sirslt` (an HPLC run),
-  anonymised as `tests/inputs/README_sirslt.md` describes.
+  single-quadrupole LC/MS run), `tests/inputs/plum.sirslt` (an HPLC run whose
+  DAD spectrum carries the HPLC scale factor) and `tests/inputs/lime.sirslt`
+  (an HPLC run with one DAD signal), anonymised as
+  `tests/inputs/README_sirslt.md` describes.
 
 ### Fixed
 - **A `.dx` DAD spectrum is scaled by its manifest's factor.** The spectrum

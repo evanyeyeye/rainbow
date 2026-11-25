@@ -1,12 +1,13 @@
 # OpenLab CDS `.sirslt` test folders
 
-Two real single-injection result folders from Agilent OpenLab CDS 2.x, kept
+Three real single-injection result folders from Agilent OpenLab CDS 2.x, kept
 for the `.sirslt` reader's tests (`tests/test_sirslt.py`, and `lime` in
 `tests/test_agilent.py`).
 
 | Folder | Instrument | Holds |
 | --- | --- | --- |
 | `olive.sirslt` | UHPLC DAD with an LC/MSD iQ single quadrupole | DAD spectrum (`DAD1I`, 200-400 nm), one DAD signal (`DAD1A`, 220 nm), 237 MS centroid scans (`MSPeak.bin`), 22 telemetry traces. Manifest `<ScaleFactor>` for the spectrum: `1000 * 2**-27`. |
+| `plum.sirslt` | HPLC with a DAD | DAD spectrum (`DAD1I`, 190-400 nm), one DAD signal (`DAD1A`, 220 nm), 11 telemetry traces. No MS. Manifest `<ScaleFactor>` for the spectrum: `1000 * 2**-21`. |
 | `lime.sirslt` | HPLC with a DAD | One DAD signal (`DAD1A`, 220 nm), 9 telemetry traces. No spectrum and no MS. |
 
 ## How they were anonymised
@@ -31,7 +32,7 @@ The `.acaml` was cut down to the instrument block rainbow reads (name,
 technique, and each module's name, type, part number, serial number and
 firmware) plus the document's description, creating user and date. The audit
 trail, custom fields, sample, method and injection sections were removed.
-Instrument names are now `LCMS1` and `HPLC1`, and module serial numbers are
+Instrument names are now `LCMS1`, `HPLC1` and `HPLC2`, and module serial numbers are
 placeholders (`DE00000001`, `SG00000001`, ...). The folders and their files
 were renamed after the colour, and `<ExternalElementPaths>` was updated to
 match.
