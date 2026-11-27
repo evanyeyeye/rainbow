@@ -352,6 +352,119 @@ def to_asm(datadir, *, export_dad_cube=True, wavelengths=None, ions=None,
                           _injection_filename(datadir.name)))
 
 
+def measurements(datadir, *, ions=None, technique=None, utc_offset=None):
+    """
+    The measurements :func:`to_asm` writes for a run, read without building
+    the document.
+
+    Each is what a reader of the document would read back from that
+    measurement, so the two cannot disagree: the measurements are made by the
+    same code that writes the document's, and read by the same code
+    :func:`from_asm` and :func:`peaks_from_asm` read them with. What is skipped
+    is the cost of a document: no array is turned into a Python list, nothing
+    is written to JSON or parsed back, and no trace is rebuilt from it. A
+    multi-wavelength DAD spectrum is not among them (it is the run's DataFile
+    itself; ``to_asm(export_dad_cube=False)`` leaves it out the same way).
+
+    Args:
+        datadir (DataDirectory): A parsed directory (e.g. from ``rb.read``).
+        ions (float/list, optional): m/z value(s) to extract from full-scan MS
+            data, each its own mass chromatogram, as for :func:`to_asm`. SIM MS
+            is always included.
+        technique (str, optional): ``"GC"`` or ``"LC"``, as for :func:`to_asm`.
+        utc_offset (str, optional): UTC offset stamped on timestamps the
+            instrument recorded without one, as for :func:`to_asm`.
+
+    Returns:
+        list of dict, one per measurement, in the document's order:
+
+        - ``identifier``: the measurement identifier; ``file``: the name of
+          the DataFile it was made from; ``label``: its cube's label.
+        - ``technique``: ``"LC"`` or ``"GC"``.
+        - ``detector``: the DataFile detector a reader names it (``"UV"``,
+          ``"FLD"``, ...; ``"MS"`` for a mass chromatogram; None for an analog
+          trace); ``mz``: a mass chromatogram's m/z, else None.
+        - ``channel``: what it says of its channel, as DataFile metadata
+          (``unit``, ``wavelength``, ``bandwidth``, ``reference_wavelength``,
+          ``measure``, ``device_type``, ...), as :func:`from_asm` gives it;
+          ``unit``: the unit ``values`` are in.
+        - ``times`` (minutes, the DataFile's own) and ``values`` (in
+          ``unit``: an absorbance in mAU, as :func:`from_asm` rebuilds it):
+          the trace, numpy float64 arrays.
+        - ``sample``: ``identifier``, ``name``, ``location``, ``plate``,
+          ``role`` and ``fields`` (its custom fields, by their labels), each
+          None (``fields`` {}) where the run states none.
+        - ``injection``: ``identifier``, ``time`` and ``volume_ul``, likewise.
+        - ``measurement_time`` and ``acquisition_method``.
+        - ``peaks``: the peak group :func:`peaks_from_asm` reads, or None.
+        - ``document``: the measurement document itself, for anything else;
+          its cube holds numpy arrays, so it is not JSON as it stands.
+
+    """
+    options = _Options(export_dad_cube=False, ions=ions,
+                       utc_offset=utc_offset, document=False)
+    technique = _technique(datadir.datafiles, datadir.metadata, technique)
+    return [_measurement_fields(measurement, options, technique)
+            for measurement in _measurements(datadir, options, technique)]
+
+
+def _measurement_fields(measurement, options, technique):
+    """One entry of :func:`measurements`: a measurement as a reader reads it."""
+    import numpy as np
+    said = {}
+    _absorb_samples([measurement], said)
+    _absorb_envelope(measurement, said)
+    source = options.sources.get(id(measurement)) or {}
+    datafile = source.get("datafile")
+    mass = _MASS_CHROMATOGRAM_CUBE in measurement
+    cube = measurement.get(_MASS_CHROMATOGRAM_CUBE if mass
+                           else _CHROMATOGRAM_CUBE) or {}
+    channel = _channel_metadata(measurement)
+    if mass:
+        # _channel_metadata reads the measure of a chromatogram cube alone.
+        concept, unit = _measure_of({_CHROMATOGRAM_CUBE: cube})
+        channel.setdefault("measure", concept)
+        channel.setdefault("unit", unit)
+    data = cube.get("data") or {}
+    values = np.asarray(data.get("measures", [()])[0], dtype=float)
+    if not mass:
+        values = _absorbance_in_mau(values, measurement)
+    volume = said.get("injection_volume")
+    return {
+        "identifier": measurement.get("measurement identifier"),
+        "file": datafile.name if datafile is not None else None,
+        "label": cube.get("label"),
+        "technique": "GC" if technique is _GC else "LC",
+        "detector": "MS" if mass else _detector_of(measurement),
+        "mz": source.get("mz"),
+        "channel": channel,
+        "unit": channel.get("unit"),
+        "times": np.asarray(datafile.xlabels, dtype=float)[
+            source["rows"] if source.get("rows") is not None else slice(None)]
+        if datafile is not None else
+        np.asarray(data.get("dimensions", [()])[0], dtype=float)
+        / _SECONDS_PER_MINUTE,
+        "values": values,
+        "sample": {
+            "identifier": said.get("sample"),
+            "name": said.get("sample_name"),
+            "location": said.get("vialpos"),
+            "plate": said.get("well_plate_id"),
+            "role": said.get("sample_role"),
+            "fields": said.get("sample_custom") or {},
+        },
+        "injection": {
+            "identifier": said.get("injection_identifier"),
+            "time": said.get("injection_time"),
+            "volume_ul": volume["value"] if volume else None,
+        },
+        "measurement_time": said.get("date"),
+        "acquisition_method": said.get("acq_method"),
+        "peaks": _peaks_from_measurement(measurement),
+        "document": measurement,
+    }
+
+
 def sequence_to_asm(datasequence, *, export_dad_cube=True, wavelengths=None,
                     ions=None, decimal_places=None, technique=None,
                     utc_offset=None):
@@ -1096,15 +1209,24 @@ class _Options:
             many decimal places; ``None`` keeps full precision.
         utc_offset (str or None): UTC offset to stamp on timestamps the source
             recorded without one.
+        document (bool): the measurements go into an ASM document. False for
+            :func:`measurements`, which builds no document: its arrays stay
+            numpy arrays, never Python lists, and what is said only of a
+            document (that it will not validate, that a channel is published
+            relabeled or left out of it) is not said.
     """
 
     def __init__(self, export_dad_cube=True, wavelengths=None, ions=None,
-                 decimal_places=None, utc_offset=None):
+                 decimal_places=None, utc_offset=None, document=True):
         self.export_dad_cube = export_dad_cube
         self.wavelengths = _wavelength_list(wavelengths)
         self.ions = None if ions is None else _finite_number_list(ions, "ions")
         self.decimals = _check_decimal_places(decimal_places)
         self.utc_offset = _utc_offset(utc_offset)
+        self.document = document
+        # Without a document: what each measurement was made from, by id(), for
+        # measurements() (the data file it came from, an ion's m/z).
+        self.sources = {}
         self._warned = set()
 
     def start_document(self):
@@ -1145,7 +1267,7 @@ class _Options:
             # validate, so the document says so rather than leaving it to be
             # discovered by a schema checker. Said once however many timestamps
             # the document holds, and never when an offset was found or given.
-            if not _HAS_OFFSET.search(stamped):
+            if not _HAS_OFFSET.search(stamped) and self.document:
                 _warn_once_per_run(
                     self, "naive-timestamp",
                     "{!r} records no UTC offset and rainbow will not invent "
@@ -1157,6 +1279,8 @@ class _Options:
         if not isinstance(value, str) or not value.strip():
             return stamped
         if required:
+            if not self.document:
+                return value  # kept as the run wrote it; no schema to break
             warnings.warn(
                 f"cannot read {value!r} as a timestamp; writing it through "
                 "unchanged, because the schema requires the field. The "
@@ -1167,11 +1291,12 @@ class _Options:
         return None
 
     def array(self, values):
-        """The values as a Python list, rounded if a precision was set."""
+        """The values as a Python list, rounded if a precision was set; a
+        numpy array without a document."""
         result = np.asarray(values, dtype=float)
         if self.decimals is not None:
             result = np.round(result, self.decimals)
-        return result.tolist()
+        return result.tolist() if self.document else result
 
     def scalar(self, value):
         """One float, rounded if a precision was set."""
@@ -1475,6 +1600,8 @@ def _measurements(datadir, options, technique):
                     measurement.get("measurement identifier"))
                 carried.add(key)
             measurements.append(measurement)
+    if not options.document:
+        return measurements
     _warn_peaks_not_carried(datadir, peak_groups, carried, options)
     if not measurements:
         _warn_nothing_to_export(datadir, options)
@@ -1527,6 +1654,9 @@ def _omission_remedy(datafile, options):
         data = getattr(datafile, "data", None)
         if data is not None and data.shape[1] > 1:
             return None  # export_dad_cube=False is the caller's own choice
+    if datafile.detector is None:
+        return ("states no detector, so whether its axis is m/z or "
+                "wavelength is unknown and no cube can name it")
     return "is not a channel shape this exporter can carry"
 
 
@@ -1610,15 +1740,90 @@ def _cube_measure(measurement):
     return measures[0].get("concept"), measures[0].get("unit")
 
 
-def _channel_device_type(descriptor, technique):
+def _channel_device_type(descriptor, technique, datafile=None,
+                         metadata=None):
     """The AFO device type for a channel's detector.
 
     A detector AFO has a class for keeps it in any document; one it does not
     (charged aerosol) takes the generic class for the document's technique.
+    Where the file states which kind of its detector recorded the channel (a
+    diode array or a variable wavelength detector, both UV), that class is
+    used (see :func:`_stated_device_type`); else the detector's own.
     """
     if descriptor.get("generic"):
         return _generic_detector(technique)
-    return _for_technique(descriptor["device_type"], technique)
+    stated = (_stated_device_type(datafile, metadata or {})
+              if datafile is not None else None)
+    return _for_technique(stated or descriptor["device_type"], technique)
+
+
+def device_of(datafile, metadata=None, technique=None):
+    """The device a datafile's measurement names, as :func:`to_asm` writes
+    its device control document: ``{"device type": the AFO class,
+    "device identifier": the module the file names it by}``, e.g.
+    ``{"device type": "diode array detector", "device identifier":
+    "DAD1A"}``; the identifier rainbow's detector name ("UV") where the file
+    names no module. A variable or multiple wavelength detector has no AFO
+    class of its own: its identifier ("VWD1A", "MWD1A") says which it is. None
+    for a datafile no device control document is written for (MS, analog).
+    """
+    descriptor = _DETECTOR_CUBES.get(datafile.detector)
+    if descriptor is None:
+        return None
+    return {"device type": _channel_device_type(descriptor, technique,
+                                                 datafile, metadata),
+            "device identifier": _device_identifier(datafile, metadata)}
+
+
+def _device_identifier(datafile, metadata):
+    """The module a datafile's channel is named by: the source's device
+    identifier, else the words the stated class was read from where they
+    name the module (a signal's module, a file's name, a module's name),
+    else rainbow's detector name."""
+    stated = _stated_device(datafile, metadata or {})
+    return (datafile.metadata.get("device_identifier")
+            or (stated[1] if stated else None) or datafile.detector)
+
+
+def _stated_device_type(datafile, metadata):
+    """The detector class the file states for a datafile's channel, or None
+    (see :func:`_stated_device`)."""
+    stated = _stated_device(datafile, metadata)
+    return stated[0] if stated else None
+
+
+def _stated_device(datafile, metadata):
+    """(the detector class the file states for a datafile's channel, the
+    words naming the module it was read from, or None), or None.
+
+    Read from the datafile's own words first: the device type an ASM
+    document stated for it, its device identifier (but the detector's own
+    name, which rainbow writes where the source had none), the module its
+    signal names ("DAD1A, Sig=254.0,4.0 ..."), its file name (DAD1A.ch,
+    DAD1.UV, VWD1A.ch); then from the run's modules, where every module of
+    the channel's detector kind names the same class (one DAD). A class of
+    another detector than the channel's is never taken: a run's fluorescence
+    module says nothing of its UV channels.
+    """
+    signal = datafile.metadata.get("signal")
+    ident = datafile.metadata.get("device_identifier")
+    ident = ident if ident != datafile.detector else None
+    texts = ((datafile.metadata.get("device_type"), ident),
+             (ident, ident),
+             (signal.split(",")[0] if isinstance(signal, str) else None,) * 2,
+             (os.path.splitext(os.path.basename(datafile.name or ""))[0],) * 2)
+    for text, module in texts:
+        found = _specific_detector_type(
+            _normalize_module_text(text if isinstance(text, str) else ""))
+        if found and _RAINBOW_DETECTORS.get(found) == datafile.detector:
+            return found, module
+    kinds = {}
+    for module in metadata.get("modules") or []:
+        found = _specific_detector_type(_normalize_module_text(
+            f"{module.get('name') or ''} {module.get('type') or ''}"))
+        if found and _RAINBOW_DETECTORS.get(found) == datafile.detector:
+            kinds.setdefault(found, module.get("name"))
+    return next(iter(kinds.items())) if len(kinds) == 1 else None
 
 
 def _build_measurements(datafile, metadata, options, has_peaks=False,
@@ -1634,7 +1839,8 @@ def _build_measurements(datafile, metadata, options, has_peaks=False,
                 return []
             measurement = _spectrum_measurement(
                 datafile, metadata,
-                _channel_device_type(descriptor, technique), options)
+                _channel_device_type(descriptor, technique, datafile,
+                                     metadata), options)
             return [measurement] if measurement is not None else []
         if datafile.data.shape[1] == 1:
             return [_detector_measurement(
@@ -1675,8 +1881,11 @@ def _warn_relabeled_unit(datafile, unit, descriptor, options):
     """Says that a channel's values went out under a quantity they are not in.
 
     The one message for every detector that reaches it, so no detector class is
-    quietly exempt from an explanation the others give.
+    quietly exempt from an explanation the others give. Said only of a
+    document: :func:`measurements` gives the values under their real unit.
     """
+    if not options.document:
+        return
     _warn_once_per_run(
         options, "source-unit:{}:{}".format(datafile.name, unit),
         "{} records its signal in {!r}, which the schema does not offer "
@@ -1755,9 +1964,9 @@ def _detector_measurement(datafile, metadata, descriptor, options,
     # an analog trace. The device identifier is the source's, which names the
     # module in its device system document ("DAD", "ACQ-FLR"), and the
     # detector's name only where the source had none.
-    control = {"device type": _channel_device_type(descriptor, technique),
-               "device identifier": datafile.metadata.get("device_identifier")
-               or datafile.detector}
+    control = {"device type": _channel_device_type(descriptor, technique,
+                                                   datafile, metadata),
+               "device identifier": _device_identifier(datafile, metadata)}
     _append_custom(control, _RAINBOW_DETECTOR, datafile.detector)
     descriptor = _measure_from_source(datafile, descriptor, options)
     detection_type = descriptor.get("detection_type")
@@ -2086,25 +2295,41 @@ def _reported_measure(measurement):
 def _mass_chromatogram_measurements(datafile, metadata, options):
     """Mass chromatogram measurements for an MS channel.
 
-    A SIM channel (its monitored ions) is always exported: every ion becomes a
-    mass chromatogram (ion count over retention time). A full scan is a 2D
-    retention-by-m/z grid that the published schema cannot hold faithfully, so
-    it is exported only ion by ion: each requested m/z in ``ions`` is pulled
-    from the grid as its own mass chromatogram. SIM and scan are told apart by
-    the channel's ``acquisition_mode`` (read from the acquisition method);
-    absent that, only a single-ion channel is taken as SIM. A per-scan HRMS
-    profile has no single shared m/z axis (reading ``ylabels`` raises), so it is
-    skipped. See the ASM detectors documentation.
+    A SIM channel (its monitored ions) and an MRM channel (its transitions) are
+    always exported: every ion or transition becomes a mass chromatogram (ion
+    count over retention time). A full scan is a 2D retention-by-m/z grid that
+    the published schema cannot hold faithfully, so it is exported only ion by
+    ion: each requested m/z in ``ions`` is pulled from the grid as its own mass
+    chromatogram. SIM and scan are told apart by the channel's
+    ``acquisition_mode`` (read from the acquisition method); absent that, only
+    a single-ion channel is taken as SIM. A channel whose scans are of both
+    kinds (``'mixed'``: a MassHunter simultaneous SIM/Scan run) exports each
+    ion its SIM scans recorded, from those scans, and the requested ions from
+    its full scans. A per-scan HRMS profile has no single shared m/z axis
+    (reading ``ylabels`` raises), so it is skipped. See the ASM detectors
+    documentation.
     """
+    import numpy as np
     try:
         ylabels = datafile.ylabels
     except Exception:
         return []  # per-scan HRMS, out of scope
-    if _is_sim(datafile):
+    scan_rows = None
+    measurements = []
+    if datafile.metadata.get("acquisition_mode") == "mixed":
+        sim_rows = np.asarray(
+            datafile.metadata["scans"]["monitoring"], dtype=bool)
+        scan_rows = ~sim_rows
+        recorded = np.flatnonzero(
+            np.asarray(datafile.data[sim_rows]).any(axis=0))
+        measurements = [
+            _extracted_ion(datafile, metadata, ylabels, index, options,
+                           rows=sim_rows, kind="SIM")
+            for index in recorded]
+    elif _is_sim(datafile):
         return [_extracted_ion(datafile, metadata, ylabels, index, options,
                                single=datafile.data.shape[1] == 1)
                 for index in range(datafile.data.shape[1])]
-    measurements = []
     for requested in _normalize_ions(options.ions):
         index = _nearest_ion(ylabels, requested)
         if index is None:
@@ -2113,7 +2338,8 @@ def _mass_chromatogram_measurements(datafile, metadata, options):
                 f"{datafile.name}; skipping that ion.")
             continue
         measurements.append(
-            _extracted_ion(datafile, metadata, ylabels, index, options))
+            _extracted_ion(datafile, metadata, ylabels, index, options,
+                           rows=scan_rows))
     return measurements
 
 
@@ -2125,33 +2351,56 @@ def _is_sim(datafile):
     scan (exported only on request) rather than guessed.
     """
     mode = datafile.metadata.get("acquisition_mode")
-    if mode == "SIM":
+    if mode in ("SIM", "MRM"):     # each monitors chosen ions or transitions
         return True
-    if mode == "Scan":
+    if mode in ("Scan", "mixed"):
         return False
     return datafile.data.shape[1] == 1
 
 
-def _extracted_ion(datafile, metadata, ylabels, index, options, single=False):
-    """One ion's mass chromatogram, taken from column ``index`` of the grid."""
+def _extracted_ion(datafile, metadata, ylabels, index, options, single=False,
+                   rows=None, kind=None):
+    """One ion's mass chromatogram, taken from column ``index`` of the grid,
+    from the scans at ``rows`` (a boolean mask; None for every scan). An MRM
+    column is named by its transition (precursor and product, the
+    ``transitions`` the file states), since two transitions can share a
+    product; ``kind`` ("SIM") names the scans an ion of a mixed channel is
+    taken from."""
     mz = float(ylabels[index]) if len(ylabels) > index else None
-    # A single-ion channel keeps the file's own name; for one of several ions the
-    # m/z disambiguates the identifier, unless the ylabel is missing (no m/z).
-    identifier = datafile.name if (single or mz is None) \
-        else "{} m/z {:g}".format(datafile.name, mz)
+    transitions = datafile.metadata.get("transitions")
+    what = None
+    if mz is not None:
+        what = "m/z {:g}".format(mz)
+        if transitions and len(transitions) == len(ylabels):
+            what = "MRM {:g} > {:g}".format(
+                transitions[index]["precursor_mz"],
+                transitions[index]["product_mz"])
+        elif kind:
+            what = "{} {}".format(kind, what)
+    # A single-ion channel keeps the file's own name; for one of several ions
+    # the ion disambiguates the identifier, unless the ylabel is missing.
+    identifier = datafile.name if (single or what is None) \
+        else "{} {}".format(datafile.name, what)
+    intensities = datafile.data[:, index] if rows is None \
+        else datafile.data[rows, index]
     return _mass_chromatogram_measurement(
-        datafile, metadata, datafile.data[:, index], mz, identifier, options)
+        datafile, metadata, intensities, mz, identifier, options, rows, what)
 
 
 def _mass_chromatogram_measurement(datafile, metadata, intensities, mz,
-                                   identifier, options):
+                                   identifier, options, rows=None, what=None):
     """One mass chromatogram measurement for a monitored or extracted ion."""
     control = {"device type": "mass spectrometer"}
-    return _measurement(
+    measurement = _measurement(
         datafile, metadata, control,
         _MASS_CHROMATOGRAM_CUBE,
-        _mass_chromatogram_cube(intensities, mz, datafile, options), options,
+        _mass_chromatogram_cube(intensities, mz, datafile, options, rows,
+                                what), options,
         identifier=identifier)
+    if not options.document:
+        options.sources[id(measurement)]["mz"] = mz
+        options.sources[id(measurement)]["rows"] = rows
+    return measurement
 
 
 def _normalize_ions(ions):
@@ -2240,6 +2489,8 @@ def _measurement(datafile, metadata, control, cube_key, cube, options,
     method = datafile.metadata.get("acq_method") or metadata.get("acq_method")
     if isinstance(method, str) and method:
         _append_custom(measurement, _ACQUISITION_METHOD, method)
+    if not options.document:
+        options.sources[id(measurement)] = {"datafile": datafile, "mz": None}
     return measurement
 
 
@@ -2252,9 +2503,23 @@ def _spectrum_measurement(datafile, metadata, device_type, options):
     cube = _spectrum_cube(datafile, options)
     if cube is None:
         return None
-    control = {"device type": device_type}
-    return _measurement(
+    control = {"device type": device_type,
+               "device identifier": _device_identifier(datafile, metadata)}
+    measurement = _measurement(
         datafile, metadata, control, _SPECTRUM_CUBE, cube, options)
+    unit = datafile.metadata.get("unit")
+    if unit and _absorbance_unit_key(unit) not in _ABSORBANCE_TO_MAU:
+        # A unit the file states that is no absorbance unit rainbow can
+        # place: the cube says mAU, the schema's only one, so the note says
+        # the unit the values are in, unconverted, as a chromatogram's does.
+        descriptor = {"concept": "absorbance", "unit": "mAU"}
+        _warn_relabeled_unit(datafile, unit, descriptor, options)
+        _note_relabeled_measure(
+            measurement, dict(descriptor, unit=unit),
+            "This channel records its signal in {}; its values are "
+            "published as absorbance in mAU, relabeled and not converted, "
+            "the schema having no term for that unit.".format(unit))
+    return measurement
 
 
 def _warn_once_per_run(options, key, message):
@@ -2359,7 +2624,7 @@ def _add_injection_document(measurement, metadata, identifier, technique,
         }
     else:
         document = {"injection identifier": identifier or "unknown"}
-        if not has_volume:
+        if not has_volume and options.document:
             # Required by the GC ADM, so the document will not validate
             # without it. Said once per run rather than once per measurement,
             # because it is a property of the run's metadata.
@@ -2611,7 +2876,11 @@ def _channel_key(name):
 # The ultraviolet-absorbance cube measure is pinned to mAU in the ADM, so a
 # source unit is normalized to mAU on the way out, scaling the values to match.
 # ChemStation already reports mAU; Waters UV chromatograms report AU (1 AU =
-# 1000 mAU). An unrecognized unit is labeled mAU unscaled, as before.
+# 1000 mAU). An unrecognized unit is labeled mAU unscaled, the schema having
+# no other, and the measurement says so: its note names the unit the file
+# states, which from_asm and measurements read back as the values' unit
+# (_measure_from_source for a chromatogram, _spectrum_measurement for a
+# spectrum).
 #
 # Keyed on a case-folded, stripped spelling, the way the measure table and the
 # volume table are. The unit is whatever text the vendor file carried (Waters
@@ -2702,15 +2971,19 @@ def _spectrum_cube(datafile, options):
     }
 
 
-def _mass_chromatogram_cube(intensities, mz, datafile, options):
+def _mass_chromatogram_cube(intensities, mz, datafile, options, rows=None,
+                            what=None):
     """Lays a single ion's trace into a 1D (retention time) data cube.
 
     The measure is ion count. ``intensities`` is the trace at the monitored or
-    extracted m/z. That m/z has no dimension of its own in a mass chromatogram,
-    so it is recorded in the cube label.
+    extracted m/z, from the scans at ``rows`` (None: every scan). That m/z has
+    no dimension of its own in a mass chromatogram, so it is recorded in the
+    cube label (``what``: the ion or transition in words, else the m/z).
     """
     label = datafile.name
-    if mz is not None:
+    if what is not None:
+        label = "{} ({})".format(datafile.name, what)
+    elif mz is not None:
         label = "{} (m/z {:g})".format(datafile.name, mz)
     return {
         "label": label,
@@ -2719,15 +2992,17 @@ def _mass_chromatogram_cube(intensities, mz, datafile, options):
             "measures": [_component("count", "Counts")],
         },
         "data": {
-            "dimensions": [_retention_seconds(datafile, options)],
+            "dimensions": [_retention_seconds(datafile, options, rows)],
             "measures": [options.array(intensities)],
         },
     }
 
 
-def _retention_seconds(datafile, options):
-    """Retention times in seconds (rainbow stores minutes)."""
-    return options.array(datafile.xlabels * _SECONDS_PER_MINUTE)
+def _retention_seconds(datafile, options, rows=None):
+    """Retention times in seconds (rainbow stores minutes), of the scans at
+    ``rows`` (None: every one)."""
+    times = datafile.xlabels if rows is None else datafile.xlabels[rows]
+    return options.array(times * _SECONDS_PER_MINUTE)
 
 
 def _component(concept, unit):
@@ -4163,8 +4438,13 @@ def _peak_from_asm(peak, said=None, absorbance=True):
 
 # The units a peak's height, edge heights and area are converted from, as mAU
 # per unit (an area's unit is one of these times seconds). Empower's own unit
-# for a UV height is the microvolt, one of which is one microabsorbance unit.
-# Kept apart from _ABSORBANCE_TO_MAU so that a cube labelled in microvolts
+# for a UV height is the microvolt, one of which is one microabsorbance unit:
+# Waters states "1 volt (V) = 1 absorbance unit (AU)" for its UV and PDA
+# detectors in Empower (Waters Knowledge Base WKB4852, "What is the conversion
+# factor for volts to AU with a Waters UV detector?"; also WKB4051, which
+# limits it to data Waters software acquired). Data brought in through an
+# analog input instead is scaled by the detector's analog output setting,
+# which the export does not state. Kept apart from _ABSORBANCE_TO_MAU so that a cube labelled in microvolts
 # exports as it did before. The micro sign and the Greek mu are both in use.
 _PEAK_VALUE_TO_MAU = dict(_ABSORBANCE_TO_MAU, **{"\u00b5v": 0.001,
                                                  "\u03bcv": 0.001})

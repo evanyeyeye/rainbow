@@ -713,7 +713,6 @@ def _asm_cube(measurement):
 @pytest.mark.parametrize("fixture", [
     "red.D",          # UV channels beside an export-only CAD channel
     "violet.raw",     # UV channels beside an export-only ELSD channel
-    "white.raw",      # all absorbance; retention times drift by ulps
     "teal.dx",
     "bronze.D",
 ])
@@ -739,8 +738,8 @@ def test_a_second_export_reproduces_the_first(fixture):
 def test_exact_equality_is_not_the_round_trip_contract():
     """ The contract is that the values survive, not that the bytes match.
 
-    The documentation used to assert `again == first`. white.raw falsifies it:
-    the seconds-to-minutes conversion is not exactly reversible for these
+    The documentation used to assert `again == first`. violet.raw falsifies
+    it: the seconds-to-minutes conversion is not exactly reversible for these
     retention times, so the second export differs in the last digit.
 
     What is asserted here is only the real contract, closeness. Pinning the
@@ -748,19 +747,21 @@ def test_exact_equality_is_not_the_round_trip_contract():
     exactly reversible some day, which would be an improvement, would break
     this test.
 
-    white.raw is all absorbance, so every channel must come back. Pairing by
+    Every channel of violet.raw but its two full MS scans (exported only ion
+    by ion, on request) is exported, and each must come back. Pairing by
     identifier rather than by position matters: zip would truncate against a
     shorter second export, and a from_asm regression that silently drops
     channels would sail through.
     """
     import numpy as np
-    datadir = rb.read(os.path.join(INPUTS, "white.raw"))
+    datadir = rb.read(os.path.join(INPUTS, "violet.raw"))
     first = datadir.to_asm()
     again = rb.from_asm(first, name=datadir.name).to_asm()
 
     before = {m["measurement identifier"]: m for m in _asm_measurements(first)}
     after = {m["measurement identifier"]: m for m in _asm_measurements(again)}
-    assert len(before) == len(datadir.datafiles)
+    assert len(before) == len(
+        [f for f in datadir.datafiles if f.detector != "MS"])
     assert set(after) == set(before), "a channel was lost on the round trip"
     for name, source in before.items():
         assert np.allclose(_asm_cube(source)["dimensions"][0],
@@ -3304,3 +3305,24 @@ def test_a_source_with_no_converter_fields_gains_none_on_a_second_lap():
                   .get("custom information document", [])}
         assert not any(label.startswith("source ") for label in labels)
         assert record["ASM converter name"] == "rainbow-api"
+
+
+def test_a_spectrum_in_a_unit_rainbow_cannot_place_says_its_unit():
+    """A DAD spectrum whose file states a unit that is no absorbance unit
+    rainbow knows is published under the schema's mAU, unscaled, and its
+    note names the unit, which reads back as the spectrum's own."""
+    datadir = rb.read(os.path.join(INPUTS, "red.D"))
+    dad = datadir.get_file("DAD1.UV")
+    dad.metadata["unit"] = "mV"
+    with pytest.warns(UserWarning, match="relabeled and not converted"):
+        document = datadir.to_asm()
+    measurement = next(m for m in _asm_measurements(document)
+                       if m["measurement identifier"] == "DAD1.UV")
+    labels = {entry["datum label"]: entry["scalar string datum"]
+              for entry in measurement["custom information aggregate document"]
+              ["custom information document"]}
+    assert labels["reported measure unit"] == "mV"
+    back = rb.from_asm(document, name="red.D").get_file("DAD1.UV")
+    assert back.metadata["unit"] == "mV"
+    assert np.allclose(np.asarray(back.data, dtype=float),
+                       np.asarray(dad.data, dtype=float))

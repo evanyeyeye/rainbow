@@ -2,7 +2,9 @@
 Unit tests for parsing Agilent .D directories.
 
 """
+import os
 import struct
+import numpy as np
 
 import pytest
 
@@ -337,3 +339,143 @@ def test_scan_sizes_either_side_of_the_wrap_read_the_same_way(tmp_path):
 
     assert parsed.data.shape[0] == len(counts)
     assert parsed.data.sum(axis=1).tolist() == counts
+
+
+def test_ms_scans_state_their_scan_type():
+    # yellow.D is a simultaneous SIM/Scan run: ChemStation writes the full
+    # scans to data.ms and the monitored ions to dataSim.ms, and each scan's
+    # record says which it is. orange.D's MSD1.MS is a full-scan LC/MSD file.
+    from rainbow.agilent.chemstation import parse_ms
+    sim = parse_ms("tests/inputs/yellow.D/dataSim.ms")
+    full = parse_ms("tests/inputs/yellow.D/data.ms")
+    lc = parse_ms("tests/inputs/orange.D/MSD1.MS")
+    assert sim.metadata["acquisition_mode"] == "SIM"
+    assert full.metadata["acquisition_mode"] == "Scan"
+    assert lc.metadata["acquisition_mode"] == "Scan"
+    for datafile, monitoring in ((sim, True), (full, False), (lc, False)):
+        scans = datafile.metadata["scans"]
+        assert len(scans["monitoring"]) == datafile.data.shape[0]
+        assert set(scans["monitoring"].tolist()) == {monitoring}
+        assert set(scans["scan_type"].tolist()) == {"SIM" if monitoring else "Scan"}
+
+
+# Every Chemstation data file among the fixtures, as (directory, name).
+_CHEMSTATION_FILES = [
+    (color, name)
+    for color in ("red", "orange", "yellow", "green", "brown", "pink")
+    for name in sorted(os.listdir(os.path.join("tests", "inputs", f"{color}.D")))
+    if name[-3:].lower() in (".ch", ".uv", ".ms")
+]
+
+
+@pytest.mark.parametrize("color, name", _CHEMSTATION_FILES)
+def test_a_header_read_alone_states_what_the_parse_does(color, name):
+    # parse_header reads the strings parse_file puts on the DataFile, from the
+    # same offsets, without decoding the data.
+    from rainbow.agilent import chemstation
+    path = os.path.join("tests", "inputs", f"{color}.D", name)
+    header = chemstation.parse_header(path)
+    parsed = chemstation.parse_file(path)
+    assert header
+    assert {key: parsed.metadata[key] for key in header} == header
+
+
+def test_a_header_too_short_to_read_states_nothing(tmp_path):
+    from rainbow.agilent import chemstation
+    for name, content in (("a.ch", b"\x03179"), ("b.ms", b"\x01\x32"),
+                          ("c.uv", b"")):
+        path = tmp_path / name
+        path.write_bytes(content)
+        assert chemstation.parse_header(str(path)) is None
+
+
+@pytest.mark.parametrize("color", [
+    "amber", "bronze", "brown", "copper", "cyan", "gold", "green", "magenta",
+    "navy", "orange", "pink", "red", "silver", "yellow"])
+def test_read_metadata_states_what_read_does(color):
+    # The injection's date, vial position, sample setup and technique, read
+    # from the headers and sidecars alone, and every file read() parses
+    # without a flag.
+    path = os.path.join("tests", "inputs", f"{color}.D")
+    said = rb.read_metadata(path)
+    full = rb.read(path)
+    assert said["metadata"] == full.metadata
+    names = [getattr(f, "name", f) for f in said["datafiles"]]
+    assert set(f.name for f in full.datafiles
+               if not f.name.endswith(".cg")) <= set(names)
+
+
+def test_read_metadata_lists_a_masshunter_runs_own_chemstation_files():
+    # yellow.D holds its MS scans twice: in AcqData (MSScan.bin, MSPeak.bin)
+    # and as data.ms and dataSim.ms, the same scans at the same times. The
+    # recording is listed once, by the files read() returns without a flag;
+    # the centroid flag reads it from AcqData instead. Its date comes from
+    # the files' headers.
+    said = rb.read_metadata(os.path.join("tests", "inputs", "yellow.D"))
+    assert said["datafiles"] == ["FID1A.ch", "data.ms", "dataSim.ms"]
+    assert said["metadata"]["centroid_available"]
+    assert said["metadata"]["date"] == "17 Dec 19  10:04 am"
+    assert said["metadata"]["technique"] == "GC"
+
+
+def test_one_ms_recording_is_read_once():
+    # data.ms (Scan) and dataSim.ms (SIM) hold the very scans MSPeak.bin's
+    # records time: every .ms scan time is one of AcqData's, to the
+    # millisecond. With the centroid flag the recording comes from AcqData
+    # alone, its Scan and SIM scans interleaved as recorded.
+    from rainbow.agilent import chemstation, masshunter
+    path = os.path.join("tests", "inputs", "yellow.D")
+    acq = masshunter.scan_times(os.path.join(path, "AcqData"))
+    full = chemstation.ms_scan_times(os.path.join(path, "data.ms"))
+    sim = chemstation.ms_scan_times(os.path.join(path, "dataSim.ms"))
+    assert full.size + sim.size == acq.size
+    np.testing.assert_array_equal(
+        np.sort(np.concatenate([full, sim])), np.round(acq * 60000))
+    names = [f.name for f in rb.read(path, centroid=True).datafiles]
+    assert names == ["FID1A.ch", "MSPeak.bin"]
+    names = [f.name for f in rb.read(path).datafiles]
+    assert names == ["FID1A.ch", "data.ms", "dataSim.ms"]
+    # The run's date and method come from the .ms files' headers either way.
+    plain = rb.read(path).metadata
+    assert {k: v for k, v in rb.read(path, centroid=True).metadata.items()
+            } == {k: v for k, v in plain.items() if k != "centroid_available"}
+    # read_metadata names the copies the centroid read takes the place of.
+    assert rb.read_metadata(path)["copies"] == {
+        "MSPeak.bin": ["data.ms", "dataSim.ms"]}
+
+
+def test_files_asked_for_by_name_are_the_files_read():
+    # A caller naming an .ms file gets it, AcqData's copy beside it only when
+    # named too; naming neither MS file reads no MS.
+    path = os.path.join("tests", "inputs", "yellow.D")
+    names = lambda **k: [f.name for f in rb.read(path, centroid=True, **k)
+                         .datafiles]
+    assert names(requested_files=["data.ms"]) == ["data.ms"]
+    assert names(requested_files=["data.ms", "MSPeak.bin"]) == [
+        "data.ms", "MSPeak.bin"]
+    assert names(requested_files=["FID1A.ch"]) == ["FID1A.ch"]
+    assert names(requested_files=["MSPeak.bin"]) == ["MSPeak.bin"]
+
+
+def test_an_interleaved_scan_and_sim_recording_is_tagged_mixed():
+    # yellow.D's MSScan.bin holds its Scan and SIM scans in one file: the
+    # file states both, by scan program entry, and its ASM export carries
+    # each SIM ion from the SIM scans alone, a requested ion from the full
+    # scans alone.
+    path = os.path.join("tests", "inputs", "yellow.D")
+    datadir = rb.read(path, centroid=True, bin_width=0.1)
+    f = datadir.get_file("MSPeak.bin")
+    assert f.metadata["acquisition_mode"] == "mixed"
+    assert f.metadata["acquisition_modes"] == {1: "Scan", 2: "SIM"}
+    assert f.metadata["scans"]["monitoring"].sum() == 1309
+    got = {m["identifier"]: m for m in rb.measurements(datadir, ions=[131])}
+    assert set(got) == {"FID1A.ch", "MSPeak.bin SIM m/z 131",
+                        "MSPeak.bin SIM m/z 202", "MSPeak.bin m/z 131"}
+    assert len(got["MSPeak.bin SIM m/z 131"]["times"]) == 1309
+    assert len(got["MSPeak.bin m/z 131"]["times"]) == 1307
+    # The SIM ion is the same trace dataSim.ms holds, to the count the .ms
+    # encoding rounds to.
+    sim = rb.read(path).get_file("dataSim.ms")
+    column = list(sim.ylabels).index(131.0)
+    assert np.allclose(got["MSPeak.bin SIM m/z 131"]["values"],
+                       sim.data[:, column], rtol=1e-3, atol=1)

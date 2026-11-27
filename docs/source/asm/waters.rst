@@ -34,10 +34,11 @@ A Waters ``.raw`` commonly carries UV, CAD, ELSD, and MS channels. Export covers
 **UV, CAD, and ELSD** faithfully, each under its own measure (see
 :ref:`asm-detectors`). **MS**
 follows the same detector rules as Agilent (see :ref:`asm-detectors`): every
-monitored ion of a SIM channel exports as a mass chromatogram, and any ion of a
-full scan exports on request via ``ions=[...]``. SIM and scan are told apart by
-the function type recorded in ``_FUNCTNS.INF`` (Waters calls SIM "SIR",
-Selected Ion Recording), surfaced as each MS channel's ``acquisition_mode``.
+monitored ion of a SIM channel, and every transition of an MRM channel (by its
+product m/z), exports as a mass chromatogram, and any ion of a full scan exports
+on request via ``ions=[...]``. SIM, MRM and scan are told apart by the function
+type recorded in ``_FUNCTNS.INF`` (Waters calls SIM "SIR", Selected Ion
+Recording), surfaced as each MS channel's ``acquisition_mode``.
 Waters splits UV into two kinds of file, and rainbow exports both:
 
 - diode-array spectrum files (a retention time by wavelength grid), and

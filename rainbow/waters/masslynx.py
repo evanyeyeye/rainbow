@@ -8,7 +8,7 @@ import os
 import re
 import numpy as np
 from rainbow.datafile import DataFile
-from rainbow._binning import bin_datapairs
+from rainbow._binning import RECORDED, bin_datapairs
 from rainbow._optics import excitation_emission
 # pandas is imported where it is used, not here. It is the single largest cost
 # in importing rainbow, and only this module's transition table needs it, so
@@ -26,19 +26,27 @@ _UV_WAVELENGTH_STEP = 1.0
 _FUNC6_KEY_POW2 = 2.0 ** (np.arange(32) - 23)  # 2 ** (((raw & 0x1F0) >> 4) - 23)
 _FUNC6_VAL_POW4 = (4 ** np.arange(16)).astype(np.int64)  # 4 ** (raw & 0xF)
 
-# _FUNCTNS.INF holds one 416-byte record per function, in funcdat order. The
-# low 5 bits of each record's first byte are the MassLynx function-type code
-# (0 = MS scan, 1 = SIR = Waters' name for SIM, 12 = diode array). The upper
-# bits are acquisition flags (continuum/centroid), so they are masked off.
+# _FUNCTNS.INF holds one 416-byte record per function, in funcdat order. Its
+# first little-endian 16-bit word states the function: the low 5 bits are the
+# MassLynx function-type code (0 = MS scan, 1 = SIR = Waters' name for SIM,
+# 9 = MRM, 12 = diode array), bits 5-9 the ion mode the function ran in (see
+# _ION_MODE_POLARITY), and the bits above them acquisition flags.
 _FUNCTNS_RECORD = 32 * 13
 _FUNC_TYPE_MASK = 0x1F
+_ION_MODE_SHIFT = 5
+_ION_MODE_MASK = 0x1F
 _FUNC_TYPE_MS_SCAN = 0
 _FUNC_TYPE_SIR = 1
-# Diode array. The authoritative signal that a function's axis is wavelength
-# rather than m/z, and stronger than the absence of a polarity: polarities are
-# read from separate metadata that can be missing or short, and white.raw
-# records six MRM (type 9) functions for which none is read.
+# MRM: each scan reads the transitions it was set, its axis the product m/z of
+# each.
+_FUNC_TYPE_MRM = 9
+# Diode array: the one function type whose axis is wavelength and whose
+# detector is UV. Any other recorded type is a mass spectrometer's function.
 _FUNC_TYPE_DIODE_ARRAY = 12
+# The polarity of each MassLynx ion mode the bundled runs record, as their
+# _extern.inf states it where it has one (blue, indigo, violet, turquoise):
+# 0 = EI+, 8 = ES+, 9 = ES-. A mode outside these leaves the polarity unstated.
+_ION_MODE_POLARITY = {0: '+', 8: '+', 9: '-'}
 
 
 def _find_file(directory, target_name):
@@ -156,10 +164,11 @@ def parse_spectrum(path, display_precision=0, bin_width=1.0,
         if re.match(r'^_FUNC\d{3}\.DAT$', fn, re.IGNORECASE))
     # Waters validates _FUNCTNS.INF size; PE exports may omit this file entirely.
     functns_inf = _find_file_path(path, '_FUNCTNS.INF')
-    func_types = []
+    words = []
     if functns_inf is not None:
         assert (os.path.getsize(functns_inf) == 32 * 13 * len(funcdat_files))
-        func_types = _function_types(functns_inf, len(funcdat_files))
+        words = _function_words(functns_inf, len(funcdat_files))
+    func_types = [func_type for func_type, _ in words]
     for funcdat_index, funcdat_file in enumerate(funcdat_files):
         if requested_files and funcdat_file.lower() not in requested_files:
             continue
@@ -171,8 +180,12 @@ def parse_spectrum(path, display_precision=0, bin_width=1.0,
             polarity = polarities[funcdat_index]
             if funcdat_index < len(calib_nums):
                 calib = calib_nums[funcdat_index]
-        func_type = (func_types[funcdat_index]
-                     if funcdat_index < len(func_types) else None)
+        func_type, ion_mode = (words[funcdat_index]
+                               if funcdat_index < len(words) else (None, None))
+        # Where _extern.inf states no polarity, the function's own ion mode
+        # does (a diode array has none).
+        if not polarity and func_type not in (None, _FUNC_TYPE_DIODE_ARRAY):
+            polarity = _ION_MODE_POLARITY.get(ion_mode)
         datafile = parse_function(
             os.path.join(path, funcdat_file), display_precision, bin_width,
             polarity, calib, func_type, labels_only)
@@ -186,34 +199,42 @@ def parse_spectrum(path, display_precision=0, bin_width=1.0,
     return datafiles
 
 
-def _function_types(functns_inf_path, count):
-    """The MassLynx function-type code of each function, in funcdat order."""
+def _function_words(functns_inf_path, count):
+    """(function-type code, ion mode) of each function, in funcdat order, from
+    the first 16-bit word of its _FUNCTNS.INF record."""
     try:
         with open(functns_inf_path, 'rb') as f:
             data = f.read()
     except OSError:
         return []
-    types = []
+    words = []
     for index in range(count):
         offset = index * _FUNCTNS_RECORD
-        if offset >= len(data):
+        if offset + 2 > len(data):
             break
-        types.append(data[offset] & _FUNC_TYPE_MASK)
-    return types
+        word = int.from_bytes(data[offset:offset + 2], 'little')
+        words.append((word & _FUNC_TYPE_MASK,
+                      (word >> _ION_MODE_SHIFT) & _ION_MODE_MASK))
+    return words
+
+
+def _function_types(functns_inf_path, count):
+    """The MassLynx function-type code of each function, in funcdat order."""
+    return [func_type for func_type, _ in
+            _function_words(functns_inf_path, count)]
 
 
 def _acquisition_mode(func_type):
-    """``'SIM'`` or ``'Scan'`` for an MS function type, or None if unrecognized.
+    """``'SIM'``, ``'MRM'`` or ``'Scan'`` for an MS function type, or None if
+    unrecognized.
 
-    SIR (Selected Ion Recording) is Waters' SIM. A plain MS scan is a scan. Other
-    MS modes (MRM, parent/daughter scans) are left untagged so the exporter falls
-    back to treating only single-ion data as SIM.
+    SIR (Selected Ion Recording) is Waters' SIM. A plain MS scan is a scan. MRM
+    monitors chosen transitions, as SIM does ions. Other MS modes
+    (parent/daughter scans) are left untagged so the exporter falls back to
+    treating only single-ion data as SIM.
     """
-    if func_type == _FUNC_TYPE_SIR:
-        return 'SIM'
-    if func_type == _FUNC_TYPE_MS_SCAN:
-        return 'Scan'
-    return None
+    return {_FUNC_TYPE_SIR: 'SIM', _FUNC_TYPE_MRM: 'MRM',
+            _FUNC_TYPE_MS_SCAN: 'Scan'}.get(func_type)
 
 
 def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
@@ -260,40 +281,79 @@ def parse_function(path, display_precision=0, bin_width=1.0, polarity=None,
         parse_funcdat = parse_funcdat8
     elif bytes_per_pair == 4:
         parse_funcdat = parse_funcdat4
-    # Spectra without an assigned polarity always contain UV data.
-    detector = 'MS' if polarity else 'UV'
-    metadata = {'polarity': polarity} if polarity else {}
+    # The function type says which detector recorded the function: only a
+    # diode array is UV. Without _FUNCTNS.INF (PE exports), a function
+    # _extern.inf gives a polarity is MS (a polarity is an ion source's); one
+    # with neither states no detector, and it is left unstated (None) rather
+    # than guessed, which DataDirectory files with the analog channels.
+    if func_type is not None:
+        detector = 'UV' if func_type == _FUNC_TYPE_DIODE_ARRAY else 'MS'
+    else:
+        detector = 'MS' if polarity else None
+    metadata = {'polarity': polarity} if polarity and detector == 'MS' else {}
+    if func_type == _FUNC_TYPE_DIODE_ARRAY:
+        # the function type states the detector: MassLynx's diode array
+        metadata['device_type'] = 'diode array detector'
 
     # bin_width is an m/z control, so it only applies to the m/z functions. A
     # wavelength axis binned to an m/z width would quietly merge DAD channels
     # (at bin_width=5.0 a 190-wavelength trace came back as 39, five nanometres
     # to a column), and nothing warns about it: the too-fine-bin_width check
-    # only looks at MS files.
-    #
+    # only looks at MS files. An axis whose detector is unstated is not known
+    # to be either, so no width applies: its keys are taken as recorded.
     is_wavelength = _is_wavelength_axis(func_type, detector)
+    width = (_UV_WAVELENGTH_STEP if is_wavelength
+             else RECORDED if detector is None else bin_width)
     ylabels, data = parse_funcdat(
-        path, pair_counts, display_precision,
-        _UV_WAVELENGTH_STEP if is_wavelength else bin_width, calib,
-        labels_only)
+        path, pair_counts, display_precision, width, calib, labels_only)
+
+    # An MRM function's columns are its transitions. _FUNCTNS.INF states each
+    # one's precursor (read above as the labels) and product; the product is
+    # the ion each column measured, so it labels the column, and each
+    # column's transition is stated in column order.
+    if func_type == _FUNC_TYPE_MRM and parse_funcdat in (
+            parse_funcdat2, parse_funcdat4):
+        transitions = _mrm_transitions(dat_dir, root)
+        if transitions is not None and len(transitions) == len(ylabels):
+            ylabels = np.array([t['product_mz'] for t in transitions])
+            metadata['transitions'] = transitions
 
     return DataFile(path, detector, times, ylabels, data, metadata)
+
+
+def _mrm_transitions(dat_dir, root):
+    """
+    Each transition an MRM function monitored, in column order:
+    ``{'precursor_mz', 'product_mz'}``, from its _FUNCTNS.INF record (the
+    precursors' block at offset 160, the products' at 288).
+
+    Args:
+        dat_dir (str): The .raw directory.
+        root (str): The function's file stem (``_FUNC001``).
+
+    Returns:
+        List of dictionaries, or None without _FUNCTNS.INF.
+
+    """
+    inf_path = _find_file_path(dat_dir, '_FUNCTNS.INF')
+    if inf_path is None:
+        return None
+    func_index = int(re.findall(r"\d+", root)[0]) - 1
+    precursors = parse_funcinf(inf_path)[func_index]
+    products = parse_funcinf_q3(inf_path)[func_index]
+    used = precursors != 0.0
+    # float32 as stored, given as the shortest decimal that reads back to it.
+    return [{'precursor_mz': float(str(p)), 'product_mz': float(str(q))}
+            for p, q in zip(precursors[used], products[used])]
 
 
 def _is_wavelength_axis(func_type, detector):
     """Whether a function's y-axis is wavelength rather than m/z.
 
-    The recorded function type decides it where there is one, because the
-    polarity that names the detector comes from separate metadata that can be
-    missing: white.raw records six MRM functions with m/z axes and no polarity
-    for any of them, so the polarity alone calls an m/z axis a wavelength axis
-    and would exempt it from the caller's bin_width. Only a function the file
-    calls a diode array is treated as wavelength; without a type, fall back to
-    the polarity.
-
-    No bundled fixture shows the difference in the output: white.raw's six
-    functions all store their labels in the INF (the 2/4-byte formats) and are
-    never binned whichever way this answers, so the rule is pinned by its own
-    tests rather than by an expected-output file.
+    The recorded function type decides it where there is one: only a function
+    the file calls a diode array is treated as wavelength. Without a type
+    (no _FUNCTNS.INF), the detector decides, as the polarity named it; an
+    unstated detector (None) is not known to be wavelength.
     """
     if func_type is not None:
         return func_type == _FUNC_TYPE_DIODE_ARRAY

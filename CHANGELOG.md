@@ -28,8 +28,105 @@ to [Semantic Versioning](https://semver.org/).
   DAD spectrum carries the HPLC scale factor) and `tests/inputs/lime.sirslt`
   (an HPLC run with one DAD signal), anonymised as
   `tests/inputs/README_sirslt.md` describes.
+- **`bin_width='recorded'` (`rb.RECORDED`) reads m/z as the file stores
+  them.** No width is chosen and nothing is merged: an Agilent .ms file, a
+  Waters function and an uncalibrated MassHunter centroid get one column per
+  distinct stored m/z, labelled by it unrounded, with
+  `metadata["mz_spacing"]`, the smallest gap between two of them as measured
+  on the file (not for SIM or MRM). The HRMS profile and a calibrated TOF
+  centroid, whose m/z are continuous, stay per scan. `display_precision` does
+  not apply.
+- **ChemStation MS files state their method signal by number.**
+  `MSD<n>.MS` takes `[Signal n]`'s settings and `metadata["method_signal"]`;
+  the ions or range the file recorded are a check. Scan signals state their
+  table (`scan_parameters`) and step (`mz_step`). A method of several MS
+  detectors is read per detector (`agilent.method.ms_detectors`), each file
+  paired with the detector its header names (`method_detector`).
+- **What says an MS file's mode is stated.** `metadata["acquisition_mode_from"]`:
+  `scans`, `method report`, `file name` or `one m/z column`.
+
+- **Agilent ChemStation LC/MS files state what the method says of their
+  signal.** Each MS DataFile's metadata has, where the method's signal it
+  holds (`MSD<n>.MS` holds `[Signal n]`) states it,
+  `polarity` (`+`/`-`), `ionization_mode`, `fragmentor` (V; where every row
+  of the signal's table states the same one) and
+  `monitored_ions` (a SIM signal's ions in the method's order, each
+  `{mz, fragmentor, compound}`), read from `acq.macaml`, else from the method
+  report as run (`acq.txt`, or older ChemStation's `ACQ.M/ACQ.TXT`, UTF-8 or
+  UTF-16); see `agilent.method.ms_signals`.
+- **Agilent MassHunter MRM transitions carry their compound names.** A .D
+  whose `AcqData/AcqMethod.xml` names the compound for each MRM transition
+  now has `metadata["monitored_compounds"]`: one
+  `{compound, precursor_mz, product_mz, collision_energy}` per transition, in
+  the method's order.
+- **`rb.read_metadata` states an Agilent .D's injection time as `read()`
+  does.** It read no data file, so a run with any sidecar came back without
+  its `date` (and `utc_offset`, `vialpos`); it now reads them from the
+  Chemstation files' headers alone (`chemstation.parse_header`, a few hundred
+  bytes per file), and states the method's `technique` too, so its metadata
+  equals `read().metadata` for every Agilent fixture. A MassHunter run's own
+  `.ch`/`.uv`/`.ms` files, which `read()` parses, are now listed beside its
+  `AcqData` files.
+- **Agilent MassHunter MS files state each scan's record.** An MS DataFile
+  read from `MSScan.bin` (`MSPeak.bin`, `MSProfile.bin`, ICP-MS) has
+  `metadata["scans"]`: one array per field, one entry per row, giving the
+  `scan_type` (`Scan`, `SIM`, `MRM`, ...), `monitoring` (SIM or MRM),
+  `ms_level`, `polarity` (`+`/`-`), `collision_energy`, `precursor_mz` and
+  the measured `mz_range_min`/`mz_range_max`, each where the run's schema
+  records it. A simultaneous SIM/Scan run's interleaved scans are told apart
+  by it.
+
+- **`rb.measurements(datadir)` reads a run's measurements without building
+  an ASM document** (also `DataDirectory.measurements()`). One dict per
+  measurement `to_asm` writes (DAD spectra aside): its identifier, data file,
+  label, technique, detector, m/z, channel metadata and unit, the trace as
+  numpy arrays (`times` in minutes, `values` as `from_asm` rebuilds them),
+  the sample and injection fields, measurement time, acquisition method, its
+  peaks as `peaks_from_asm` reads them, and the measurement document itself.
+  The measurements are made by `to_asm`'s own builders and read by
+  `from_asm`'s readers, so the two agree (tested field by field on every
+  bundled run); no array becomes a Python list, nothing goes through JSON,
+  and no trace is rebuilt. What is said only of a document (that it will not
+  validate, that a channel is published relabeled or left out) is not said.
+- **A `.sirslt` run states what a `.D` run states after its data files.**
+  Both go through one step, `agilent.method.state_run`; a `.sirslt` is laid
+  out as a `.D` for it, the archive's `MSData/` as its `AcqData`. Its MS
+  files state the acquisition mode their scans state
+  (`acquisition_mode`, `acquisition_modes`, `acquisition_mode_from`), and
+  the method and sample sidecars it holds (an `MSData/AcqMethod.xml`'s
+  `monitored_compounds`) state what they say, in `read` and
+  `read_metadata` alike. What the run does not record is not stated: the
+  bundled `olive.sirslt` holds no acquisition method, so its MS signal's
+  settings and compounds are not stated.
 
 ### Changed
+- **MassHunter scan records are read in one pass.** `read_scan_table` reads
+  MSScan.bin as a numpy structured array (`record_dtype`, from MSScan.xsd),
+  in place of a `struct` call per field; the MS parsers, `scan_times` and
+  `scan_metadata` use it, and MSPeak.bin is read once and decoded a block
+  width at a time. A 13,811-scan centroid read takes about 7 ms in place of
+  about 90 ms, with the same result. `read_scan_records` still gives one
+  dictionary per record.
+- **A file's scans decide its acquisition mode over the method report.**
+  Where the report states another, the scans' mode and records stay, and the
+  report's is kept in `metadata["method_disagrees"]`. A MassHunter file whose
+  scans all state one of SIM, Scan or MRM is tagged with it.
+- **A method's setting that disagrees with the file is kept apart.** Where a
+  SIM signal's ions are not the ones the file recorded (compared at the
+  coarser of the .ms 0.05 m/z step and the method's written precision), or a
+  Scan range does not hold the file's m/z, nothing of the signal goes on the
+  file: `method_disagrees` holds its `signal` number and whole `settings`. A
+  single setting the file states otherwise (its polarity) stays the file's,
+  the method's kept in `method_disagrees`. The ±0.5 m/z label match is gone.
+- **A Waters function nothing names is not called UV.** Without
+  `_FUNCTNS.INF` and a polarity its detector is unstated (None), its axis
+  read as recorded. A multi-column one stays in `DataDirectory.datafiles`
+  (in no `by_detector` entry), not among the analog traces; ASM has no cube
+  for an axis of unknown kind and says so.
+- **A DAD spectrum in a unit rainbow cannot place says so in ASM**, as a
+  chromatogram does: published under mAU, unscaled, with the note naming the
+  file's unit, which `from_asm` reads back.
+
 - **Python 3.11 or later.** rainbow now requires Python 3.11 (was 3.8), the
   oldest release still supported upstream; wheels are built for 3.11 to 3.13.
   On older Python, pip keeps installing rainbow 1.5.5.
@@ -56,6 +153,12 @@ to [Semantic Versioning](https://semver.org/).
   `Padding` element whose type is declared inline, which made the schema
   unreadable; it has no stored bytes and is now skipped. Any other element with
   an inline type, which rainbow cannot size, is refused rather than skipped.
+- **Waters file names are matched regardless of case everywhere.**
+  `waters.read_metadata` found a .raw folder's `_FUNC`/`_CHRO` files only by
+  their names' exact upper case, so a folder named in lower case (a
+  PerkinElmer export) seemed to hold none; it now lists them as they are on
+  disk. `waters.read(requested_files=)` matched only lower-case names when
+  called directly; it now takes them in any case, as `rb.read` does.
 
 ## [1.5.5] - 2026-10-17
 

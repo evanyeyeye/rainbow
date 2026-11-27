@@ -11,7 +11,15 @@
             "shape": [469, 851],
             "metadata": {
                 "date": "14 Nov 19   3:08 pm -0500", 
-                "method": "PURITY_HPLC.M"
+                "method": "PURITY_HPLC.M",
+                "acquisition_mode": "Scan",
+                "polarity": "+",
+                "ionization_mode": "API-ES",
+                "fragmentor": 70.0,
+                "acquisition_mode_from": "scans",
+                "method_signal": 1,
+                "scan_parameters": [{"time": 0.0, "mz_low": 150.0, "mz_high": 1000.0, "fragmentor": 70.0, "mz_step": 0.1}],
+                "mz_step": 0.1
             }
         },
         "ADC1A.CH": {

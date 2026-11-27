@@ -9,7 +9,10 @@
         "MSProfile.bin": {
             "detector": "MS",
             "shape": [1861, 2],
-            "metadata": {}
+            "metadata": {
+                "acquisition_mode": "MRM",
+                "acquisition_mode_from": "scans"
+            }
         }
     }
 }

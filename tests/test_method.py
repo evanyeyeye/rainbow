@@ -358,6 +358,59 @@ def test_tag_acquisition_modes_single_ion_is_sim_without_a_report(tmp_path):
     assert "acquisition_mode" not in scan.metadata
 
 
+def test_tag_acquisition_modes_a_files_scans_decide_over_the_report(tmp_path):
+    # Where the method report says the other of what an .ms file's scan records
+    # state, the scans (the data) decide and stay as they are; the report's
+    # mode is kept as a disagreement. With no report the file keeps the mode
+    # its scans state, whatever its number of ions.
+    import numpy as np
+    d = tmp_path / "x.D"
+    d.mkdir()
+    _write_acqmeth(d, "SIM")
+    told = _ms_file("MSD2.MS", 2)
+    told.metadata["acquisition_mode"] = "Scan"
+    told.metadata["scans"] = {"scan_type": np.array(["Scan"] * 5),
+                              "monitoring": np.zeros(5, dtype=bool)}
+    method.tag_acquisition_modes(str(d), [told])
+    assert told.metadata["acquisition_mode"] == "Scan"
+    assert told.metadata["acquisition_mode_from"] == "scans"
+    assert told.metadata["method_disagrees"] == {"acquisition_mode": "SIM"}
+    assert not told.metadata["scans"]["monitoring"].any()
+    assert set(told.metadata["scans"]["scan_type"]) == {"Scan"}
+    bare = tmp_path / "y.D"
+    bare.mkdir()
+    one = _ms_file("MSD1.MS", 1)
+    one.metadata["acquisition_mode"] = "Scan"
+    method.tag_acquisition_modes(str(bare), [one])
+    assert one.metadata["acquisition_mode"] == "Scan"
+    assert "method_disagrees" not in one.metadata
+
+
+def test_tag_acquisition_modes_says_what_said_the_mode(tmp_path):
+    # Scans that state nothing: a pure method's report says it; a simultaneous
+    # run's file name; with no report, one m/z column.
+    d = tmp_path / "x.D"
+    d.mkdir()
+    _write_acqmeth(d, "SIM")
+    sim = _ms_file("MSD1.MS", 3)
+    method.tag_acquisition_modes(str(d), [sim])
+    assert (sim.metadata["acquisition_mode"],
+            sim.metadata["acquisition_mode_from"]) == ("SIM", "method report")
+    both = tmp_path / "y.D"
+    both.mkdir()
+    _write_acqmeth(both, "SIM/Scan")
+    named = _ms_file("dataSim.ms", 3)
+    method.tag_acquisition_modes(str(both), [named])
+    assert (named.metadata["acquisition_mode"],
+            named.metadata["acquisition_mode_from"]) == ("SIM", "file name")
+    bare = tmp_path / "z.D"
+    bare.mkdir()
+    one = _ms_file("MSD1.MS", 1)
+    method.tag_acquisition_modes(str(bare), [one])
+    assert (one.metadata["acquisition_mode"],
+            one.metadata["acquisition_mode_from"]) == ("SIM", "one m/z column")
+
+
 # Shared synthetic .D for the read-only tests, built once under a temp dir.
 _D_TMP = None
 
@@ -375,3 +428,370 @@ def _make_d_tmp():
             f.write(_sample_xml("C:\\Methods\\m.M").encode("utf-16"))
         _D_TMP = d
     return _D_TMP
+
+
+# One row of a MassHunter method report's ion table, as the report holds it.
+_ION_ROW = ("<Section><TableID>ScanType_8</TableID><RowIndex>{row}</RowIndex>"
+            "<ParameterID>{parameter}</ParameterID>"
+            "<ParameterValue>{value}</ParameterValue></Section>")
+
+
+def _write_acq_method_xml(directory, ions):
+    """
+    Writes a minimal AcqData/AcqMethod.xml listing ``ions``, each a
+    ``(compound, precursor, product, collision energy)`` tuple with invented
+    names. The device report is an XML document held as escaped text, as
+    MassHunter writes it.
+    """
+    from xml.sax.saxutils import escape
+    rows = "".join(
+        _ION_ROW.format(row=row, parameter=parameter, value=escape(str(value)))
+        for row, (name, precursor, product, energy) in enumerate(ions)
+        for parameter, value in (("CompoundName", name),
+                                 ("Report__Header_PrecursorIon", precursor),
+                                 ("Report__Header_ProductIon", product),
+                                 ("Collision_Energy", energy)))
+    report = ('<?xml version="1.0" standalone="yes"?>'
+              '<DSRdlReport xmlns="http://tempuri.org/DSRdlReport.xsd">'
+              f"{rows}</DSRdlReport>")
+    acq = directory / "AcqData"
+    acq.mkdir()
+    (acq / "AcqMethod.xml").write_text(
+        "<DataFileMethodReport><MethodReport><RCDevicesXml>"
+        f"{escape(report)}</RCDevicesXml></MethodReport>"
+        "</DataFileMethodReport>", encoding="utf-8")
+
+
+def test_monitored_compounds_read_from_masshunter_method(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    _write_acq_method_xml(d, [("<A>", 512.3, 150, 20),
+                              ("IS-1", 300.2, 110, ""),
+                              ("", 250.0, 100, 10)])  # names no compound
+    md = method.parse_injection_metadata(str(d))
+    assert md["monitored_compounds"] == [
+        {"compound": "<A>", "precursor_mz": 512.3, "product_mz": 150.0,
+         "collision_energy": 20.0},
+        {"compound": "IS-1", "precursor_mz": 300.2, "product_mz": 110.0,
+         "collision_energy": None},
+    ]
+
+
+def test_monitored_compounds_reach_the_directory_metadata(tmp_path):
+    import rainbow as rb
+    d = tmp_path / "x.D"
+    d.mkdir()
+    _write_acq_method_xml(d, [("<A>", 512.3, 150, 20)])
+    assert rb.read(str(d)).metadata["monitored_compounds"] == [
+        {"compound": "<A>", "precursor_mz": 512.3, "product_mz": 150.0,
+         "collision_energy": 20.0}]
+
+
+def test_monitored_compounds_missing_or_unreadable_is_absent(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    assert "monitored_compounds" not in method.parse_injection_metadata(str(d))
+    (d / "AcqData").mkdir()
+    (d / "AcqData" / "AcqMethod.xml").write_text("not xml at all <<<")
+    assert method.parse_injection_metadata(str(d)) == {}
+
+
+# ---- what a ChemStation LC/MS method states of each MS signal ----
+
+# The MS section of a ChemStation method report, laid out as acq.txt writes
+# it: a Scan signal, a SIM signal of two ions (one naming no compound), and an
+# inactive one; a later heading's Polarity is not a signal's.
+MS_REPORT = """\
+=====================================================================
+                       Mass Spectrometer Detector
+=====================================================================
+
+Mass Spectrometer Detector (G6135B)
+===================================
+
+General Information
+------- -----------
+
+Use MSD                  : Enabled
+Polarity Switch Delay    : 50 ms
+
+
+Signals
+-------
+
+[Signal 1]
+
+Ionization Mode          : AJS-ES
+Polarity                 : Negative
+Fragmentor Ramp          : Disabled
+
+Scan Parameters
+
+   Time |      Mass Range    |Frag- | Gain|Thres-| Step-
+  (min) |    Low   |  High   |mentor| EMV | hold | size
+ -------|----------|---------|------|-----|------|-------
+    2.50    800.00   1900.00    80    1.0       0  0.20
+
+
+[Signal 2]
+
+Ionization Mode          : AJS-ES
+Polarity                 : Negative
+
+Sim Parameters
+
+  Time  |                  |  SIM   |Frag- |Gain |Actual|               |
+  (min) |    Group Name    |  Ion   |mentor|EMV  |Dwell | Compound Name |ISTD
+ -------|------------------|--------|------|-----|------|---------------|----
+    2.50 1                  1247.60   200    1.0    39   Cpd A-x          0
+                            1511.70   150           39                    0
+
+    4.00 2                  1601.20   150    1.0    39   A-very-long-compound 0
+
+
+[Signal 3]
+
+Not Active
+
+
+[Signal 4]
+
+Ionization Mode          : AJS-ES
+Polarity                 : Positive
+
+Sim Parameters
+
+  Time  |                  |  SIM   |Frag- |Gain |Actual|               |
+  (min) |    Group Name    |  Ion   |mentor|EMV  |Dwell | Compound Name |ISTD
+ -------|------------------|--------|------|-----|------|---------------|----
+    0.00 1                   333.30   100    1.0    80   Cpd C            0
+
+
+Spray Chamber
+----- -------
+
+Polarity                 : Positive
+
+                      END OF MS ACQUISITION PARAMETERS
+"""
+
+SIGNALS = {
+    # a Scan signal's table rows, and the step every row states
+    1: {"polarity": "-", "ionization_mode": "AJS-ES", "fragmentor": 80.0,
+        "mz_step": 0.2,
+        "scan_parameters": [{"time": 2.5, "mz_low": 800.0, "mz_high": 1900.0,
+                             "fragmentor": 80.0, "mz_step": 0.2}]},
+    # a SIM table's second group, after a blank line, is read too; a name
+    # running past its column's bar stays whole
+    2: {"polarity": "-", "ionization_mode": "AJS-ES",
+        "monitored_ions": [
+            {"mz": 1247.6, "fragmentor": 200.0, "compound": "Cpd A-x"},
+            {"mz": 1511.7, "fragmentor": 150.0, "compound": None},
+            {"mz": 1601.2, "fragmentor": 150.0,
+             "compound": "A-very-long-compound"}]},
+    # every ion at one fragmentor: the signal's fragmentor
+    4: {"polarity": "+", "ionization_mode": "AJS-ES", "fragmentor": 100.0,
+        "monitored_ions": [{"mz": 333.3, "fragmentor": 100.0, "compound": "Cpd C"}]},
+}
+
+
+def _ms_acaml(signals):
+    """An acq.macaml whose MS detector section holds these signals:
+    [(polarity, [scan rows], [sim rows])], each row a dict of its ids."""
+    def table(id_, rows):
+        if not rows:
+            return ""
+        body = "".join(
+            "<Row>" + "".join(
+                f"<Parameter><ID>{k}</ID><Value>{v}</Value></Parameter>"
+                for k, v in row.items()) + "</Row>" for row in rows)
+        return (f"<Section><Name>p</Name><ID>p</ID>"
+                f"<Table><ID>{id_}</ID>{body}</Table></Section>")
+    sections = "".join(
+        f"<Section><Name>[Signal {n}]</Name><ID>[Signal{n}]</ID>"
+        f"<Parameter><ID>IonizationMode</ID><Value>API-ES</Value></Parameter>"
+        f"<Parameter><ID>Polarity</ID><Value>{pol}</Value></Parameter>"
+        + table("ScanParameters", scan) + table("SimParameters", sim)
+        + "</Section>"
+        for n, (pol, scan, sim) in enumerate(signals, 1))
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<ACAML xmlns="urn:schemas-agilent-com:acaml15"><Doc><Content>
+<MethodConfiguration><MethodDescription>
+<Section><Name>Acquisition Method</Name><ID>Acquisition_Method</ID>
+<Section><Name>Mass Spectrometer Detector (G6135B)</Name><ID>MSD</ID>
+<Section><Name>Signals</Name><ID>Signals</ID>{sections}</Section>
+</Section></Section></MethodDescription></MethodConfiguration></Content></Doc>
+</ACAML>
+"""
+
+
+def test_ms_signals_read_from_the_method_report_in_utf16(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    assert method.ms_signals(str(d)) == SIGNALS
+
+
+def test_ms_signals_read_from_an_older_acq_m_report(tmp_path):
+    d = tmp_path / "x.D"
+    (d / "ACQ.M").mkdir(parents=True)
+    (d / "ACQ.M" / "ACQ.TXT").write_bytes(MS_REPORT.encode("utf-8"))
+    assert method.ms_signals(str(d)) == SIGNALS
+
+
+def test_ms_signals_read_from_acq_macaml_first(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    (d / "acq.macaml").write_text(_ms_acaml([
+        ("Positive", [{"Fragmentor": "70"}, {"Fragmentor": "90"}], []),
+        ("Negative", [], [{"SIMIon": "300.10", "Fragmentor": "100",
+                           "CompoundName": "B"}]),
+        ("Alternating", [{"Fragmentor": "70"}], [])]), encoding="utf-8")
+    assert method.ms_signals(str(d)) == {
+        # two Scan rows of different fragmentors state no one fragmentor;
+        # each row keeps its own
+        1: {"polarity": "+", "ionization_mode": "API-ES",
+            "scan_parameters": [{"fragmentor": 70.0}, {"fragmentor": 90.0}]},
+        2: {"polarity": "-", "ionization_mode": "API-ES", "fragmentor": 100.0,
+            "monitored_ions": [{"mz": 300.1, "fragmentor": 100.0, "compound": "B"}]},
+        # a polarity word other than Positive or Negative is not read
+        3: {"ionization_mode": "API-ES", "fragmentor": 70.0,
+            "scan_parameters": [{"fragmentor": 70.0}]}}
+
+
+def test_ms_signals_absent_without_a_method(tmp_path):
+    d = tmp_path / "x.D"
+    d.mkdir()
+    assert method.ms_signals(str(d)) == {}
+    (d / "acq.txt").write_bytes("General Information\n".encode("utf-16"))
+    assert method.ms_signals(str(d)) == {}
+
+
+def _ms_file_of(name, mz, mode=None):
+    """A synthetic MS DataFile recording these ions (its m/z labels)."""
+    import numpy as np
+    from rainbow.datafile import DataFile
+    metadata = {"acquisition_mode": mode} if mode else {}
+    return DataFile(name, "MS", np.arange(5, dtype=float), np.asarray(mz, dtype=float),
+                    np.ones((5, len(mz)), dtype=np.uint32), metadata)
+
+
+def test_ms_signals_tag_the_file_by_the_number_both_state(tmp_path):
+    """MSD<n>.MS holds [Signal n]. What the file recorded is a check: ions the
+    method names that the file did not record, at the coarser of the .ms
+    format's 0.05 step and the method's two decimals, are kept as a
+    disagreement and not put on the file. A file whose number names no active
+    signal is left as it is."""
+    import numpy as np
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    scan = _ms_file_of("MSD1.MS", np.arange(800.0, 1900.0, 1.0), "Scan")
+    sim = _ms_file_of("MSD2.MS", [1247.6, 1511.7, 1601.2], "SIM")
+    off = _ms_file_of("MSD3.MS", [333.3], "SIM")
+    other = _ms_file_of("MSD4.MS", [500.0], "SIM")
+    method.tag_ms_signals(str(d), [scan, sim, off, other])
+    assert scan.metadata == {"acquisition_mode": "Scan", "method_signal": 1,
+                             **SIGNALS[1]}
+    assert sim.metadata == {"acquisition_mode": "SIM", "method_signal": 2,
+                            **SIGNALS[2]}
+    assert off.metadata == {"acquisition_mode": "SIM"}
+    assert other.metadata == {"acquisition_mode": "SIM",
+                              "method_disagrees": {"signal": 4,
+                                                   "settings": SIGNALS[4]}}
+
+
+def test_ms_signals_a_files_own_statement_stays(tmp_path):
+    """Labels 0.4 from the method's ions are other ions, not the method's
+    rounded: nothing of the signal goes on the file. Where the ions agree, a
+    polarity the file states stays, the method's kept beside it."""
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    sim = _ms_file_of("MSD2.MS", [1248.0, 1512.0, 1601.0], "SIM")
+    sim.metadata["polarity"] = "+"
+    method.tag_ms_signals(str(d), [sim])
+    assert sim.metadata == {"acquisition_mode": "SIM", "polarity": "+",
+                            "method_disagrees": {"signal": 2,
+                                                 "settings": SIGNALS[2]}}
+    same = _ms_file_of("MSD2.MS", [1247.6, 1511.7, 1601.2], "SIM")
+    same.metadata["polarity"] = "+"
+    method.tag_ms_signals(str(d), [same])
+    assert same.metadata["polarity"] == "+"
+    assert same.metadata["monitored_ions"] == SIGNALS[2]["monitored_ions"]
+    assert same.metadata["method_disagrees"] == {"polarity": "-"}
+
+
+def test_ms_signals_a_scan_range_that_misses_the_file(tmp_path):
+    import numpy as np
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(MS_REPORT.encode("utf-16"))
+    scan = _ms_file_of("MSD1.MS", np.arange(100.0, 500.0, 1.0), "Scan")
+    method.tag_ms_signals(str(d), [scan])
+    assert scan.metadata == {"acquisition_mode": "Scan", "method_disagrees": {
+        "signal": 1,
+        "settings": dict(SIGNALS[1], scan_range=(800.0, 1900.0))}}
+
+
+def test_ms_detectors_two_in_one_report(tmp_path):
+    """A report of two MS detectors states each one's signals; a file is
+    paired with the detector its header names (MSD<k>)."""
+    second = MS_REPORT.split("Mass Spectrometer Detector (G6135B)", 1)[1]
+    second = second.replace("Negative", "Positive").split("Spray Chamber", 1)[0]
+    report = MS_REPORT.replace(
+        "Spray Chamber", "Mass Spectrometer Detector (G6125C)" + second
+        + "Spray Chamber", 1)
+    d = tmp_path / "x.D"
+    d.mkdir()
+    (d / "acq.txt").write_bytes(report.encode("utf-16"))
+    detectors = method.ms_detectors(str(d))
+    assert [x["name"] for x in detectors] == ["G6135B", "G6125C"]
+    assert detectors[0]["signals"][1]["polarity"] == "-"
+    assert detectors[1]["signals"][1]["polarity"] == "+"
+    assert method.ms_signals(str(d)) == {}
+
+    def ms_file(name, header):
+        raw = bytearray(0x200)
+        text = header.encode("latin-1")
+        raw[0x140] = len(text)
+        raw[0x141:0x141 + len(text)] = text
+        (d / name).write_bytes(bytes(raw))
+    import numpy as np
+    ms_file("MSD1.MS", "MSD2, Initial Scan Range=800.0-1900.0")
+    one = _ms_file_of("MSD1.MS", np.arange(800.0, 1900.0, 1.0), "Scan")
+    method.tag_ms_signals(str(d), [one])
+    assert (one.metadata["method_detector"], one.metadata["method_signal"],
+            one.metadata["polarity"]) == (2, 1, "+")
+    ms_file("MSD1.MS", "Initial Scan Range=800.0-1900.0")
+    bare = _ms_file_of("MSD1.MS", np.arange(800.0, 1900.0, 1.0), "Scan")
+    method.tag_ms_signals(str(d), [bare])
+    assert "method_signal" not in bare.metadata
+
+
+def test_ms_signals_two_alike_go_by_the_files_number(tmp_path):
+    """Two Scan signals over one range: the one numbered as the file is its;
+    a file of another name, among several, is left untagged."""
+    d = tmp_path / "x.D"
+    d.mkdir()
+    scan = {"MassRangeLow": "100", "MassRangeHigh": "500"}
+    (d / "acq.macaml").write_text(_ms_acaml([
+        ("Positive", [{"Fragmentor": "70", **scan}], []),
+        ("Negative", [{"Fragmentor": "90", **scan}], [])]), encoding="utf-8")
+    one = _ms_file_of("MSD1.MS", [150.0, 300.0], "Scan")
+    two = _ms_file_of("MSD2.MS", [150.0, 300.0], "Scan")
+    other = _ms_file_of("scan.ms", [150.0, 300.0], "Scan")
+    method.tag_ms_signals(str(d), [one, two, other])
+    assert (one.metadata["polarity"], two.metadata["polarity"]) == ("+", "-")
+    assert other.metadata == {"acquisition_mode": "Scan"}
+
+
+def test_acq_macaml_is_parsed_once_per_read(monkeypatch):
+    import rainbow as rb
+    from rainbow.agilent import acaml
+    calls = []
+    real = acaml.read
+    monkeypatch.setattr(acaml, "read", lambda src: calls.append(src) or real(src))
+    rb.read("tests/inputs/red.D")
+    assert len(calls) == 1

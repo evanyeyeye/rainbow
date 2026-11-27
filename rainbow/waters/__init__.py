@@ -37,6 +37,10 @@ def read(path, display_precision='auto', requested_files=None,
         display_precision = 0
     if bin_width is None:
         bin_width = 1.0
+    # File names are matched regardless of case (a PerkinElmer export names
+    # them _func001.dat), so the requested names are too.
+    if requested_files:
+        requested_files = [str(name).lower() for name in requested_files]
     datafiles = []
     datafiles.extend(masslynx.parse_spectrum(
         path, display_precision, bin_width, requested_files, _labels_only))
@@ -65,9 +69,15 @@ def read_metadata(path):
             return {'datafiles': datadir.datafiles + datadir.analog, 'metadata': metadata}
         return None
 
-    datafiles = [fn for fn in os.listdir(path) if re.match(r'^_FUNC\d{3}.DAT$', fn)]
-    if '_CHROMS.INF' in os.listdir(path):
-        analog_info = masslynx.parse_chroinf(os.path.join(path, '_CHROMS.INF'))
+    # Names are matched regardless of case, as read() matches them, and listed
+    # as they are on disk, so each is a name read(requested_files=) takes.
+    datafiles = sorted(fn for fn in os.listdir(path)
+                       if re.match(r'^_FUNC\d{3}\.DAT$', fn, re.IGNORECASE))
+    chroms_inf = masslynx._find_file_path(path, '_CHROMS.INF')
+    if chroms_inf is not None:
+        analog_info = masslynx.parse_chroinf(chroms_inf)
         for i in range(len(analog_info)):
-            datafiles.append(f"_CHRO{i + 1:0>3}.DAT")
+            name = masslynx._find_file(path, f"_CHRO{i + 1:0>3}.DAT")
+            if name is not None:
+                datafiles.append(name)
     return {'datafiles': datafiles, 'metadata': metadata}

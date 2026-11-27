@@ -486,22 +486,23 @@ def test_a_partial_ms_file_can_return_the_labels_alone():
 
 def test_the_probe_does_not_build_the_grid_it_never_reads():
     # The measurement the flag exists for. mz_resolution reads nothing but the
-    # m/z axis, and yellow.D holds a MassHunter centroid beside a Chemstation
-    # channel, which is the shape that sends the probe through both.
+    # m/z axis; yellow.D's data.ms and dataSim.ms are read on the probe grid.
     import tracemalloc
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         tracemalloc.start()
         try:
-            rb.mz_resolution("tests/inputs/yellow.D", centroid=True)
+            rb.mz_resolution("tests/inputs/yellow.D")
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
 
-    # Building both grids costs about 64 MB here against 26. The bound is
-    # generous: it is meant to catch a grid coming back, not to pin a number.
-    assert peak < 45e6
+    # Measured (tracemalloc, fresh process, three runs alike): 11.5 MB peak
+    # for this probe, 17.8 MB for the same read building its grids (4.7 MB of
+    # them). The bound leaves 3 MB above the measured peak and sits 3.3 MB
+    # under the grid-building read, so a grid coming back fails it.
+    assert peak < 14.5e6
 
 
 def test_the_agilent_floor_matches_the_lattice_the_format_stores():
@@ -525,3 +526,95 @@ def test_the_agilent_floor_matches_the_lattice_the_format_stores():
                                  display_precision=2)
     assert labels.size == 2
     np.testing.assert_allclose(labels, [989.75, 989.8])
+
+
+# --- bin_width='recorded': each stored m/z its own column ---
+
+def test_recorded_keeps_ions_closer_than_any_width_apart():
+    """Two ions 0.03 apart on a 0.01 grid stay two columns, labelled as
+    stored, each column's values those of its m/z alone."""
+    keys = np.array([500.00, 500.03, 500.00, 500.03, 612.01])
+    values = np.array([1, 2, 3, 4, 5])
+    ylabels, data = bin_datapairs(keys, values, np.array([2, 3]), "recorded")
+    assert ylabels.tolist() == [500.00, 500.03, 612.01]
+    assert data.tolist() == [[1, 2, 0], [3, 4, 5]]
+
+
+def test_recorded_sums_only_one_scans_pairs_at_one_key():
+    keys = np.array([100.05, 100.05, 100.1])
+    ylabels, data = bin_datapairs(keys, np.array([1, 2, 4]), np.array([3]),
+                                  "recorded")
+    assert ylabels.tolist() == [100.05, 100.1]
+    assert data.tolist() == [[3, 4]]
+
+
+def test_recorded_ignores_display_precision():
+    ylabels, _ = bin_datapairs(np.array([1234.5678, 1234.5679]),
+                               np.array([1, 1]), np.array([2]), "recorded",
+                               display_precision=0)
+    assert ylabels.tolist() == [1234.5678, 1234.5679]
+
+
+def test_recorded_read_matches_the_stored_mz():
+    """An .ms file read as recorded gives the m/z its shorts store (n / 20),
+    every one, and states the spacing it measured; nothing warns."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        datadir = rb.read("tests/inputs/orange.D", bin_width="recorded")
+    ms = datadir.get_file("MSD1.MS")
+    labels = np.asarray(ms.ylabels)
+    assert np.allclose(labels * 20, np.round(labels * 20), atol=1e-6)
+    binned = rb.read("tests/inputs/orange.D", bin_width=0.05).get_file("MSD1.MS")
+    assert len(labels) == len(binned.ylabels)
+    assert np.asarray(ms.data).sum() == np.asarray(binned.data).sum()
+    assert ms.metadata["mz_spacing"] == 0.1      # exact, no float noise
+
+
+def test_recorded_states_no_spacing_for_chosen_ions():
+    datadir = rb.read("tests/inputs/green.D", bin_width="recorded")
+    assert all("mz_spacing" not in f.metadata
+               for f in datadir.datafiles if f.detector == "MS")
+
+
+def test_recorded_centroid_labels_are_its_stored_mz():
+    """An uncalibrated MassHunter centroid read as recorded has one column
+    per distinct m/z its peak lists store, and every peak's intensity."""
+    ms = rb.read("tests/inputs/yellow.D", centroid=True,
+                 bin_width="recorded").get_file("MSPeak.bin")
+    per_scan = rb.read("tests/inputs/yellow.D",
+                       centroid=True).get_file("MSPeak.bin")
+    stored = np.unique(np.concatenate(
+        [per_scan.mass_labels(i) for i in range(len(per_scan.xlabels))]))
+    assert np.asarray(ms.ylabels).tolist() == stored.tolist()
+    total = sum(np.asarray(per_scan.scan(i)[1]).sum()
+                for i in range(len(per_scan.xlabels)))
+    assert np.asarray(ms.data).sum() == total
+
+
+def test_recorded_calibrated_centroid_stays_per_scan():
+    ms = rb.read("tests/inputs/gold.D", centroid=True,
+                 bin_width="recorded").get_file("MSPeak.bin")
+    assert hasattr(ms, "mass_labels")
+
+
+def test_recorded_is_the_only_text_bin_width():
+    with pytest.raises(Exception, match="Invalid bin_width"):
+        rb.read("tests/inputs/orange.D", bin_width="nominal")
+
+
+def test_recorded_float32_keys_are_labelled_as_written():
+    """A float32 key is labelled by the shortest decimal that reads back to
+    it, the one rule for every reader."""
+    keys = np.array([100.08, 261.1, 100.08], dtype=np.float32)
+    ylabels, data = bin_datapairs(keys, np.array([1, 2, 3]), np.array([3]),
+                                  "recorded")
+    assert ylabels.tolist() == [100.08, 261.1]
+    assert data.tolist() == [[4, 2]]
+
+
+def test_recorded_spacing_is_exact():
+    from rainbow._binning import recorded_spacing
+    assert recorded_spacing([800.0, 800.2, 800.4]) == 0.2
+    assert recorded_spacing([159.64224243164062, 159.67926025390625]) == \
+        float(__import__("decimal").Decimal("159.67926025390625")
+              - __import__("decimal").Decimal("159.64224243164062"))

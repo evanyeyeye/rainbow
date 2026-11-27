@@ -10,9 +10,24 @@ within a scan. This module provides one vectorized implementation of that step.
 The bin width is the lossy control: keys closer together than ``bin_width`` are
 merged. The bin labels are the bin centres, optionally rounded to a display
 precision for presentation, which is purely cosmetic and never merges data.
+
+``bin_width='recorded'`` (:data:`RECORDED`) bins nothing: each distinct key the
+file stores is a column of its own, labelled by that key exactly as stored, and
+only pairs of one scan at the very same key are summed. Nothing is merged that
+the file keeps apart, and no width is chosen.
 """
 
 import numpy as np
+
+
+# The bin_width that keeps each stored m/z as the file records it (see the
+# module docstring).
+RECORDED = 'recorded'
+
+
+def is_recorded(bin_width):
+    """Whether ``bin_width`` asks for the keys as recorded (:data:`RECORDED`)."""
+    return isinstance(bin_width, str) and bin_width == RECORDED
 
 
 # Finest meaningful m/z bin width per vendor (the m/z grid the binary records;
@@ -71,7 +86,8 @@ def label_precision(display_precision, bin_width):
     widths :func:`rainbow.mz_resolution` recommends.
 
     """
-    if display_precision is None or bin_width is None or not bin_width > 0:
+    if display_precision is None or bin_width is None or \
+            is_recorded(bin_width) or not bin_width > 0:
         return display_precision
     decimals = display_precision
     while decimals < _MAX_LABEL_DECIMALS and 10.0 ** -decimals > bin_width:
@@ -103,10 +119,13 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
         keys (np.ndarray): Flat ylabels (m/z or wavelength), non-negative.
         values (np.ndarray): Flat values paired with :obj:`keys`.
         pair_counts (np.ndarray): Number of pairs at each retention time.
-        bin_width (float): Width of each bin, in the keys' units. The lossy
-            control: keys within one bin are summed.
+        bin_width (float or 'recorded'): Width of each bin, in the keys'
+            units. The lossy control: keys within one bin are summed.
+            ``'recorded'`` makes each distinct stored key its own column,
+            labelled by the key as stored, so nothing is merged.
         display_precision (int, optional): Decimals to round the bin-centre
             labels to for display. ``None`` (the default) leaves them unrounded.
+            Not applied under ``'recorded'``, whose labels are the data.
         data_dtype (np.dtype, optional): dtype of the output matrix.
         labels_only (bool, optional): Return the bin labels and an empty
             ``(num_times, 0)`` matrix, skipping the accumulation. The matrix is
@@ -120,7 +139,8 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
             data values (rows are retention times, columns are ylabels).
 
     """
-    if not bin_width > 0:
+    recorded = is_recorded(bin_width)
+    if not recorded and not bin_width > 0:
         raise ValueError(f"bin_width must be positive, got {bin_width!r}.")
 
     num_times = pair_counts.size
@@ -128,6 +148,15 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
     if keys.size == 0:
         return (np.empty(0, dtype=np.float64),
                 np.zeros((num_times, 0), dtype=data_dtype))
+
+    if recorded:
+        ylabels, columns = recorded_columns(keys)
+        if labels_only:
+            return ylabels, np.zeros((num_times, 0), dtype=data_dtype)
+        rows = np.repeat(np.arange(num_times), pair_counts)
+        data = np.zeros(num_times * ylabels.size, dtype=data_dtype)
+        np.add.at(data, rows * ylabels.size + columns.ravel(), values)
+        return ylabels, data.reshape(num_times, ylabels.size)
 
     # Assign each key to a bin of width bin_width (this is the lossy step).
     # A bin_width small enough to send a key past the float64 range, or past
@@ -184,3 +213,34 @@ def bin_datapairs(keys, values, pair_counts, bin_width,
     np.add.at(data, flat_indices, values)
 
     return ylabels, data.reshape(num_times, num_ylabels)
+
+
+def recorded_columns(keys):
+    """(labels, each key's column) under :data:`RECORDED`: each distinct
+    stored key a column, labelled by the key as the file writes it. A float32
+    key is labelled by the shortest decimal that reads back to it (100.08,
+    not its float64 widening 100.08000183105469), which is one to one, so the
+    columns stay distinct; any other key by its float64 value. The one rule
+    for every reader (bin_datapairs, MassHunter's bin_to_grid)."""
+    keys = np.asarray(keys)
+    labels, columns = np.unique(keys, return_inverse=True)
+    if labels.dtype == np.float32:
+        labels = np.array([float(str(x)) for x in labels], dtype=np.float64)
+    else:
+        labels = labels.astype(np.float64)
+    return labels, columns.ravel()
+
+
+def recorded_spacing(labels):
+    """The smallest gap between two distinct recorded m/z of a channel read
+    as recorded (:data:`RECORDED`), measured on its labels, or None for fewer
+    than two. A measurement of this file, not a property of its format.
+
+    Exact: each gap is taken between the labels' shortest decimals (their
+    repr), so 800.2 and 800.0 are 0.2 apart, not 0.1999999999998181."""
+    from decimal import Decimal
+    labels = np.unique(np.asarray(labels, dtype=np.float64))
+    if labels.size < 2:
+        return None
+    exact = [Decimal(repr(float(x))) for x in labels]
+    return float(min(b - a for a, b in zip(exact, exact[1:])))

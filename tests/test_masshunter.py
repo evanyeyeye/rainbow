@@ -72,7 +72,8 @@ COPPER_D = os.path.join("tests", "inputs", "copper.D")
 # non-HRMS parsers. teal.dx is a UV-only flush with no m/z axis, so the OpenLab
 # .dx reader is not covered here (no usable fixture).
 SILVER_ACQDATA = os.path.join("tests", "inputs", "silver.D", "AcqData")
-# Waters .raw fixtures that actually carry an MS m/z axis (white.raw has none).
+# Waters .raw fixtures that carry a binned MS m/z axis (white.raw's MRM
+# functions take their labels from _FUNCTNS.INF).
 WATERS_MS_RAW = [
     os.path.join("tests", "inputs", name)
     for name in ("blue.raw", "indigo.raw", "turquoise.raw", "violet.raw")
@@ -587,9 +588,13 @@ def test_centroid_flag_end_to_end():
     assert default.metadata.get("centroid_available")
 
     with_centroid = rb.read("tests/inputs/yellow.D", centroid=True)
-    assert "MSPeak.bin" in [df.name for df in with_centroid.datafiles]
-    # data.ms is untouched - centroid is additive, not a replacement.
-    assert "data.ms" in [df.name for df in with_centroid.datafiles]
+    names = [df.name for df in with_centroid.datafiles]
+    assert "MSPeak.bin" in names
+    # data.ms and dataSim.ms hold the same scans MSPeak.bin does (yellow.D is
+    # a MassHunter GC/MS acquisition, written both ways), so the recording is
+    # returned once, from AcqData; the FID beside it is untouched.
+    assert "data.ms" not in names and "dataSim.ms" not in names
+    assert "FID1A.ch" in names
     assert "centroid_available" not in with_centroid.metadata
 
 
@@ -1534,11 +1539,16 @@ def test_mz_resolution_measures_icpms_which_hrms_gates_but_does_not_bin():
     flagged read skips it, and a probe read that does not forward the flag
     never parses it, so it fell through both and the run looked like it had
     no MS at all.
+
+    silver.D's scans state MRM (an ICP-QQQ's mass-shift pairs), so it is
+    tagged MRM from them, and its isotopes are chosen masses whose gaps are
+    the method's, not a grid: it is parsed and read, and measures nothing.
     """
-    assert rb.mz_resolution("tests/inputs/silver.D", hrms=True) == \
-        {"MSProfile.bin": 1.0}
+    datadir = rb.read("tests/inputs/silver.D", hrms=True)
+    assert datadir.get_file("MSProfile.bin").metadata["acquisition_mode"] == "MRM"
+    assert rb.mz_resolution("tests/inputs/silver.D", hrms=True) == {}
     assert rb.mz_resolution("tests/inputs/silver.D", hrms=True,
-                            centroid=True) == {"MSProfile.bin": 1.0}
+                            centroid=True) == {}
 
 
 def test_read_sequence_rejects_bad_bin_width():
@@ -1654,6 +1664,24 @@ def test_scatter_sum_on_empty_input():
     got = masshunter._scatter_sum(
         np.array([], dtype=np.int64), np.array([], dtype=np.uint64), 4)
     assert got.dtype == np.uint64 and got.size == 4 and not got.any()
+
+
+@pytest.mark.parametrize("bin_width", [None, 0.1, rb.RECORDED])
+@pytest.mark.parametrize("labels_only", [False, True])
+def test_bin_to_grid_float_intensities_give_a_float64_grid(
+        bin_width, labels_only):
+    # A centroid's abundances are float64 (parse_mspeakdata); every grid made
+    # of them is too, the empty one labels_only returns included, on every
+    # width.
+    mz = np.array([100.0, 101.0, 100.0])
+    intensity = np.array([5.25, 7.5, 3.125])
+    rows = np.array([0, 0, 1])
+    _, grid = masshunter.bin_to_grid(
+        mz, intensity, rows, 2, display_precision=0, bin_width=bin_width,
+        labels_only=labels_only)
+    assert grid.dtype == np.float64
+    if not labels_only:
+        assert grid.sum() == intensity.sum()
 
 
 def test_bin_to_grid_dense_matches_reference():
@@ -1780,24 +1808,20 @@ def test_an_uncalibrated_centroid_reports_the_quantization_it_has():
     assert resolved["MSPeak.bin"] == pytest.approx(0.09, abs=0.001)
 
 
-def test_mz_resolution_centroid_flag_leaves_binned_channels_alone():
-    """ The centroid flag must not change what a binned MS channel reports.
-
-    yellow.D holds a Chemstation data.ms beside a MassHunter MSPeak.bin. The
-    centroid read is unbinned (the peak lists are per scan), which binned
-    data.ms at the default nominal width, so it reported that default instead
-    of the 0.1 Da grid the binary records.
+def test_mz_resolution_reads_one_recording_once():
+    """ yellow.D holds one MS recording as MSD ChemStation data.ms and
+    dataSim.ms and as MassHunter's MSPeak.bin. Without the flag the .ms files
+    are measured (data.ms on the 0.1 Da grid it records); with it, the same
+    scans are measured from MSPeak.bin alone, per scan.
     """
     yellow = os.path.join("tests", "inputs", "yellow.D")
     binned = rb.mz_resolution(yellow)
     assert binned["data.ms"] == 0.1
-    with_centroid = rb.mz_resolution(yellow, centroid=True)
-    assert with_centroid["data.ms"] == binned["data.ms"]
-    # dataSim.ms is selected-ion, so neither read reports a grid for it: the
-    # gaps between monitored ions are the method's choice, not a lattice.
+    # dataSim.ms is selected-ion, so no grid is reported for it: the gaps
+    # between monitored ions are the method's choice, not a lattice.
     assert "dataSim.ms" not in binned
-    assert "dataSim.ms" not in with_centroid
-    # The centroid channel is still measured per scan, not on the probe grid.
+    with_centroid = rb.mz_resolution(yellow, centroid=True)
+    assert set(with_centroid) == {"MSPeak.bin"}
     assert with_centroid["MSPeak.bin"] > 1e-3
 
 
@@ -1859,3 +1883,145 @@ def test_bin_to_grid_refuses_a_width_that_overflows_the_bin_index():
 def test_the_signal_wavelength_reads_a_prefixed_description(description,
                                                             expected):
     assert masshunter._signal_wavelength(description) == expected
+
+
+# ---------------------------------------------------------------------------
+# What each scan's record states of the scan (DataFile.metadata['scans']).
+# ---------------------------------------------------------------------------
+
+def _records(acqdata):
+    return masshunter.read_scan_records(
+        os.path.join(acqdata, "MSScan.bin"),
+        masshunter.parse_scan_xsd(os.path.join(acqdata, "MSScan.xsd")),
+        masshunter.count_scans(acqdata))
+
+
+def test_scans_state_which_monitor_ions():
+    # yellow.D is a simultaneous SIM/Scan GC-MS run: its one MSPeak.bin holds
+    # both kinds of scan, interleaved, which only the scan records tell apart.
+    datafile = rb.read("tests/inputs/yellow.D", centroid=True,
+                       bin_width=0.1).get_file("MSPeak.bin")
+    scans = datafile.metadata["scans"]
+    codes = [r["ScanType"] for r in _records(YELLOW_ACQDATA)]
+    for values in scans.values():
+        assert len(values) == datafile.xlabels.size
+    assert scans["scan_type"].tolist() == [
+        {1: "Scan", 2: "SIM"}[code] for code in codes]
+    assert scans["monitoring"].tolist() == [code == 2 for code in codes]
+    assert scans["monitoring"].sum() == 1309
+    assert set(scans["polarity"]) == {"+"}
+    assert set(scans["ms_level"]) == {1}
+    assert np.isnan(scans["precursor_mz"]).all()      # each record writes 0
+    assert set(scans["mz_range_max"]) == {1050.0}
+
+
+def test_scans_are_on_the_per_scan_centroid_too():
+    centroid = masshunter.parse_mspeakdata(YELLOW_ACQDATA)
+    assert isinstance(centroid, masshunter.CentroidDataFile)
+    assert centroid.metadata["scans"]["monitoring"].sum() == 1309
+
+
+def test_scans_state_their_cycle_and_scan_method():
+    # Each record names the pass of the scan program it belongs to and the
+    # program's entry it ran, as MSScan.bin writes them.
+    records = _records(YELLOW_ACQDATA)
+    scans = masshunter.scan_metadata(records)
+    assert scans["cycle"].tolist() == [r["CycleNumber"] for r in records]
+    assert scans["scan_method"].tolist() == [r["ScanMethodID"] for r in records]
+    assert scans["time_segment"].tolist() == [r["TimeSegmentID"] for r in records]
+    assert (np.diff(scans["cycle"]) >= 0).all()
+
+
+def test_icpms_scans_are_mrm():
+    datafile = rb.read("tests/inputs/silver.D", hrms=True).get_file(
+        "MSProfile.bin")
+    scans = datafile.metadata["scans"]
+    assert len(scans["scan_type"]) == datafile.xlabels.size
+    assert set(scans["scan_type"]) == {"MRM"}
+    assert scans["monitoring"].all()
+    assert set(scans["ms_level"]) == {2}
+    # Its schema has no collision energy or m/z of interest: nothing is made up.
+    assert "collision_energy" not in scans
+    assert "precursor_mz" not in scans
+
+
+@pytest.mark.parametrize("bin_width", [None, 0.1])
+def test_profile_scans_follow_each_files_rows(bin_width):
+    # The per-scan profile splits the scans across files by flight-time grid;
+    # each file states its own scans, in its own row order.
+    datafiles = masshunter.parse_msdata(
+        os.path.join(AMBER_D, "AcqData"), bin_width=bin_width)
+    if bin_width is not None:
+        datafiles = [datafiles]
+    for datafile in datafiles:
+        scans = datafile.metadata["scans"]
+        assert len(scans["polarity"]) == datafile.xlabels.size
+        assert set(scans["polarity"]) == {"-"}
+        assert set(scans["scan_type"]) == {"Scan"}
+        assert not scans["monitoring"].any()
+
+
+@pytest.mark.skipif(not HAVE_LZF, reason="needs python-lzf")
+def test_an_incomplete_profile_states_only_its_complete_scans():
+    # copper's MSScan.bin describes 4 scans, its MSProfile.bin holds 3.
+    profile = masshunter.parse_msdata(
+        os.path.join(COPPER_D, "AcqData"), bin_width=0.1)
+    assert profile.xlabels.size == 3
+    assert len(profile.metadata["scans"]["scan_type"]) == 3
+
+
+def test_scan_metadata_names_an_unknown_code_by_its_number():
+    scans = masshunter.scan_metadata(
+        [{"ScanType": 7, "IonPolarity": 3}, {"ScanType": 256, "IonPolarity": 0}])
+    assert scans["scan_type"].tolist() == ["7", "MRM"]
+    assert scans["monitoring"].tolist() == [False, True]
+    assert scans["polarity"].tolist() == ["", "+"]
+    assert masshunter.scan_metadata([]) == {}
+
+
+# ---------------------------------------------------------------------------
+# The scan records read as one numpy structured array (read_scan_table).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("acqdata", [
+    YELLOW_ACQDATA, os.path.join(GOLD_D, "AcqData"),
+    os.path.join(COPPER_D, "AcqData"), os.path.join(MAGENTA_D, "AcqData"),
+    os.path.join(AMBER_D, "AcqData"), SILVER_ACQDATA])
+def test_scan_table_holds_what_the_records_state(acqdata):
+    # Each row of the table is the record read_complextype reads at its place,
+    # field by field, the extra spectrum blocks included.
+    msscan = os.path.join(acqdata, "MSScan.bin")
+    types = masshunter.parse_scan_xsd(os.path.join(acqdata, "MSScan.xsd"))
+    table = masshunter.read_scan_table(
+        msscan, types, masshunter.count_scans(acqdata))
+    records = masshunter.read_scan_records(
+        msscan, types, masshunter.count_scans(acqdata))
+    assert len(table) == len(records)
+    with open(msscan, 'rb') as f:
+        f.seek(0x58)
+        start = struct.unpack('<I', f.read(4))[0]
+        for i, record in enumerate(records):
+            f.seek(start + i * table.dtype.itemsize)
+            read = masshunter.read_complextype(f, types, "ScanRecordType")
+            assert {k: v for k, v in record.items()
+                    if k != 'SpectrumParamsBlocks'} == read
+            assert record['SpectrumParamsBlocks'][0] == \
+                read['SpectrumParamValues']
+            for block in record['SpectrumParamsBlocks'][1:]:
+                assert block == masshunter.read_complextype(
+                    f, types, "SpectrumParamsType")
+    assert table['ScanTime'].tolist() == [r['ScanTime'] for r in records]
+    by_table = masshunter.scan_metadata(table)
+    by_records = masshunter.scan_metadata(records)
+    assert list(by_table) == list(by_records)
+    for key, values in by_records.items():
+        assert by_table[key].dtype == values.dtype
+        np.testing.assert_array_equal(by_table[key], values)
+
+
+def test_record_dtype_is_the_type_size():
+    types = masshunter.parse_scan_xsd(
+        os.path.join(YELLOW_ACQDATA, "MSScan.xsd"))
+    for name in ("ScanRecordType", "SpectrumParamsType"):
+        assert masshunter.record_dtype(types, name).itemsize == \
+            masshunter.type_size(types, name)

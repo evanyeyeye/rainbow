@@ -53,6 +53,79 @@ _FLD_SIGNAL_RE = re.compile(r'\s*FLD\d', re.IGNORECASE)
 # "VWD1A, Wavelength=254 nm", with no bandwidth to report.
 _WAVELENGTH_RE = re.compile(r'Wavelength\s*=\s*([\d.]+)', re.IGNORECASE)
 
+# Where each file format keeps its header strings, and how many bytes a
+# character takes, keyed by the version string at the head of the file. The
+# parsers and parse_header read the same tables, so a header read alone states
+# exactly what the full parse puts on the DataFile.
+_CH_HEADERS = {
+    '181': ({
+        'notebook': 0x35A,
+        'date': 0x957,
+        'method': 0xA0E,
+        # 0xC11 holds the ChemStation workstation's name ("Mustang
+        # ChemStation"), not the acquisition instrument. The key is historical
+        # and is what every release has published, so it stays; rainbow.debug
+        # reports the same offset as `workstation` and reads the instrument
+        # itself out of the method report.
+        'instrument': 0xC11,
+        'unit': 0x104C,
+    }, 2),
+    '179': ({
+        'notebook': 0x35A,
+        'date': 0x957,
+        'method': 0xA0E,
+        'instrument': 0xC11,
+        'unit': 0x104C,
+        'signal': 0x1075
+    }, 2),
+    '130': ({
+        'notebook': 0x35A,
+        'date': 0x957,
+        'method': 0xA0E,
+        'instrument': 0xC11,
+        'unit': 0x104C,
+        'signal': 0x1075
+    }, 2),
+    '30': ({
+        'notebook': 0x18,
+        'date': 0xB2,
+        'method': 0xE4,
+        'instrument': 0xDA,
+        'unit': 0x244,
+        'signal': 0x254
+    }, 1),
+}
+_UV_HEADERS = {
+    '131': ({
+        "notebook": 0x35A,
+        "date": 0x957,
+        "method": 0xA0E,
+        "unit": 0xC15,
+        "signal": 0xC40,
+        "vialpos": 0xFD7
+    }, 2),
+    '31': ({
+        "notebook": 0x18,
+        "date": 0xB2,
+        "method": 0xE4,
+        "unit": 0x146
+    }, 1),
+}
+_MS_HEADER = ({
+    'date': 0xB2,
+    'method': 0xE4
+}, 1)
+_MS_MAGIC = 0x01320000
+# An .ms file stores each m/z as a big-endian short, in twentieths of a
+# dalton: its m/z lattice, MS_MZ_STEP apart.
+MS_MZ_PER_DALTON = 20
+MS_MZ_STEP = 1 / MS_MZ_PER_DALTON
+# The scan type each scan's record in an .ms file states, in the fourth byte of
+# the six after its retention time, by the names masshunter.SCAN_TYPES gives
+# them. Seen in LC/MSD and GC/MSD files alike: 1 in every full-scan file and 3
+# in every SIM file, as each file's acquisition method lists its signals.
+_MS_SCAN_TYPES = {1: 'Scan', 3: 'SIM'}
+
 
 def parse_optics(description):
     """
@@ -294,32 +367,13 @@ def parse_ch_fid(path, head):
             'scaling_factor': 0x127C,
             'data_start': 0x1800
         }
-        metadata_offsets = {
-            'notebook': 0x35A,
-            'date': 0x957,
-            'method': 0xA0E,
-            # 0xC11 holds the ChemStation workstation's name ("Mustang
-            # ChemStation"), not the acquisition instrument. The key is
-            # historical and is what every release has published, so it stays;
-            # rainbow.debug reports the same offset as `workstation` and reads
-            # the instrument itself out of the method report.
-            'instrument': 0xC11,
-            'unit': 0x104C,
-        }
     elif head == '179':
         data_offsets = {
             'num_times': 0x116,
             'scaling_factor': 0x127C,
             'data_start': 0x1800
         }
-        metadata_offsets = {
-            'notebook': 0x35A,
-            'date': 0x957,
-            'method': 0xA0E,
-            'instrument': 0xC11,
-            'unit': 0x104C,
-            'signal': 0x1075
-        }
+    metadata_offsets, gap = _CH_HEADERS[head]
 
     f = open(path, 'rb')
     raw_bytes = f.read()
@@ -354,7 +408,7 @@ def parse_ch_fid(path, head):
     # two bytes to the character, which is read_header's default; the other
     # parser computes its gap because its containers differ, and stating it
     # here keeps the two from reading as though they disagreed.
-    metadata = read_header(f, metadata_offsets, gap=2)
+    metadata = read_header(f, metadata_offsets, gap=gap)
     f.close()
 
     # FID only if the signal does not say otherwise. A real FID channel is
@@ -391,32 +445,15 @@ def parse_ch_other(path, head):
             'scaling_factor': 0x127C,
             'data_start': 0x1800
         }
-        metadata_offsets = {
-            'notebook': 0x35A,
-            'date': 0x957,
-            'method': 0xA0E,
-            'instrument': 0xC11,
-            'unit': 0x104C,
-            'signal': 0x1075
-        }
-        gap = 2
     elif head == '30':
         data_offsets = {
             'time_range': 0x11A,
             'scaling_factor': 0x284,
             'data_start': 0x400
         }
-        metadata_offsets = {
-            'notebook': 0x18,
-            'date': 0xB2,
-            'method': 0xE4,
-            'instrument': 0xDA,
-            'unit': 0x244,
-            'signal': 0x254
-        }
-        gap = 1
     else:
         return None
+    metadata_offsets, gap = _CH_HEADERS[head]
 
     f = open(path, 'rb')
     byte_unpack = struct.Struct('>B').unpack
@@ -641,14 +678,6 @@ def parse_uv(path):
             'scaling_factor': 0xC0D,
             'data_start': 0x1000
         }
-        metadata_offsets = {
-            "notebook": 0x35A,
-            "date": 0x957,
-            "method": 0xA0E,
-            "unit": 0xC15,
-            "signal": 0xC40,
-            "vialpos": 0xFD7
-        }
         file_type = read_string(f, 347, gap=2)
         if file_type.startswith('LC'):
             decode = decode_uv_delta
@@ -656,24 +685,17 @@ def parse_uv(path):
             decode = decode_uv_array
         else:
             return None
-        gap = 2
     elif head == '31':
         data_offsets = {
             'num_times': 0x116,
             'scaling_factor': 0x13E,
             'data_start': 0x200
         }
-        metadata_offsets = {
-            "notebook": 0x18,
-            "date": 0xB2,
-            "method": 0xE4,
-            "unit": 0x146
-        }
         decode = decode_uv_delta
-        gap = 1
     else:
         f.close()
         return None
+    metadata_offsets, gap = _UV_HEADERS[head]
 
     # Extract the number of retention times.
     f.seek(data_offsets["num_times"])
@@ -787,15 +809,7 @@ def parse_uv_partial(path):
     data = data * scaling_factor
 
     # Read file metadata.
-    metadata_offsets = {
-        "notebook": 0x35A,
-        "date": 0x957,
-        "method": 0xA0E,
-        "unit": 0xC15,
-        "signal": 0xC40,
-        "vialpos": 0xFD7
-    }
-    metadata = read_header(f, metadata_offsets)
+    metadata = read_header(f, *_UV_HEADERS['131'])
     f.close()
 
     return DataFile(path, 'UV', times, wavelengths, data, metadata)
@@ -844,7 +858,7 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     # Validate file header.
     # If invalid, the file may be a partial.
     head = int_unpack(f.read(4))[0]
-    if head != 0x01320000:
+    if head != _MS_MAGIC:
         f.close()
         return parse_ms_partial(path, display_precision, bin_width, labels_only)
 
@@ -866,11 +880,12 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     # Store the bytes holding mz-intensity pairs.
     times = np.empty(num_times, dtype=np.uint32)
     pair_counts = np.zeros(num_times, dtype=np.uint16)
+    scan_types = np.zeros(num_times, dtype=np.uint8)
     pair_bytearr = bytearray()
     for i in range(num_times):
         f.read(2)
         times[i] = int_unpack(f.read(4))[0]
-        f.read(6)
+        scan_types[i] = f.read(6)[3]
         # The multiply below has to happen on a Python int. Read back out of
         # pair_counts it would be a numpy uint16, which wraps at 65536 under
         # NEP 50, so a scan of more than 16383 pairs would ask for its byte
@@ -889,7 +904,7 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     total_paircount = np.sum(pair_counts)
 
     # Calculate the mz values (raw; binning happens in bin_datapairs).
-    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / 20
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / MS_MZ_PER_DALTON
 
     # Calculate the intensity values. 
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -906,14 +921,86 @@ def parse_ms(path, display_precision=0, bin_width=1.0, labels_only=False):
     del mzs, int_values, pair_counts
 
     # Read file metadata.
-    metadata_offsets = {
-        'date': 0xB2,
-        'method': 0xE4
-    }
-    metadata = read_header(f, metadata_offsets, 1)
+    metadata = read_header(f, *_MS_HEADER)
     f.close()
+    metadata.update(_ms_scans(scan_types))
 
     return DataFile(path, 'MS', times, ylabels, data, metadata)
+
+
+def ms_scan_times(path):
+    """
+    The retention time of each scan an .ms file holds, in integer
+    milliseconds as the file stores them, read from the scan records' headers
+    alone (their m/z-intensity pairs are skipped, not decoded).
+
+    A whole file is walked from its stated data start for its stated scan
+    count; a partial one (no magic, as :obj:`parse_ms_partial` reads it) from
+    the common start offset to its end.
+
+    Args:
+        path (str): Path to the .ms file.
+
+    Returns:
+        numpy.ndarray of int64, or None for a file that is neither.
+
+    """
+    short_unpack = struct.Struct('>H').unpack
+    int_unpack = struct.Struct('>I').unpack
+    times = []
+    with open(path, 'rb') as f:
+        head = f.read(4)
+        if len(head) < 4:
+            return None
+        if int_unpack(head)[0] == _MS_MAGIC:
+            if read_string(f, 0x4, 1) == "MSD Spectral File":
+                f.seek(0x116)
+                num_times = int_unpack(f.read(4))[0]
+            else:
+                f.seek(0x142)
+                num_times = struct.unpack('<H', f.read(2))[0]
+            f.seek(0x10A)
+            f.seek(short_unpack(f.read(2))[0] * 2 - 2)
+        else:
+            f.seek(0x10A)
+            if short_unpack(f.read(2))[0] != 0:
+                return None
+            f.seek(0x2F2)
+            num_times = None
+        while num_times is None or len(times) < num_times:
+            record = f.read(18)
+            if len(record) < 18:
+                break
+            pair_count = short_unpack(record[12:14])[0]
+            f.seek(pair_count * 4 + 10, os.SEEK_CUR)
+            times.append(int_unpack(record[2:6])[0])
+    return np.array(times, dtype=np.int64)
+
+
+def _ms_scans(codes):
+    """
+    What an .ms file's scan records state of each scan: ``scans`` (as
+    masshunter.scan_metadata names them: ``scan_type``, the name in
+    :obj:`_MS_SCAN_TYPES` or the code itself as a string; ``monitoring``,
+    whether the scan monitors chosen ions), and ``acquisition_mode``, ``'SIM'``
+    or ``'Scan'``, when every scan states the same one of them.
+
+    Args:
+        codes (list): Each scan record's scan type code, in record order.
+
+    Returns:
+        Dictionary of the metadata entries, empty for a file with no scans.
+
+    """
+    codes = np.asarray(codes, dtype=np.uint8)
+    if not codes.size:
+        return {}
+    names = np.array([_MS_SCAN_TYPES.get(int(c), str(int(c))) for c in codes])
+    out = {'scans': {'scan_type': names,
+                     'monitoring': np.isin(names, ('SIM',))}}
+    if (names == names[0]).all() and names[0] in ('SIM', 'Scan'):
+        out['acquisition_mode'] = str(names[0])
+    return out
 
 
 def parse_ms_partial(path, display_precision=0, bin_width=1.0,
@@ -958,18 +1045,20 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0,
     # Store the bytes holding mz-intensity pairs.
     times = []
     pair_counts = []
+    scan_types = []
     pair_bytearr = bytearray()
     while True:
         try:
             f.read(2)
             time = int_unpack(f.read(4))[0]
-            f.read(6)
+            scan_type = f.read(6)[3]
             pair_count = short_unpack(f.read(2))[0]
             f.read(4)
             pair_bytes = f.read(pair_count * 4)
             f.read(10)
             times.append(time)
             pair_counts.append(pair_count)
+            scan_types.append(scan_type)
             pair_bytearr.extend(pair_bytes)
         except Exception:
             break
@@ -982,7 +1071,7 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0,
     total_paircount = np.sum(pair_counts)
 
     # Calculate the mz values (raw; binning happens in bin_datapairs).
-    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / 20
+    mzs = np.ndarray(total_paircount, '>H', raw_bytes, 0, 4) / MS_MZ_PER_DALTON
 
     # Calculate the intensity values.
     int_encs = np.ndarray(total_paircount, '>H', raw_bytes, 2, 4)
@@ -999,12 +1088,9 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0,
     del mzs, int_values, pair_counts
 
     # Read file metadata.
-    metadata_offsets = {
-        'date': 0xB2,
-        'method': 0xE4
-    }
-    metadata = read_header(f, metadata_offsets, 1)
+    metadata = read_header(f, *_MS_HEADER)
     f.close()
+    metadata.update(_ms_scans(scan_types))
 
     return DataFile(path, 'MS', times, ylabels, data, metadata)
 
@@ -1013,6 +1099,54 @@ def parse_ms_partial(path, display_precision=0, bin_width=1.0,
 FILE METADATA PARSING METHODS
 
 """
+
+
+def parse_header(path):
+    """
+    Reads the header of an Agilent Chemstation data file, without its data.
+
+    The header holds the strings :obj:`parse_file` puts on the DataFile's
+    metadata (the injection's date, the method, the signal, and so on), at
+    offsets fixed by the file's version. Reading them alone costs a few
+    hundred bytes, where a full parse decodes every scan.
+
+    Args:
+        path (str): Path to a .ch, .uv, or .ms file.
+
+    Returns:
+        Dictionary of the header's strings, the same keys and values as
+        ``parse_file(path).metadata`` before any detector-specific additions,
+        or None if the file is not one rainbow parses.
+
+    """
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        with open(path, 'rb') as f:
+            if ext == '.ch':
+                entry = _CH_HEADERS.get(read_string(f, 0, gap=1))
+            elif ext == '.uv':
+                head = read_string(f, 0, gap=1)
+                entry = _UV_HEADERS.get(head)
+                # parse_uv decodes only these two kinds of version 131 file.
+                if head == '131' and not read_string(
+                        f, 347, gap=2).startswith(('LC', 'OL')):
+                    entry = None
+            elif ext == '.ms':
+                entry = _MS_HEADER
+                if struct.unpack('>I', f.read(4))[0] != _MS_MAGIC:
+                    # A partial, which parse_ms_partial recognizes by a null
+                    # data offset; anything else is not an .ms file.
+                    f.seek(0x10A)
+                    if struct.unpack('>H', f.read(2))[0] != 0:
+                        entry = None
+            else:
+                entry = None
+            if entry is None:
+                return None
+            return read_header(f, *entry)
+    except (OSError, struct.error):
+        # Too short for its own header: it states nothing.
+        return None
 
 
 def read_header(f, offsets, gap=2):
@@ -1094,6 +1228,51 @@ def parse_metadata(path, datafiles):
         Dictionary containing directory metadata. 
 
     """
+    return _directory_metadata(
+        path, [datafile.metadata for datafile in datafiles])
+
+
+def datafile_names(path):
+    """
+    The names of the Chemstation data files (.ch, .uv, .ms) in a directory,
+    sorted, as :obj:`parse_allfiles` visits them.
+
+    Args:
+        path (str): Path to the .D directory.
+
+    Returns:
+        List of file names.
+
+    """
+    return [name for name in sorted(os.listdir(path))
+            if name[-3:].lower() in ('.uv', '.ch', '.ms')
+            and os.path.isfile(os.path.join(path, name))]
+
+
+def parse_header_metadata(path):
+    """
+    Parses Agilent metadata at the directory level from the data files'
+    headers alone.
+
+    The same as :obj:`parse_metadata` given the parsed DataFiles of the
+    directory's Chemstation files, without decoding their data: the date and
+    vial position come from each file's header (:obj:`parse_header`).
+
+    Args:
+        path (str): Path to the directory.
+
+    Returns:
+        Dictionary containing directory metadata.
+
+    """
+    headers = [parse_header(os.path.join(path, name))
+               for name in datafile_names(path)]
+    return _directory_metadata(
+        path, [header for header in headers if header is not None])
+
+
+def _directory_metadata(path, headers):
+    """parse_metadata from the file metadata dictionaries ``headers``."""
     metadata = {}
     metadata['vendor'] = "Agilent"
 
@@ -1107,8 +1286,8 @@ def parse_metadata(path, datafiles):
     # These may be stored in multiple files but the values are constant.
     # In MS files, the time may be saved in a different format.
     # Get the most common values if they differ across files
-    dates = Counter(datafile.metadata['date'] for datafile in datafiles if 'date' in datafile.metadata)
-    vialposs = Counter(datafile.metadata['vialpos'] for datafile in datafiles if 'vialpos' in datafile.metadata)
+    dates = Counter(header['date'] for header in headers if 'date' in header)
+    vialposs = Counter(header['vialpos'] for header in headers if 'vialpos' in header)
     if dates:
         metadata['date'] = dates.most_common(1)[0][0]
         # The MS spelling of an instant carries a UTC offset where the .ch and

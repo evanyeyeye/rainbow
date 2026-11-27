@@ -807,3 +807,77 @@ def test_an_empty_float_grid_is_float64():
         np.array([100.0]), np.array([1.5]), np.array([0]), 1, 0, 1.0,
         labels_only=True)
     assert grid.dtype == np.float64
+
+
+# --- what a .D's MS step states, a .sirslt states too ------------------------
+# A .sirslt goes through the step a .D goes through after its data files
+# (rainbow.agilent.method.state_run): each detail is stated from what the run
+# records, and nothing it does not record is stated.
+
+def test_olive_states_the_acquisition_mode_its_scans_state():
+    centroid = rb.read(OLIVE, centroid=True).get_file("MSPeak.bin")
+    assert centroid.metadata['acquisition_mode'] == 'Scan'
+    assert centroid.metadata['acquisition_mode_from'] == 'scans'
+    assert 'method_disagrees' not in centroid.metadata
+
+
+def test_olive_states_no_method_setting_it_does_not_record():
+    # Its archive holds no acquisition method (no acq.macaml, acq.txt,
+    # acqmeth.txt or MSData/AcqMethod.xml), so nothing of its MS signal,
+    # its compounds or a method report's mode is stated.
+    datadir = rb.read(OLIVE, centroid=True)
+    centroid = datadir.get_file("MSPeak.bin")
+    for key in ('method_signal', 'polarity', 'ionization_mode', 'fragmentor',
+                'monitored_ions', 'scan_parameters', 'mz_step'):
+        assert key not in centroid.metadata
+    assert 'monitored_compounds' not in datadir.metadata
+
+
+def test_interleaved_scans_are_mixed_as_in_the_d(tmp_path):
+    # yellow.D's SIM/Scan scans in a .sirslt: tagged as yellow.D's are.
+    ours = rb.read(_make_sirslt(tmp_path, ms=True), centroid=True) \
+        .get_file("MSPeak.bin").metadata
+    theirs = rb.read(os.path.join(INPUTS, "yellow.D"), centroid=True) \
+        .get_file("MSPeak.bin").metadata
+    assert ours['acquisition_mode'] == 'mixed'
+    for key in ('acquisition_mode', 'acquisition_modes',
+                'acquisition_mode_from'):
+        assert ours[key] == theirs[key]
+
+
+def test_an_acquisition_method_in_msdata_names_its_compounds(tmp_path):
+    from tests.test_method import _write_acq_method_xml
+    source = tmp_path / "method"
+    source.mkdir()
+    _write_acq_method_xml(source, [("IS-1", 300.2, 110, 15)])
+    method_xml = (source / "AcqData" / "AcqMethod.xml").read_bytes()
+    path = _make_sirslt(tmp_path, extra={"MSData/AcqMethod.xml": method_xml})
+    expected = [{"compound": "IS-1", "precursor_mz": 300.2,
+                 "product_mz": 110.0, "collision_energy": 15.0}]
+    assert rb.read(path).metadata['monitored_compounds'] == expected
+    assert rb.read_metadata(path)['metadata']['monitored_compounds'] == \
+        expected
+
+
+@pytest.mark.parametrize("folder", [OLIVE, PLUM, LIME])
+def test_read_metadata_states_what_read_states(folder):
+    assert rb.read_metadata(folder)['metadata'] == rb.read(folder).metadata
+
+
+def test_no_ms_binary_is_copied_to_state_the_sidecars(tmp_path, monkeypatch):
+    path = _make_sirslt(tmp_path, ms=True)
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("an MS binary was linked or copied")
+    monkeypatch.setattr(sirslt.os, "link", refuse)
+    monkeypatch.setattr(sirslt.shutil, "copyfile", refuse)
+    rb.read_metadata(path)
+    rb.read(path)
+
+
+def test_read_metadata_leaves_no_temporary_folder(tmp_path, monkeypatch):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr("tempfile.tempdir", str(scratch))
+    rb.read_metadata(_make_sirslt(tmp_path, ms=True))
+    assert list(scratch.iterdir()) == []

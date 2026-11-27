@@ -1087,6 +1087,103 @@ def test_the_real_cad_instrument_inventory_agrees_with_its_cube():
         {v for k, v in types.items() if k != "DAD"}
 
 
+def _control_types(document):
+    """Each measurement's cube label and the device type its control states."""
+    return {_cube(m)["label"]: m["device control aggregate document"]
+            ["device control document"][0]["device type"]
+            for m in _measurements(document) if _CHROM_KEY in m
+            or _SPECTRUM_KEY in m}
+
+
+@pytest.mark.parametrize("path", ["tests/inputs/red.D", "tests/inputs/pink.D",
+                                  "tests/inputs/brown.D", "tests/inputs/teal.dx",
+                                  "tests/inputs/bronze.D", "tests/inputs/blue.raw",
+                                  "tests/inputs/violet.raw"])
+def test_a_diode_arrays_channels_and_spectra_are_typed_diode_array(path):
+    """ A UV channel is typed by the detector the file states, not as UV.
+
+    Each of these runs records its UV channels and its spectra on a diode
+    array (DAD1A.ch, DAD1.UV, a DAD module, a Waters diode array function and
+    its PDA channels), so every UV measurement is a diode array detector's:
+    the spectrum cube and each signal alike.
+    """
+    datadir = rb.read(path)
+    uv = {f.name for f in datadir.datafiles if f.detector == "UV"}
+    types = _control_types(datadir.to_asm())
+    assert uv and {types[name] for name in uv} == {"diode array detector"}
+
+
+def test_the_stated_detector_class_comes_from_the_files_own_words():
+    """ The device identifier, the signal's module, the file name, then the
+    run's modules: the first that names a class of the channel's detector. """
+    from types import SimpleNamespace
+    from rainbow.asm import _stated_device_type
+
+    def uv(name, **metadata):
+        return SimpleNamespace(name=name, detector="UV", metadata=metadata)
+
+    dad = {"modules": [{"name": "DAD", "model": "G7117B"}]}
+    assert _stated_device_type(uv("DAD1A.ch"), {}) == "diode array detector"
+    assert _stated_device_type(uv("VWD1A.ch"), {}) == "ultraviolet detector"
+    assert _stated_device_type(uv("MWD1A.ch"), {}) == "ultraviolet detector"
+    assert _stated_device_type(
+        uv("_CHRO002.DAT", signal="PDA Ch1 220nm@4.8nm"), {}) \
+        == "diode array detector"
+    assert _stated_device_type(uv("signal.ch", device_identifier="VWD"), dad) \
+        == "ultraviolet detector"
+    # Read back from ASM: the device type the document states comes first;
+    # the identifier rainbow writes where the source had none is "UV" itself.
+    assert _stated_device_type(uv("signal.ch", device_identifier="UV",
+                                  device_type="diode array detector"), {}) \
+        == "diode array detector"
+    assert _stated_device_type(uv("signal.ch", device_identifier="UV"), {}) \
+        is None
+    # Only the run's modules state it: one DAD among them.
+    assert _stated_device_type(uv("signal.ch"), dad) == "diode array detector"
+    # Two UV modules of different kinds, and a file naming neither: unstated.
+    both = {"modules": [{"name": "DAD"}, {"name": "VWD"}]}
+    assert _stated_device_type(uv("signal.ch"), both) is None
+    # Another detector's class says nothing of a UV channel.
+    assert _stated_device_type(uv("FLD1A.ch"), {"modules": [
+        {"name": "FLD"}]}) is None
+    assert _stated_device_type(uv("_FUNC002.DAT"), {}) is None
+    assert _stated_device_type(uv("_FUNC002.DAT", device_type="diode array detector"), {}) \
+        == "diode array detector"
+
+
+def test_the_device_names_the_module_the_file_states():
+    """ A variable or multiple wavelength detector has no AFO class of its own
+    (both are an ultraviolet detector): the device identifier, the module the
+    file names, says which it is; rainbow's detector name where it names none.
+    """
+    from types import SimpleNamespace
+
+    def uv(name, **metadata):
+        return SimpleNamespace(name=name, detector="UV", metadata=metadata)
+
+    assert rb.device_of(uv("VWD1A.ch")) == {
+        "device type": "ultraviolet detector", "device identifier": "VWD1A"}
+    assert rb.device_of(uv("MWD1A.ch"))["device identifier"] == "MWD1A"
+    assert rb.device_of(uv("DAD1.UV")) == {
+        "device type": "diode array detector", "device identifier": "DAD1"}
+    assert rb.device_of(uv("signal.ch"), {"modules": [{"name": "DAD"}]}) == {
+        "device type": "diode array detector", "device identifier": "DAD"}
+    assert rb.device_of(uv("signal.ch"))["device identifier"] == "UV"
+    assert rb.device_of(SimpleNamespace(name="x.ms", detector="MS", metadata={})) is None
+    # written so in the document, and read back as written
+    document = rb.read("tests/inputs/pink.D").to_asm()
+    idents = {m["device control aggregate document"]["device control document"][0]
+              ["device identifier"] for m in _measurements(document)}
+    assert {"DAD1A", "DAD1"} <= idents
+
+
+def test_a_stated_class_still_yields_to_a_gc_document():
+    # A DAD's channels in a GC document take the neutral absorbance class.
+    document = rb.read("tests/inputs/pink.D").to_asm(technique="GC")
+    assert set(_control_types(document).values()) == {
+        "electronic absorbance detector"}
+
+
 # ASM types every timestamp as ISO 8601, but the vendors write wall clock in
 # their own formats. These are the shapes rainbow's parsers actually hand back.
 

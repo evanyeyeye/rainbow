@@ -70,7 +70,15 @@ def assert_data_directory(color, ext, hrms=False, telemetry=False):
 
         assert datafile.name == name
         assert datafile.detector == file_dict['detector']
-        assert datafile.metadata == file_dict['metadata']
+        # A MassHunter MS file's per-scan records are arrays, one entry per
+        # row, which the JSON does not hold; their values are checked in
+        # test_masshunter, and here only that each has an entry per row.
+        metadata = dict(datafile.metadata)
+        scans = metadata.pop('scans', None)
+        assert metadata == file_dict['metadata']
+        if scans is not None:
+            for values in scans.values():
+                assert len(values) == datafile.xlabels.size
 
         shape = tuple(file_dict['shape'])
         assert datafile.xlabels.size == shape[0]

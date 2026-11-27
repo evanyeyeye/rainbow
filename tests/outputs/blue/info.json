@@ -24,7 +24,9 @@
         "_FUNC002.DAT": {
             "detector": "UV",
             "shape": [3001, 190],
-            "metadata": {}
+            "metadata": {
+                "device_type": "diode array detector"
+            }
         }
     }
 }

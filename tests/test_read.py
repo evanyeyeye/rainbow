@@ -148,6 +148,15 @@ def test_read_metadata_format_override(tmp_path):
         path, format="waters")["metadata"]["vendor"] == "Waters"
 
 
+def test_read_metadata_states_the_sample_setup_as_read_does():
+    path = os.path.join("tests", "inputs", "red.D")
+    said = rb.read_metadata(path)["metadata"]
+    full = rb.read(path).metadata
+    for key in ("dilution", "multiplier", "sample_amount", "acq_method"):
+        assert said.get(key) == full.get(key)
+    assert said["dilution"] == 1
+
+
 def test_read_metadata_invalid_format_raises():
     with pytest.raises(Exception):
         rb.read_metadata(WATERS_FIXTURE, format="thermo")

@@ -78,6 +78,19 @@ stand-ins):
    -------- 
    ...
 
+A MassHunter .D whose acquisition method (:code:`AcqData/AcqMethod.xml`) names
+the compound for each MRM transition also has :code:`monitored_compounds` in
+its directory metadata: one entry per transition, in the method's order.
+
+.. code-block:: python
+
+   datadir.metadata['monitored_compounds']
+   # [{'compound': 'cmpd_1', 'precursor_mz': 512.3, 'product_mz': 150.0,
+   #   'collision_energy': 20.0}, ...]
+
+:code:`product_mz` and :code:`collision_energy` (in volts) are None where the
+method gives none.
+
 The numpy arrays holding numerical data can be accessed using the :code:`xlabels`, :code:`ylabels`, and :code:`data` attributes of a DataFile. 
 
 .. code-block:: python

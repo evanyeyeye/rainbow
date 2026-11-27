@@ -2,6 +2,15 @@ import os
 from rainbow import DataFile
 
 
+def _unstated_spectrum(datafile):
+    """Whether a DataFile of no stated detector is a spectrum (several
+    columns, as a Waters function with neither _FUNCTNS.INF nor a polarity
+    is), not an analog trace: such a file stays in ``datafiles``."""
+    data = getattr(datafile, "data", None)
+    shape = getattr(data, "shape", ())
+    return len(shape) == 2 and shape[1] > 1
+
+
 class DataDirectory:
     """ 
     Class representing a chromatogram data directory.
@@ -13,7 +22,10 @@ class DataDirectory:
 
     Attributes:
         name (str): Name of the DataDirectory. 
-        datafiles (list): DataFile objects with a detector. 
+        datafiles (list): DataFile objects with a detector, and those of
+            several columns whose detector the file leaves unstated (None:
+            a Waters function nothing names, its axis of unstated kind),
+            which are in no ``by_detector`` entry.
             This does not include miscellaneous analog data.
         detectors (set): String detector names in the DataDirectory.
             Options: UV, MS, FID, CAD, ELSD, RID, FLD.
@@ -49,10 +61,12 @@ class DataDirectory:
         for datafile in datafiles:
             self.by_name[datafile.name.upper()] = datafile
             detector = datafile.detector
-            if not detector:
+            if not detector and not _unstated_spectrum(datafile):
                 self.analog.append(datafile)
-                continue 
+                continue
             self.datafiles.append(datafile)
+            if not detector:
+                continue            # in datafiles, named by no detector
             self.detectors.add(detector)
             if detector in self.by_detector:
                 self.by_detector[detector].append(datafile)
@@ -193,6 +207,16 @@ class DataDirectory:
                           wavelengths=wavelengths, ions=ions,
                           decimal_places=decimal_places, technique=technique,
                           utc_offset=utc_offset)
+
+    def measurements(self, *, ions=None, technique=None, utc_offset=None):
+        """
+        The measurements :meth:`to_asm` writes, read without building the
+        document: one dict per measurement, with its trace as numpy arrays.
+        See :func:`rainbow.asm.measurements`.
+        """
+        from rainbow import asm
+        return asm.measurements(self, ions=ions, technique=technique,
+                                utc_offset=utc_offset)
 
     def export_asm(self, filename, *, export_dad_cube=True, wavelengths=None,
                    ions=None, decimal_places=None, technique=None,
