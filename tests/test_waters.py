@@ -2,6 +2,7 @@
 Unit tests for parsing Waters .raw directories.
 
 """
+import os
 import pytest
 
 import rainbow as rb
@@ -291,3 +292,30 @@ def test_a_diode_array_nothing_names_stays_in_the_run(tmp_path):
         datadir.to_asm()
     assert any("_FUNC003.DAT" in str(c.message) and "states no detector"
                in str(c.message) for c in caught)
+
+
+@pytest.mark.parametrize("tabs", ["\t", "\t\t\t"])
+@pytest.mark.parametrize("parameter_file_line", [True, False])
+def test_the_polarity_line_reads_however_it_is_laid_out(tmp_path, tabs,
+                                                        parameter_file_line):
+    """_extern.inf's Polarity line reads with one tab or three before its
+    value, and whether or not a "Parameter File -" line comes between it and
+    "Instrument Parameters" (#74: a single tab right after the trigger once
+    raised an IndexError)."""
+    import shutil
+    source = os.path.join("tests", "inputs", "violet.raw")
+    expected = [f.metadata.get("polarity") for f in rb.read(source).datafiles]
+    raw = tmp_path / "violet.raw"
+    shutil.copytree(source, raw)
+    extern = raw / "_extern.inf"
+    lines = extern.read_bytes().decode("ascii", "ignore").splitlines()
+    out = []
+    for line in lines:
+        if line.startswith("Parameter File -") and not parameter_file_line:
+            continue
+        if line.startswith("Polarity"):
+            line = "Polarity" + tabs + line.split("\t")[-1].strip()
+        out.append(line)
+    extern.write_bytes("\r\n".join(out).encode("ascii"))
+    got = [f.metadata.get("polarity") for f in rb.read(str(raw)).datafiles]
+    assert got == expected and "-" in got

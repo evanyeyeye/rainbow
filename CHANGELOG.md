@@ -3,7 +3,7 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.0] - 2026-11-27
 
 ### Added
 - **Agilent OpenLab CDS acquisition methods (`.amx`).**
@@ -154,6 +154,11 @@ to [Semantic Versioning](https://semver.org/).
   On older Python, pip keeps installing rainbow 1.5.5.
 
 ### Fixed
+- **A Waters `_extern.inf` Polarity line reads with one tab or three.** The
+  line straight after `Instrument Parameters` was split on three tabs, so a
+  single-tab export (`Polarity\tES+`) raised an IndexError; one rule now takes
+  the last tab-separated field, after a `Parameter File -` line or without
+  one (reported in #74).
 - **A `.dx` DAD spectrum is scaled by its manifest's factor.** The spectrum
   was multiplied by a constant `2**-17`, but the manifest records the factor as
   `<ScaleFactor>` and it depends on the detector: `1000 * 2**-27` on a UHPLC
