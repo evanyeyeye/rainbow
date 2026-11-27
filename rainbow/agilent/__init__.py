@@ -133,10 +133,9 @@ def injection_peaks(path):
     sits in, matched by the .D's folder name, or failing that from the .D's
     own ``sequence.acam_``.
 
-    Each call parses the whole result document, which for a sequence holds
-    every injection's results. To read the peaks of many injections of one
-    sequence, ``read_sequence(path, peaks=True)`` parses it once for all of
-    them and is the efficient path.
+    The result document of a sequence holds every injection's results. It is
+    parsed once while it is unchanged, so reading the injections of one
+    sequence one at a time parses it once; each call gets its own copy.
 
     Args:
         path (str): Path of the .D directory.
@@ -155,9 +154,7 @@ def injection_peaks(path):
     sequence_acaml = sequence.find(os.path.dirname(path) or os.curdir)
     groups = None
     if sequence_acaml is not None:
-        groups = {injection.lower(): found for injection, found
-                  in sequence.parse_peaks(sequence_acaml).items()
-                  }.get(name.lower())
+        groups = sequence.injection_groups(sequence_acaml, name)
     if not groups:
         groups = _own_peaks(name, path)
     return groups or []
@@ -271,15 +268,10 @@ def _attach_peaks(injections, injection_paths, sequence_acaml):
     per-injection sequence.acam_ inside its own .D.
     """
     from rainbow.agilent import sequence
-    if sequence_acaml is not None:
-        by_injection = sequence.parse_peaks(sequence_acaml)
-        folded = {name.lower(): groups
-                  for name, groups in by_injection.items()}
-    else:
-        folded = {}
-
     for injection, injection_path in zip(injections, injection_paths):
-        groups = folded.get(injection.name.lower())
+        groups = None
+        if sequence_acaml is not None:
+            groups = sequence.injection_groups(sequence_acaml, injection.name)
         if not groups:
             groups = _own_peaks(injection.name, injection_path)
         injection.peaks = _with_channels(injection, groups or [])
@@ -329,15 +321,8 @@ def _own_peaks(injection_name, injection_path):
     document = sequence.find_result_document(injection_path)
     if document is None:
         return None
-    by_injection = sequence.parse_peaks(document)
-    if not by_injection:
-        return None
-    folded = {name.lower(): groups for name, groups in by_injection.items()}
-    groups = folded.get(injection_name.lower())
-    if groups is None and len(by_injection) == 1:
-        # A per-injection document holds exactly this injection's peaks.
-        groups = next(iter(by_injection.values()))
-    return groups
+    # A per-injection document holds exactly this injection's peaks.
+    return sequence.injection_groups(document, injection_name, sole=True)
 
 
 def read_metadata(path):

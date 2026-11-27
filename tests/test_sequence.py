@@ -296,3 +296,46 @@ def test_the_etree_fallback_reads_a_nested_signal(tmp_path, monkeypatch):
     assert groups[0]["signal"] == "DAD1A"
     assert groups[0]["wavelength"] == 254.0
     assert [p["area"] for p in groups[0]["peaks"]] == [5.0]
+
+
+def test_the_injections_of_one_sequence_parse_its_document_once(
+        tmp_path, monkeypatch):
+    """ Reading a sequence's injections one at a time parses it once.
+
+    A sequence.acaml holds every injection's results, and one of tens of MB
+    takes a few tenths of a second to parse, so parsing it per injection made
+    reading a few hundred injections take minutes. Each read still gets its
+    own groups, and a rewritten document is parsed again.
+    """
+    from rainbow import agilent
+    path = _write(tmp_path, PEAKS_ACAML)
+    for name in ("008-D1F-A1-sample_01.D", "001-NV-Blank.D"):
+        (tmp_path / name).mkdir()
+    opened = []
+    real = sequence._stream
+    monkeypatch.setattr(sequence, "_stream",
+                        lambda p, names: (opened.append(p), real(p, names))[1])
+
+    sample = agilent.injection_peaks(str(tmp_path / "008-D1F-A1-sample_01.D"))
+    blank = agilent.injection_peaks(str(tmp_path / "001-NV-Blank.D"))
+    assert [len(g["peaks"]) for g in sample] == [2, 1]
+    assert [p["area"] for p in blank[0]["peaks"]] == [2.0]
+    assert sequence.parse_peaks(path)["001-NV-Blank.D"] == blank
+    assert len(opened) == 1
+
+    # A caller changing what it was given changes nobody else's result.
+    sample[0]["peaks"].clear()
+    sample[0]["signal"] = None
+    sequence.parse_peaks(path)["008-D1F-A1-sample_01.D"].clear()
+    again = agilent.injection_peaks(str(tmp_path / "008-D1F-A1-sample_01.D"))
+    assert [len(g["peaks"]) for g in again] == [2, 1]
+    assert again[0]["signal"] == "DAD1A"
+    assert len(opened) == 1
+
+    # A rewritten document is parsed again.
+    with open(path, "w", encoding="utf-8") as fileobj:
+        fileobj.write(PEAKS_ACAML.replace('val="2.0"', 'val="3.0"'))
+    os.utime(path, ns=(1, 1))
+    blank = agilent.injection_peaks(str(tmp_path / "001-NV-Blank.D"))
+    assert [p["area"] for p in blank[0]["peaks"]] == [3.0]
+    assert len(opened) == 2

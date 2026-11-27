@@ -154,6 +154,14 @@ to [Semantic Versioning](https://semver.org/).
   On older Python, pip keeps installing rainbow 1.5.5.
 
 ### Fixed
+- **Reading a sequence's injections one at a time parses its `sequence.acaml`
+  once.** `rb.read(path, peaks=True)` and `agilent.injection_peaks` parsed the
+  whole document, which holds every injection's results, for each injection:
+  384 injections of one sequence with a 27 MB document took 127 s, and now take
+  0.5 s. The peaks of the last four documents read are kept by path,
+  modification time and size, so a rewritten document is read again, and each
+  call gets its own copy. `agilent.sequence.injection_groups(path, name)` reads
+  one injection's groups without copying the rest.
 - **A Waters `_extern.inf` Polarity line reads with one tab or three.** The
   line straight after `Instrument Parameters` was split on three tabs, so a
   single-tab export (`Polarity\tES+`) raised an IndexError; one rule now takes
