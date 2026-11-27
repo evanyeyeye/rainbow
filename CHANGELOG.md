@@ -29,6 +29,11 @@ to [Semantic Versioning](https://semver.org/).
   (an HPLC run with one DAD signal), anonymised as
   `tests/inputs/README_sirslt.md` describes.
 
+### Changed
+- **Python 3.11 or later.** rainbow now requires Python 3.11 (was 3.8), the
+  oldest release still supported upstream; wheels are built for 3.11 to 3.13.
+  On older Python, pip keeps installing rainbow 1.5.5.
+
 ### Fixed
 - **A `.dx` DAD spectrum is scaled by its manifest's factor.** The spectrum
   was multiplied by a constant `2**-17`, but the manifest records the factor as
