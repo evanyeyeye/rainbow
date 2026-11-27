@@ -19,7 +19,7 @@ classifiers = [
 # older rainbow instead of installing this and failing at import. No upper
 # bound: a newer interpreter than [tool.cibuildwheel] builds wheels for still
 # installs, just from the sdist.
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 # What every install needs to read a file, and nothing more. lxml is here for
 # speed, not correctness: the parsers fall back to the standard library and
 # reach the same answer, but rb.read_metadata is about 2.5x slower that way, so
@@ -73,7 +73,7 @@ include = ["rainbow*"]
 # Build CPython wheels for the optional compiled accelerator. The extension
 # is optional, so any platform that can't compile still yields a working
 # (pure-Python-fallback) wheel, and the sdist covers everything else.
-build = "cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
+build = "cp311-* cp312-* cp313-*"
 skip = "*-musllinux* *_i686 *-win32"
 
 [tool.pytest.ini_options]
