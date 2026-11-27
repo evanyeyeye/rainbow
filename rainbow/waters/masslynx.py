@@ -126,14 +126,16 @@ def parse_spectrum(path, display_precision=0, bin_width=1.0,
         for i in range(len(lines)):
             # Waters format: "Instrument Parameters" trigger
             if lines[i].startswith("Instrument Parameters"):
-                if lines[i + 1].startswith("Polarity"):
-                    polarity = lines[i + 1].split('\t\t\t')[1][-1]
-                else:
-                    try:
-                        polarity = lines[i + 2].split('\t')[1][-1]
-                    except Exception:
-                        raise Exception("Waters HRMS data is not supported.")
-                polarities.append(polarity)
+                # The Polarity line follows the trigger, after a
+                # "Parameter File -" line where there is one. Its value is
+                # the last tab-separated field, however many tabs come
+                # before it (one, or three in some exports).
+                after = lines[i + 1:i + 3]
+                found = [l for l in after if l.startswith("Polarity")]
+                value = found[0].split('\t')[-1].strip() if found else ''
+                if not value:
+                    raise Exception("Waters HRMS data is not supported.")
+                polarities.append(value[-1])
             # PE/TurboMass format: "Function N:" trigger
             elif re.match(r'^Function\s+\d+', lines[i]):
                 for j in range(i + 1, min(i + 5, len(lines))):
