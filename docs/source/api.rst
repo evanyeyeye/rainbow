@@ -70,6 +70,7 @@ Those interested in directly parsing specific files should also view the followi
    agilent.read_metadata
    agilent.chemstation
    agilent.masshunter
+   agilent.amx
    waters.read
    waters.read_metadata
    waters.masslynx

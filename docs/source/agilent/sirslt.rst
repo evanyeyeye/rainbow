@@ -31,9 +31,10 @@ instruments. Every file in the folder shares the folder's name:
      - Processing results, an archive holding an injection ACAML (not read).
    * - ``<name>.mfx``
      - MD5 checksums of the files above (not read).
-   * - ``*.amx``, ``*.pmx``, ``*.sqx``, ``*.scml``
-     - Acquisition method, processing method, sequence, and sampler
-       configuration (not read).
+   * - ``*.amx``
+     - The :ref:`acquisition method <amx>`: what each module was set to.
+   * - ``*.pmx``, ``*.sqx``, ``*.scml``
+     - Processing method, sequence, and sampler configuration (not read).
 
 **rainbow** reads the archive with the :ref:`.dx <dx>` reader, so a folder
 returns exactly the signals its archive would. The MS binaries are read by the
@@ -93,3 +94,13 @@ from:
 A run that recorded no detector signal, such as a column flush whose archive
 holds only telemetry, is still read: it returns its metadata and no
 datafiles. Integrated peaks are not read from a .sirslt; asking for them warns.
+
+Acquisition method
+------------------
+
+The folder's acquisition method (the ``.amx`` named after the folder, else
+its only one; none when it holds several and none is named after it) is read
+as :ref:`amx` describes, by :code:`rb.read` and :code:`rb.read_metadata`
+alike, and its settings are stated in the run's metadata in the keys a .D's
+``acq.macaml`` gives. What the result-set document already states (the
+technique, above all) stays.

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ACAML xmlns="urn:schemas-agilent-com:acaml21" schemaversion="2.1.30.999">
+  <Doc>
+    <DocID>1162c1ac-f982-450c-8d7a-4455fafd891a</DocID>
+    <DocInfo>
+      <Description>fig</Description>
+      <CreatedByUser>SYSTEM (SYSTEM)</CreatedByUser>
+      <CreationDate>2026-05-26T21:19:41.6278304Z</CreationDate>
+    </DocInfo>
+    <Content>
+      <Resources>
+        <Instrument id="346616f6-298e-4919-a836-99c38883a9f1" ver="0">
+          <Name>HPLC3</Name>
+          <Technique>LiquidChromatography</Technique>
+          <Module id="3a44b3ea-7239-4ddd-a9e6-f2b09407f37b">
+            <Name>Fraction Collector</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>FractionCollector</Type>
+            <PartNo>G1364F</PartNo>
+            <SerialNo>DE00000001</SerialNo>
+            <FirmwareRevision>D.07.40 [0003]</FirmwareRevision>
+          </Module>
+          <Module id="e6338a6d-c081-436d-9a36-9bf99c74c6aa">
+            <Name>Quat. Pump</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Pump</Type>
+            <PartNo>G7104C</PartNo>
+            <SerialNo>DE00000002</SerialNo>
+            <FirmwareRevision>B.07.40 [0003]</FirmwareRevision>
+          </Module>
+          <Module id="36640112-3617-47f2-8be5-a5192663bee1">
+            <Name>DAD</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Detector</Type>
+            <PartNo>G7115A</PartNo>
+            <SerialNo>DE00000003</SerialNo>
+            <FirmwareRevision>D.07.41 [0001]</FirmwareRevision>
+          </Module>
+          <Module id="428f7d79-175c-4d25-aac4-38d476dfd6a8">
+            <Name>Column Comp.</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>ColumnCompartment</Type>
+            <PartNo>G7116A</PartNo>
+            <SerialNo>DE00000004</SerialNo>
+            <FirmwareRevision>C.07.40 [0003] (Host: D.07.40 [0003])</FirmwareRevision>
+          </Module>
+          <Module id="c688350c-c9d8-4801-8b58-accf7e359f39">
+            <Name>Multisampler</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Sampler</Type>
+            <PartNo>G7167A</PartNo>
+            <SerialNo>DE00000005</SerialNo>
+            <FirmwareRevision>D.07.41 [0001]</FirmwareRevision>
+          </Module>
+        </Instrument>
+      </Resources>
+    </Content>
+  </Doc>
+</ACAML>

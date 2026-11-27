@@ -6,6 +6,28 @@ to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Agilent OpenLab CDS acquisition methods (`.amx`).**
+  `rainbow.agilent.amx.read(path)` reads one, and `rb.read` and
+  `rb.read_metadata` read a `.sirslt` folder's (the `.amx` named after the
+  folder, else its only one) through the step a .D's sidecars go through
+  (`method.state_run`). The settings are read from the method's
+  `Agilent/ReportableInformation` part, the same ACAML a .D keeps as
+  `acq.macaml`, in the units it states: the driver parts state none, and keep
+  some values as codes (the DAD's slit `2` is reported as `4 nm`). The keys a
+  .D's `acq.macaml` gives come the same way (`injection_volume`, `flow_rate`,
+  `run_time`, `column_temperature`, `modules`, `acq_method`), and
+  `acq_method_info` (version, dates, status) and `module_settings` (per
+  module: name, model, driver, and the pump's flow, limits, solvents and
+  timetable, the DAD's signals, peak width, slit and spectrum, the column
+  compartment's temperatures, the sampler's injection volume, speeds and
+  wash) are new. Each driver's settings are one table of report parameter IDs
+  (`amx.MODULES`); an LC/MSD's goes there once an OpenLab LC/MS method is at
+  hand. A value the method does not state is not stated. A run without an
+  `.amx` is read as before.
+- **Real `.amx` test data.** `tests/inputs/date.amx`, `pear.amx`,
+  `kiwi.amx` and the `tests/inputs/fig.sirslt` folder holding `fig.amx`,
+  CC0 from chromConverterExtraTests, anonymised as
+  `tests/inputs/README_sirslt.md` describes.
 - **Agilent OpenLab CDS `.sirslt` result folders.** `rb.read` and
   `rb.read_metadata` accept a `.sirslt` folder (or one renamed without the
   suffix, recognized by the `.dx` and `.acaml` inside it; a `.D` folder is
