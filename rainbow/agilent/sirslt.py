@@ -16,9 +16,10 @@ folder. Its files share the folder's stem::
                          separation technique and modules), sample, method.
     <name>.rx            processing results (not read).
     <name>.mfx           checksums of the files above (not read).
-    *.amx, *.pmx, *.sqx, *.scml
-                         acquisition method, processing method, sequence and
-                         sampler configuration (not read).
+    *.amx                the acquisition method (OPC zip): read by
+                         :mod:`rainbow.agilent.amx`.
+    *.pmx, *.sqx, *.scml processing method, sequence and sampler
+                         configuration (not read).
 
 The detector signals are decoded by :mod:`rainbow.agilent.openlab`, the reader
 for a standalone .dx, and the MS data by :mod:`rainbow.agilent.masshunter`,
@@ -39,7 +40,7 @@ import warnings
 import zipfile
 import xml.etree.ElementTree as ET
 
-from rainbow.agilent import method, openlab
+from rainbow.agilent import amx, method, openlab
 from rainbow.datadirectory import DataDirectory
 
 # ACAML <Technique> values, and MSData/Contents.xml <SeparationTechnique>
@@ -141,10 +142,10 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
 
     After its data files, the run goes through the step a .D goes through
     (:func:`rainbow.agilent.method.state_run`), on the run laid out as a .D
-    (the archive's MSData/ as its AcqData): each MS file states the
-    acquisition mode its scans state, and the method and sample sidecars the
-    run holds state what they say. What the run does not record is not
-    stated.
+    (the archive's MSData/ as its AcqData, and the folder's acquisition
+    method, its .amx): each MS file states the acquisition mode its scans
+    state, and the method and sample sidecars the run holds state what they
+    say. What the run does not record is not stated.
 
     A run that recorded no detector signal (a column flush, for instance, whose
     archive holds only instrument telemetry) still returns its metadata, with
@@ -183,7 +184,7 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
         want_centroid = centroid and 'MSPeak.bin' in ms.available
         want_profile = hrms and 'MSProfile.bin' in ms.available
         want_ms = want_centroid or want_profile
-        with _as_d(archive, ms, want_ms) as view:
+        with _as_d(archive, ms, want_ms, path) as view:
             if want_ms:
                 from rainbow.agilent import masshunter
                 datafiles.extend(masshunter.parse_allfiles(
@@ -227,7 +228,7 @@ def read_metadata(path):
         datafiles = openlab.payload_names(archive)
         metadata = run.metadata
         ms = run.ms
-        with _as_d(archive, ms, False) as view:
+        with _as_d(archive, ms, False, path) as view:
             method.state_run(view, [], metadata)
     if ms.warning:
         warnings.warn(ms.warning)
@@ -442,19 +443,25 @@ def _canonical_name(name):
 
 
 @contextlib.contextmanager
-def _as_d(archive, ms, binaries):
+def _as_d(archive, ms, binaries, path):
     """
     The run laid out as a .D, in a temporary folder, for the readers of a
     .D: what is under the archive's MSData/ in its AcqData folder (MSScan.xsd
     above all, which describes the MSScan.bin records, and any method or
-    device sidecars), and, with ``binaries``, the MS binaries beside the
-    archive, linked where the filesystem allows and copied where it does
-    not. Without ``binaries`` only the sidecars are written: no binary is
-    copied to state what the sidecars say. The folder is removed on exit.
+    device sidecars), the folder's acquisition method (its .amx, as
+    :func:`rainbow.agilent.amx.find` finds it in ``path``) at the top, and,
+    with ``binaries``, the MS binaries beside the archive, linked where the
+    filesystem allows and copied where it does not. Without ``binaries``
+    only the sidecars are written: no binary is copied to state what the
+    sidecars say. The folder is removed on exit.
 
     """
     tmp = tempfile.mkdtemp(prefix='rainbow-sirslt-')
     try:
+        method_file = amx.find(path)
+        if method_file is not None:
+            _place(method_file,
+                   os.path.join(tmp, os.path.basename(method_file)))
         acqdata = os.path.join(tmp, 'AcqData')
         os.mkdir(acqdata)
         for name, member in ms.archived.items():
@@ -465,14 +472,19 @@ def _as_d(archive, ms, binaries):
                 out.write(archive.read(member))
         if binaries:
             for name, source in ms.beside.items():
-                target = os.path.join(acqdata, name)
-                try:
-                    os.link(source, target)
-                except (OSError, AttributeError, NotImplementedError):
-                    shutil.copyfile(source, target)
+                _place(source, os.path.join(acqdata, name))
         yield tmp
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _place(source, target):
+    """``source`` at ``target``: linked where the filesystem allows,
+    copied where it does not."""
+    try:
+        os.link(source, target)
+    except (OSError, AttributeError, NotImplementedError):
+        shutil.copyfile(source, target)
 
 
 def _archive_xml(archive, member):

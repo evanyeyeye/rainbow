@@ -30,7 +30,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from rainbow.agilent import acaml
+from rainbow.agilent import acaml, amx
 # The .ms format's m/z step: a file's ion and the method's are one ion when
 # they agree at the coarser of it and the method's own written precision.
 from rainbow.agilent.chemstation import MS_MZ_STEP
@@ -433,10 +433,12 @@ def state_run(path, datafiles, metadata):
 
     The directory's metadata gains, where it does not state them already,
     what :func:`parse_injection_metadata` reads (acq.macaml, SAMPLE.XML,
-    AcqData/AcqMethod.xml) and the technique the method report declares
-    (:func:`acquisition_technique`). Each MS DataFile is tagged with its
-    acquisition mode (:func:`tag_acquisition_modes`) and with what the
-    method states of its signal (:func:`tag_ms_signals`). A sidecar the run
+    AcqData/AcqMethod.xml), what an OpenLab acquisition method (.amx) in
+    the folder states (:func:`rainbow.agilent.amx.read`), and the technique
+    the method report declares (:func:`acquisition_technique`). Each MS
+    DataFile is tagged with its acquisition mode
+    (:func:`tag_acquisition_modes`) and with what the method states of its
+    signal (:func:`tag_ms_signals`). A sidecar the run
     does not hold states nothing.
 
     Args:
@@ -452,6 +454,9 @@ def state_run(path, datafiles, metadata):
     """
     acq = read_acq_method(path)          # acq.macaml, parsed once
     for key, value in parse_injection_metadata(path, acq).items():
+        metadata.setdefault(key, value)
+    # An OpenLab acquisition method (.amx) in the folder, in the same keys.
+    for key, value in amx.read_run(path).items():
         metadata.setdefault(key, value)
     # Tag each MS channel SIM or Scan from its scans, else the acquisition
     # method, so a SIM run (its monitored ions) is told from a full scan.

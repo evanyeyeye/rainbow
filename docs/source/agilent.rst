@@ -20,6 +20,7 @@ a :ref:`.sirslt result folder <sirslt>` alongside its MS data and results.
    Agilent MassHunter DAD <agilent/dad>
    Agilent OpenLab CDS (.dx) <agilent/dx>
    Agilent OpenLab CDS (.sirslt) <agilent/sirslt>
+   Agilent OpenLab CDS method (.amx) <agilent/amx>
 
 It may be useful to search for a binary format by detector. 
 
