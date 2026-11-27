@@ -11,15 +11,20 @@ DataSequence. The result graph (integrated peaks) is read separately.
 ``sequence.acaml`` is large (tens of MB), so it is read by streaming with
 iterparse, never building the whole tree: the header stops as soon as the
 instrument is seen, and the peak reader visits only the elements it needs.
+The peaks of the last few documents read are kept, so reading the injections
+of one sequence one at a time parses its document once, not once each.
 
 When the optional ``lxml`` accelerator is installed, its ``iterparse`` is used
 with a tag filter, so the parser only sees the handful of relevant elements
 instead of every node. This is faster and lower-memory on large documents; the
 ``xml.etree`` fallback produces identical results.
 """
+import copy
 import os
 import re
+import threading
 import xml.etree.ElementTree as ET
+from collections import OrderedDict
 
 try:
     from lxml import etree as _lxml
@@ -59,6 +64,14 @@ _UNSTATED = ("identifier", "index", "area_unit", "height_unit",
 # channel and the integration, which this reader does not read. A document
 # here holds one integration per signal, so there are no alternates.
 _GROUP_UNSTATED = {"detector": None, "metadata": None, "processing": None}
+
+# The peaks of the last few result documents read, by path, modification time
+# and size, so a rewritten document is read again. One sequence.acaml holds
+# every injection of its sequence, so reading those injections one at a time
+# reads it once. What is kept is never handed out: each caller gets a copy.
+_KEPT = 4
+_kept = OrderedDict()
+_kept_lock = threading.Lock()
 
 
 def _local(tag):
@@ -230,7 +243,9 @@ def parse_peaks(path):
     channel without any UUID bookkeeping in the caller.
 
     The document is streamed and its heavy elements are cleared as they are
-    read, so memory stays modest despite the file size.
+    read, so memory stays modest despite the file size. The result of an
+    unchanged file is kept and copied rather than read again (see
+    :func:`injection_groups`), and each call gets its own copy to change.
 
     Args:
         path (str): Path of the sequence.acaml file.
@@ -242,6 +257,68 @@ def parse_peaks(path):
         with at least one peak are included.
 
     """
+    return copy.deepcopy(_kept_peaks(path))
+
+
+def injection_groups(path, name, sole=False):
+    """
+    Reads one injection's signal groups from a result document.
+
+    Copies only that injection's groups out of the document's kept peaks, so
+    reading every injection of a sequence parses its sequence.acaml once and
+    copies each injection's peaks once.
+
+    Args:
+        path (str): Path of the sequence.acaml or sequence.acam_ file.
+        name (str): The injection's .D folder name, matched case-insensitively.
+        sole (bool, optional): Return the groups of a document's only
+            injection when none matches ``name``, as a per-injection
+            sequence.acam_ holds exactly its own injection's peaks.
+
+    Returns:
+        list: The injection's signal groups (see :func:`parse_peaks`), its own
+        copy, or None when the document has none for it.
+
+    """
+    by_injection = _kept_peaks(path)
+    folded = name.lower()
+    found = None
+    for injection, groups in by_injection.items():
+        if injection.lower() == folded:
+            found = groups  # the last of names equal but for case, as before
+    if found is None and sole and len(by_injection) == 1:
+        found = next(iter(by_injection.values()))
+    return copy.deepcopy(found)
+
+
+def _kept_peaks(path):
+    """The peaks of a result document, read once while it is unchanged.
+
+    The result is shared by every caller, so it must not be changed: the
+    public readers hand out copies. A file that cannot be stat'ed is read
+    each time, as before. The parser in use is part of the key, so the lxml
+    and xml.etree readers are never served each other's result.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return _read_peaks(path)
+    key = (os.path.abspath(path), st.st_mtime_ns, st.st_size, _lxml is None)
+    with _kept_lock:
+        if key in _kept:
+            _kept.move_to_end(key)
+            return _kept[key]
+    by_injection = _read_peaks(path)
+    with _kept_lock:
+        _kept[key] = by_injection
+        _kept.move_to_end(key)
+        while len(_kept) > _KEPT:
+            _kept.popitem(last=False)
+    return by_injection
+
+
+def _read_peaks(path):
+    """Parses the peaks of a result document; see :func:`parse_peaks`."""
     signals = {}        # signal id -> signal info
     signal_results = []  # (signal id, [peak, ...]) for each non-empty result
     try:
