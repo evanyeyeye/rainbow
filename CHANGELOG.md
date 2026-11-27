@@ -88,6 +88,16 @@ to [Semantic Versioning](https://semver.org/).
   bundled run); no array becomes a Python list, nothing goes through JSON,
   and no trace is rebuilt. What is said only of a document (that it will not
   validate, that a channel is published relabeled or left out) is not said.
+- **A `.sirslt` run states what a `.D` run states after its data files.**
+  Both go through one step, `agilent.method.state_run`; a `.sirslt` is laid
+  out as a `.D` for it, the archive's `MSData/` as its `AcqData`. Its MS
+  files state the acquisition mode their scans state
+  (`acquisition_mode`, `acquisition_modes`, `acquisition_mode_from`), and
+  the method and sample sidecars it holds (an `MSData/AcqMethod.xml`'s
+  `monitored_compounds`) state what they say, in `read` and
+  `read_metadata` alike. What the run does not record is not stated: the
+  bundled `olive.sirslt` holds no acquisition method, so its MS signal's
+  settings and compounds are not stated.
 
 ### Changed
 - **MassHunter scan records are read in one pass.** `read_scan_table` reads

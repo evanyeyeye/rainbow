@@ -4,7 +4,7 @@ import numpy as np
 
 from rainbow._arguments import (reject_removed_arguments, validate_bin_width,
                                 validate_display_precision)
-from rainbow.agilent import chemstation
+from rainbow.agilent import chemstation, method
 from rainbow.datadirectory import DataDirectory
 from rainbow.datasequence import DataSequence
 
@@ -100,26 +100,10 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
                      if f.name.lower() in named
                      or not _same_recording(_ms_milliseconds(f), acq_times)]
 
-    # Enrich with the per-injection method and sample sidecars (acq.macaml,
-    # SAMPLE.XML, AcqData/AcqMethod.xml), filling gaps without overriding the values above.
-    from rainbow.agilent import method
-    acq = method.read_acq_method(path)          # acq.macaml, parsed once
-    for key, value in method.parse_injection_metadata(path, acq).items():
-        metadata.setdefault(key, value)
-
-    # Tag each MS channel SIM or Scan from the acquisition method, so a SIM run
-    # (its monitored ions) is distinguishable from a full scan.
-    method.tag_acquisition_modes(path, datafiles)
-    # What the method states of each ChemStation MS signal (polarity,
-    # fragmentor, SIM ions and their compound names), onto the file holding it.
-    method.tag_ms_signals(path, datafiles, acq)
-
-    # Record the separation technique the method declares (gas vs liquid
-    # chromatography), so an export routes by what the instrument says rather
-    # than guessing from the detectors.
-    technique = method.acquisition_technique(path)
-    if technique:
-        metadata.setdefault('technique', technique)
+    # The method and sample sidecars, and each MS file's acquisition mode and
+    # method signal, filling gaps without overriding the values above: the
+    # step a .sirslt goes through too (sirslt.read).
+    method.state_run(path, datafiles, metadata)
 
     # Surface unread MassHunter profile/centroid data so the hrms and centroid
     # flags are discoverable: a .D with MSProfile.bin holds a profile spectrum
@@ -435,7 +419,7 @@ def read_metadata(path):
                 if name in acqdata_files}
         if mh_datafiles or held:
             return {**said, 'datafiles': chemstation_files + mh_datafiles,
-                    'metadata': _with_injection_metadata(path, metadata)}
+                    'metadata': method.state_run(path, [], metadata)}
 
     if len(metadata) == 1:
         datadir = read(path)
@@ -444,7 +428,7 @@ def read_metadata(path):
         return None
     # Masshunter datafiles are not located.
     return {'datafiles': chemstation_files,
-            'metadata': _with_injection_metadata(path, metadata)}
+            'metadata': method.state_run(path, [], metadata)}
 
 
 def _ms_milliseconds(datafile):
@@ -479,17 +463,3 @@ def _same_recording(ms_times, acq_times):
         return False
     acq_ms = np.round(np.asarray(acq_times, dtype=np.float64) * 60000)
     return bool(np.isin(ms_times, acq_ms.astype(np.int64)).all())
-
-
-def _with_injection_metadata(path, metadata):
-    """The metadata with the per-injection method and sample sidecars
-    (acq.macaml, SAMPLE.XML, AcqData/AcqMethod.xml) and the separation
-    technique the method declares filling its gaps, as read() fills them, so
-    read_metadata states the same sample setup."""
-    from rainbow.agilent import method
-    for key, value in method.parse_injection_metadata(path).items():
-        metadata.setdefault(key, value)
-    technique = method.acquisition_technique(path)
-    if technique:
-        metadata.setdefault('technique', technique)
-    return metadata

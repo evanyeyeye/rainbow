@@ -30,6 +30,7 @@ The run's separation technique is recorded in the metadata as ``technique``
 describes; see :func:`technique`.
 
 """
+import contextlib
 import os
 import re
 import shutil
@@ -38,7 +39,7 @@ import warnings
 import zipfile
 import xml.etree.ElementTree as ET
 
-from rainbow.agilent import openlab
+from rainbow.agilent import method, openlab
 from rainbow.datadirectory import DataDirectory
 
 # ACAML <Technique> values, and MSData/Contents.xml <SeparationTechnique>
@@ -65,6 +66,7 @@ _MS_FILE_RE = re.compile(r'(MS[A-Za-z_]*\.bin)$', re.IGNORECASE)
 _ACQDATA_NAMES = {name.lower(): name for name in (
     'MSScan.xsd', 'MSScan.bin', 'MSPeak.bin', 'MSProfile.bin',
     'MSMassCal.bin', 'MSTS.xml', 'Contents.xml', 'Devices.xml',
+    'AcqMethod.xml',
     'DefaultMassCal.xml', 'MSScan_XSpecific.bin', 'MSScan_XSpecific.xsd',
     'MSTS_XSpecific.xml')}
 
@@ -137,6 +139,13 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
     ``hrms``. A run with MS data that was not asked for is flagged in the
     metadata (``centroid_available`` / ``hrms_available``).
 
+    After its data files, the run goes through the step a .D goes through
+    (:func:`rainbow.agilent.method.state_run`), on the run laid out as a .D
+    (the archive's MSData/ as its AcqData): each MS file states the
+    acquisition mode its scans state, and the method and sample sidecars the
+    run holds state what they say. What the run does not record is not
+    stated.
+
     A run that recorded no detector signal (a column flush, for instance, whose
     archive holds only instrument telemetry) still returns its metadata, with
     no datafiles.
@@ -173,10 +182,16 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
             warnings.warn(ms.warning)
         want_centroid = centroid and 'MSPeak.bin' in ms.available
         want_profile = hrms and 'MSProfile.bin' in ms.available
-        if want_centroid or want_profile:
-            datafiles.extend(_read_ms(
-                archive, ms, display_precision, hrms, centroid, bin_width,
-                labels_only))
+        want_ms = want_centroid or want_profile
+        with _as_d(archive, ms, want_ms) as view:
+            if want_ms:
+                from rainbow.agilent import masshunter
+                datafiles.extend(masshunter.parse_allfiles(
+                    view, display_precision, hrms, centroid, bin_width,
+                    requested_files=None, labels_only=labels_only))
+            # What the run's sidecars and its MS files' scans say of it, by
+            # the step a .D goes through.
+            method.state_run(view, datafiles, metadata)
     if not centroid and 'MSPeak.bin' in ms.available:
         metadata['centroid_available'] = True
     if not hrms and 'MSProfile.bin' in ms.available:
@@ -193,7 +208,9 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
 
 def read_metadata(path):
     """
-    Reads metadata from an Agilent OpenLab CDS .sirslt result folder.
+    Reads metadata from an Agilent OpenLab CDS .sirslt result folder: the
+    metadata :func:`read` states, its sidecars read by the same step, with
+    no data file decoded.
 
     Args:
         path (str): Path of the .sirslt folder.
@@ -208,8 +225,10 @@ def read_metadata(path):
     with zipfile.ZipFile(dx_path) as archive:
         run = _Run(path, acaml_path, archive)
         datafiles = openlab.payload_names(archive)
-    metadata = run.metadata
-    ms = run.ms
+        metadata = run.metadata
+        ms = run.ms
+        with _as_d(archive, ms, False) as view:
+            method.state_run(view, [], metadata)
     if ms.warning:
         warnings.warn(ms.warning)
     for name in ('MSPeak.bin', 'MSProfile.bin'):
@@ -422,37 +441,36 @@ def _canonical_name(name):
     return _ACQDATA_NAMES.get(name.lower(), name)
 
 
-def _read_ms(archive, ms, display_precision, hrms, centroid, bin_width,
-             labels_only):
+@contextlib.contextmanager
+def _as_d(archive, ms, binaries):
     """
-    Reads the MS data of a .sirslt with the MassHunter decoders.
-
-    Those decoders read a .D's AcqData folder. One is assembled in a temporary
-    directory from what is under the archive's MSData/ (MSScan.xsd above all,
-    which describes the MSScan.bin records) and the binaries beside the
-    archive, linked where the filesystem allows and copied where it does not.
+    The run laid out as a .D, in a temporary folder, for the readers of a
+    .D: what is under the archive's MSData/ in its AcqData folder (MSScan.xsd
+    above all, which describes the MSScan.bin records, and any method or
+    device sidecars), and, with ``binaries``, the MS binaries beside the
+    archive, linked where the filesystem allows and copied where it does
+    not. Without ``binaries`` only the sidecars are written: no binary is
+    copied to state what the sidecars say. The folder is removed on exit.
 
     """
-    from rainbow.agilent import masshunter
-
     tmp = tempfile.mkdtemp(prefix='rainbow-sirslt-')
     try:
         acqdata = os.path.join(tmp, 'AcqData')
         os.mkdir(acqdata)
         for name, member in ms.archived.items():
-            if name in ms.beside:
+            if name in ms.beside or (
+                    not binaries and name.lower().endswith('.bin')):
                 continue
             with open(os.path.join(acqdata, name), 'wb') as out:
                 out.write(archive.read(member))
-        for name, source in ms.beside.items():
-            target = os.path.join(acqdata, name)
-            try:
-                os.link(source, target)
-            except (OSError, AttributeError, NotImplementedError):
-                shutil.copyfile(source, target)
-        return masshunter.parse_allfiles(
-            tmp, display_precision, hrms, centroid, bin_width,
-            requested_files=None, labels_only=labels_only)
+        if binaries:
+            for name, source in ms.beside.items():
+                target = os.path.join(acqdata, name)
+                try:
+                    os.link(source, target)
+                except (OSError, AttributeError, NotImplementedError):
+                    shutil.copyfile(source, target)
+        yield tmp
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

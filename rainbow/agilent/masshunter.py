@@ -2256,9 +2256,9 @@ def read_scan_table(msscan_path, complextypes_dict, num_records=None):
         msscan_path (str): Path to MSScan.bin.
         complextypes_dict (dict): Output of :obj:`parse_scan_xsd`.
         num_records (int, optional): Scan count from MSTS.xml (:obj:`count_scans`),
-            used as a hint. May be None (OpenLab result folders omit MSTS.xml)
-            or stale (interrupted acquisitions); the stride is validated against
-            the file geometry either way.
+            used as a hint. May be None (a run without MSTS.xml) or stale
+            (interrupted acquisitions); the stride is validated against the
+            file geometry either way.
 
     Returns:
         numpy structured array, one row per retention time.

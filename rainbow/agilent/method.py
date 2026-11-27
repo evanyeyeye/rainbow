@@ -425,6 +425,49 @@ def acquisition_modes(path):
     return modes or None
 
 
+def state_run(path, datafiles, metadata):
+    """
+    States what a run's method and sample sidecars, and its MS files' own
+    scans, say of it: the one step every Agilent run read goes through after
+    its data files are read, a .D and an OpenLab .sirslt alike.
+
+    The directory's metadata gains, where it does not state them already,
+    what :func:`parse_injection_metadata` reads (acq.macaml, SAMPLE.XML,
+    AcqData/AcqMethod.xml) and the technique the method report declares
+    (:func:`acquisition_technique`). Each MS DataFile is tagged with its
+    acquisition mode (:func:`tag_acquisition_modes`) and with what the
+    method states of its signal (:func:`tag_ms_signals`). A sidecar the run
+    does not hold states nothing.
+
+    Args:
+        path (str): The run's folder, laid out as a .D: a .D itself, or the
+            .D-shaped view of a .sirslt (:func:`rainbow.agilent.sirslt.read`).
+        datafiles (list): The run's DataFiles, tagged in place; empty for a
+            listing (``read_metadata``), which states the metadata alone.
+        metadata (dict): The directory's metadata, filled in place.
+
+    Returns:
+        dict: ``metadata``.
+
+    """
+    acq = read_acq_method(path)          # acq.macaml, parsed once
+    for key, value in parse_injection_metadata(path, acq).items():
+        metadata.setdefault(key, value)
+    # Tag each MS channel SIM or Scan from its scans, else the acquisition
+    # method, so a SIM run (its monitored ions) is told from a full scan.
+    tag_acquisition_modes(path, datafiles)
+    # What the method states of each MS signal (polarity, fragmentor, SIM
+    # ions and their compound names), onto the file holding it.
+    tag_ms_signals(path, datafiles, acq)
+    # The separation technique the method declares (gas vs liquid
+    # chromatography), so an export routes by what the instrument says
+    # rather than guessing from the detectors.
+    technique = acquisition_technique(path)
+    if technique:
+        metadata.setdefault('technique', technique)
+    return metadata
+
+
 def tag_acquisition_modes(path, datafiles):
     """
     Tags each MS DataFile with its ``acquisition_mode`` where determinable,
