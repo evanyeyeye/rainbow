@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ACAML xmlns="urn:schemas-agilent-com:acaml21" schemaversion="2.1.30.999">
+  <Doc>
+    <DocID>ac72e12a-a88d-4eae-87c0-74f44e26f644</DocID>
+    <DocInfo>
+      <Description>plum</Description>
+      <CreatedByUser>OpenLab Administrator</CreatedByUser>
+      <CreationDate>2026-10-08T05:43:49.4272754Z</CreationDate>
+    </DocInfo>
+    <Content>
+      <Resources>
+        <Instrument id="bbb2131d-f29d-4bee-b859-68c07fa75daa" ver="0">
+          <Name>HPLC2</Name>
+          <Technique>LiquidChromatography</Technique>
+          <Module id="411fcc97-2b41-4652-bf31-3fb106d73c23">
+            <Name>Binary Pump</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Pump</Type>
+            <PartNo>G7112B</PartNo>
+            <SerialNo>DE00000024</SerialNo>
+            <FirmwareRevision>D.07.36 [0001]</FirmwareRevision>
+          </Module>
+          <Module id="19c573d3-91b8-43ba-80b9-2c8b7844615d">
+            <Name>Sampler</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Sampler</Type>
+            <PartNo>G7129A</PartNo>
+            <SerialNo>DE00000023</SerialNo>
+            <FirmwareRevision>D.07.35 [0002]</FirmwareRevision>
+          </Module>
+          <Module id="562649df-098f-4c26-ad14-7e62544ae6c6">
+            <Name>Column Comp.</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>ColumnCompartment</Type>
+            <PartNo>G7116A</PartNo>
+            <SerialNo>DE00000022</SerialNo>
+            <FirmwareRevision>D.07.35 [0002]</FirmwareRevision>
+          </Module>
+          <Module id="f6b1d300-09dc-4f92-a67c-1a588a77e70c">
+            <Name>DAD</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Detector</Type>
+            <PartNo>G7115A</PartNo>
+            <SerialNo>DE00000021</SerialNo>
+            <FirmwareRevision>D.07.35 [0002]</FirmwareRevision>
+          </Module>
+        </Instrument>
+      </Resources>
+    </Content>
+  </Doc>
+</ACAML>

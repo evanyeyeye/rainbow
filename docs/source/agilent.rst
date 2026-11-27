@@ -2,7 +2,8 @@ Agilent (.D)
 ============
 
 Agilent directories are distinguished by the .D extension. OpenLab CDS 2.x
-exports instead use a single :ref:`.dx archive <dx>`.
+exports instead use a single :ref:`.dx archive <dx>`, which OpenLab keeps in
+a :ref:`.sirslt result folder <sirslt>` alongside its MS data and results.
 
 **rainbow** can parse the following Agilent binary formats:
 
@@ -18,6 +19,7 @@ exports instead use a single :ref:`.dx archive <dx>`.
    Agilent ICP-MS MSProfile.bin <agilent/icpms>
    Agilent MassHunter DAD <agilent/dad>
    Agilent OpenLab CDS (.dx) <agilent/dx>
+   Agilent OpenLab CDS (.sirslt) <agilent/sirslt>
 
 It may be useful to search for a binary format by detector. 
 

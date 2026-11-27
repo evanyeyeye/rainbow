@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ACAML xmlns="urn:schemas-agilent-com:acaml21" schemaversion="2.1.30.999">
+  <Doc>
+    <DocID>6d892b12-fc07-46b3-ab09-9c8980b280b8</DocID>
+    <DocInfo>
+      <Description>olive</Description>
+      <CreatedByUser>OpenLab Administrator (admin)</CreatedByUser>
+      <CreationDate>2026-11-23T05:49:45.7220343Z</CreationDate>
+    </DocInfo>
+    <Content>
+      <Resources>
+        <Instrument id="45a3323d-05cc-4184-9c25-0364e0fac575" ver="0">
+          <Name>LCMS1</Name>
+          <Technique>LiquidChromatography</Technique>
+          <Module id="b5b817fd-017b-4916-8c75-a050ff993424">
+            <Name>SQ</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>SingleQuad</Type>
+            <PartNo>LC/MSD iQ</PartNo>
+            <SerialNo>SG00000001</SerialNo>
+            <FirmwareRevision>8.2.6</FirmwareRevision>
+          </Module>
+          <Module id="95d1f390-8e18-40a0-9ede-ffbd808773b8">
+            <Name>Binary Pump</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Pump</Type>
+            <PartNo>G7120A</PartNo>
+            <SerialNo>DE00000001</SerialNo>
+            <FirmwareRevision>B.07.35 [0003]</FirmwareRevision>
+          </Module>
+          <Module id="e3fc44af-900c-4e03-b7d6-f3f38ce46788">
+            <Name>Column Comp.</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>ColumnCompartment</Type>
+            <PartNo>G7116B</PartNo>
+            <SerialNo>DE00000002</SerialNo>
+            <FirmwareRevision>D.07.35 [0002]</FirmwareRevision>
+          </Module>
+          <Module id="e3516a36-3dd0-47c7-ace3-e30754a7f870">
+            <Name>DAD</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Detector</Type>
+            <PartNo>G7117A</PartNo>
+            <SerialNo>DE00000003</SerialNo>
+            <FirmwareRevision>D.07.35 [0002]</FirmwareRevision>
+          </Module>
+          <Module id="64a0fdbe-418d-4664-a65a-0582c1529888">
+            <Name>Sampler</Name>
+            <Manufacturer>Agilent</Manufacturer>
+            <Type>Sampler</Type>
+            <PartNo>G7129B</PartNo>
+            <SerialNo>DE00000004</SerialNo>
+            <FirmwareRevision>D.07.35 [0002]</FirmwareRevision>
+          </Module>
+        </Instrument>
+      </Resources>
+    </Content>
+  </Doc>
+</ACAML>

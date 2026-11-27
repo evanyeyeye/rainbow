@@ -146,6 +146,11 @@ def sniff_vendor(path):
             or any(re.fullmatch(r'_func\d{3}\.dat', name) for name in lower):
         return 'waters'
 
+    # Agilent OpenLab .sirslt: a .dx archive beside its .acaml result document.
+    exts = {os.path.splitext(name)[1] for name in lower}
+    if '.dx' in exts and '.acaml' in exts:
+        return 'agilent'
+
     # Agilent .D: the AcqData subdirectory or any Chemstation data file.
     if 'acqdata' in lower \
             or any(os.path.splitext(name)[1] in ('.ch', '.uv', '.ms')
@@ -163,7 +168,8 @@ def _detect_vendor(path):
     """
     Determines which vendor parser to use for a path.
 
-    The path's extension is tried first (.D/.dx -> Agilent, .raw -> Waters),
+    The path's extension is tried first (.D/.dx/.sirslt -> Agilent, .raw ->
+    Waters),
     which preserves rainbow's historical behavior exactly. If the extension is
     unrecognized and the path is a directory, its contents are sniffed for a
     vendor signature, so datasets whose folders were renamed without the
@@ -181,7 +187,7 @@ def _detect_vendor(path):
     if not isinstance(path, str):
         return None
     ext = os.path.splitext(path)[1].lower()
-    if ext in ('.d', '.dx'):
+    if ext in ('.d', '.dx', '.sirslt'):
         return 'agilent'
     if ext == '.raw':
         return 'waters'
@@ -230,7 +236,8 @@ def _unreadable(path, what="read"):
         hint = (" It holds injection subdirectories, so it is a sequence "
                 "rather than one run: rb.read_sequence() reads that.")
     elif isinstance(path, str) and os.path.isdir(path):
-        hint = (" If its name lost the vendor suffix (.D, .dx, .raw), pass "
+        hint = (" If its name lost the vendor suffix (.D, .dx, .sirslt, "
+                ".raw), pass "
                 "format='agilent' or format='waters' to name the parser.")
     # A path that does not exist never reaches here: the vendor parsers raise
     # "<path> is not a directory" first, which already says what is wrong.
@@ -254,10 +261,12 @@ def read(path, display_precision='auto', hrms=False, requested_files=None,
 
     Agilent HRMS parsing may be slow. Set the flag to enable it.
 
-    For Agilent .dx archives, instrument telemetry traces (e.g. pressure, \
-        temperature) are skipped unless the telemetry flag is set.
+    For Agilent .dx archives and OpenLab .sirslt folders, instrument \
+        telemetry traces (e.g. pressure, temperature) are skipped unless the \
+        telemetry flag is set.
 
-    The vendor is normally detected from the path: a .D/.dx path is read as \
+    The vendor is normally detected from the path: a .D/.dx/.sirslt path is \
+        read as \
         Agilent and a .raw path as Waters. A directory whose name lacks that \
         suffix is identified from its contents instead. Pass ``format`` \
         ('agilent' or 'waters') to override detection entirely.

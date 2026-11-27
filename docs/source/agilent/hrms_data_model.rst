@@ -280,6 +280,13 @@ the peaks onto the common grid (a :class:`~rainbow.datafile.DataFile`):
 A centroid has no shared flight-time ladder to fall back on, so its per-scan form
 is just the bare peak lists, there is no ``flight_times``.
 
+Centroid intensities are always **float64**, in the per-scan form and on a
+``bin_width`` grid alike. MSPeak.bin stores them as floats and they are often
+fractional (a GC/MS abundance such as 10242.948, or an OpenLab
+single-quadrupole LC/MS's), so they are not cast to integers, and every run gets
+the same dtype whatever values it happens to hold. A profile's intensities are
+whole-number counts and stay unsigned integers.
+
 When you do bin, it behaves exactly like the profile's binning, producing the
 same drift zeros. The only difference is how many points sit under a peak: a
 profile spends **many** (a wide row of staircases, :numref:`fig-centroid-zeros`

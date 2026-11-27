@@ -273,9 +273,8 @@ def parse_allfiles(path, display_precision='auto', hrms=False, centroid=False,
     acqdata_files = set(os.listdir(acqdata_path))
     datafiles.extend(parse_dadfiles(
         acqdata_path, telemetry, requested_files, acqdata_files))
-    # MSTS.xml is no longer required: the scan count is recovered from the
-    # MSScan.bin record geometry (see read_scan_records). This lets us parse
-    # Agilent OpenLab .rslt/.sirslt result folders, which omit MSTS.xml.
+    # MSTS.xml is not required: the scan count is recovered from the
+    # MSScan.bin record geometry (see read_scan_records) when it is absent.
     if {"MSScan.xsd", "MSScan.bin"} <= acqdata_files:
         # ICP-MS data is distinguished by the presence of MSScan_XSpecific.bin,
         # which records the per-isotope channels. Its MSProfile.bin is stored
@@ -950,8 +949,7 @@ def parse_msdata(path, display_precision='auto', bin_width=None,
         - MSProfile.bin -> Actual data values.
 
     The scan count is recovered by reading MSScan.bin to EOF, so MSTS.xml is \
-        not required. This lets us parse OpenLab .rslt/.sirslt result \
-        folders, which omit MSTS.xml.
+        not required, and data without one is still read.
 
     Learn more about this file format :ref:`here <hrms>`.
 
@@ -1356,9 +1354,17 @@ def _scatter_sum(idx, intensities, size):
         size (int): Length of the output grid.
 
     Returns:
-        Length-``size`` uint64 array of summed intensities.
+        Length-``size`` uint64 array of summed intensities, or float64 for
+        float ``intensities``.
 
     """
+    if intensities.dtype.kind == 'f':
+        # Float intensities (the centroid's; see parse_mspeakdata) are summed
+        # as they are, into a float64 grid, empty or not; there is no integer
+        # grid to reproduce exactly.
+        if intensities.size == 0:
+            return np.zeros(size, dtype=np.float64)
+        return np.bincount(idx, weights=intensities, minlength=size)
     if intensities.size == 0:
         return np.zeros(size, dtype=np.uint64)
 
@@ -1452,8 +1458,10 @@ def bin_to_grid(mz_arr, intensities, rows, num_times, display_precision,
         # with, an 8.7 MB run peaks at 350 MB and a long one runs to gigabytes,
         # all of it to be discarded unread.
         filled = np.unique(keys[intensities > 0])
+        empty_dtype = np.float64 if intensities.dtype.kind == 'f' \
+            else np.uint64
         return (np.round(filled * width, decimals),
-                np.zeros((num_times, 0), dtype=np.uint64))
+                np.zeros((num_times, 0), dtype=empty_dtype))
 
     low = int(keys.min())
     span = int(keys.max()) - low + 1
@@ -1573,12 +1581,20 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
                                    calib_vals[i], calib_flags.get(
                                        calibration_ids[i]))
             mz_per_scan[i] = np.asarray(mzs, dtype=np.float64)
-            inten_per_scan[i] = np.asarray(intensities, dtype=np.uint64)
+            inten_per_scan[i] = intensities
 
+    # MSPeak.bin stores its abundances as floats, and they are returned as
+    # float64 whatever their values. They are fractional on a GC/MS .D
+    # (yellow.D's include 10242.948) and on an OpenLab single-quadrupole
+    # LC/MS alike, so the integer cast this once applied truncated them; and
+    # a dtype chosen by whether a run happens to hold a fraction would differ
+    # between runs of one sequence.
     for i in range(num_times):
         if mz_per_scan[i] is None:
             mz_per_scan[i] = np.array([], dtype=np.float64)
-            inten_per_scan[i] = np.array([], dtype=np.uint64)
+            inten_per_scan[i] = np.array([], dtype=np.float64)
+        else:
+            inten_per_scan[i] = np.asarray(inten_per_scan[i], dtype=np.float64)
 
     if bin_width is None:
         # The per-scan (faithful) representation, like the HRMS profile default.
@@ -1618,7 +1634,7 @@ def parse_mspeakdata(path, display_precision='auto', bin_width=None,
     if mz_arr.size == 0:
         return _with_mz_floor(DataFile(
             "MSPeak.bin", 'MS', times, np.array([], dtype=np.float64),
-            np.zeros((num_times, 0), dtype=np.uint64), {}), floor)
+            np.zeros((num_times, 0), dtype=np.float64), {}), floor)
     intensities = np.concatenate(inten_per_scan)
     num_peaks_per_time = np.array(
         [len(m) for m in mz_per_scan], dtype=np.int64)
@@ -1964,7 +1980,25 @@ def parse_scan_xsd(xsd_path):
     complextypes_dict = {}
     for complextype in root.findall(f"{{{namespace}}}complexType"):
         innertypes = []
-        for element in complextype[0].findall(f"{{{namespace}}}element"):
+        elements = complextype[0].findall(f"{{{namespace}}}element")
+        for position, element in enumerate(elements):
+            if element.get('type') is None:
+                # An element with no type attribute declares its type inline.
+                # The one MSScan.xsd is known to do this for is the trailing
+                # "Padding" of a ScanRecordType (version 2.1, as OpenLab CDS
+                # writes for its single-quad LC/MS), a minOccurs="0" run of
+                # optional PadBytes. No bytes are stored for it: the records
+                # tile MSScan.bin exactly without it. Only that is left out;
+                # any other inline type has a size this reader cannot know,
+                # and guessing it would misread every record after it.
+                if not _is_optional_padding(element, position, elements):
+                    raise ValueError(
+                        "{} declares {!r} in {!r} with an inline type, which "
+                        "rainbow cannot size; only a trailing optional "
+                        "Padding element is supported.".format(
+                            xsd_path, element.get('name'),
+                            complextype.get('name')))
+                continue
             innertypes.append((element.get('name'), element.get('type')))
         complextypes_dict[complextype.get('name')] = innertypes
     return complextypes_dict
@@ -2098,9 +2132,9 @@ def count_scans(acqdata_path):
     Returns the total scan count from MSTS.xml, or None if MSTS.xml is absent.
 
     MSTS.xml lists the number of scans per acquisition time segment
-    (``<NumOfScans>``); the total is their sum. Agilent OpenLab .rslt/.sirslt
-    result folders omit MSTS.xml, in which case :obj:`read_scan_records` infers
-    the scan count from the record geometry instead.
+    (``<NumOfScans>``); the total is their sum. Without MSTS.xml,
+    :obj:`read_scan_records` infers the scan count from the record geometry
+    instead.
 
     Args:
         acqdata_path (str): Path to the AcqData subdirectory.
@@ -2115,6 +2149,19 @@ def count_scans(acqdata_path):
     root = etree.parse(msts_path).getroot()
     counts = [int(el.text) for el in root.iter("NumOfScans") if el.text]
     return sum(counts) if counts else None
+
+
+def _is_optional_padding(element, position, elements):
+    """
+    Whether an untyped MSScan.xsd element is the optional trailing Padding.
+
+    It must be named Padding, be optional (minOccurs="0"), and be the last
+    element of its sequence, so that leaving it out moves no other field.
+
+    """
+    return (element.get('name') == 'Padding'
+            and element.get('minOccurs') == '0'
+            and position == len(elements) - 1)
 
 
 def read_complextype(f, complextypes_dict, name):
