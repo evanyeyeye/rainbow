@@ -41,7 +41,7 @@ match.
 Every detector signal, telemetry trace and centroid scan reads identically
 before and after.
 
-## `fig.sirslt` and the lone acquisition methods (`.amx`)
+## `fig.sirslt`, the single-quad runs and the lone acquisition methods (`.amx`)
 
 | File | Was | Holds |
 | --- | --- | --- |
@@ -49,8 +49,13 @@ before and after.
 | `date.amx` | `flow_rate_example.amx` | A gradient whose timetable changes the flow. |
 | `pear.amx` | `Glucosinolates-XDB5.amx` | A gradient at one flow, 40 °C, 5 µL. |
 | `kiwi.amx` | `column_storage_ACN100.amx` | No timetable, oven not controlled, one DAD signal, no spectrum. |
+| `mango.amx` | `example_DAD_only.amx` | UHPLC with a DAD and an LC/MSD iQ single quad, set to Scan alone (m/z 100-1000). |
+| `jade.sirslt` | | The same LC/MS: one SIM/Scan time segment, a scan of m/z 100-1000 and the SIM ion m/z 295; its method `example_MS_with_SIM.amx`. |
+| `ochre.sirslt` | | Two SIM/Scan time segments (from 0 and 2 min), each its own SIM ion (m/z 195, 230); `example_MS_with_time_segments.amx`. |
+| `rose.sirslt` | | Positive and negative scans, the negative on a fragmentor ramp; `example_MS_pos_and_neg.amx`. |
+| `coral.sirslt` | | A UHPLC with a DAD alone: signal A at 220 nm with a 360 nm reference; `example_DAD_ref.amx`. |
 
-All four methods are from one HPLC. They are by Ethan Bass, released under
+The first four methods are from one HPLC. They are by Ethan Bass, released under
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/), from
 [chromConverterExtraTests](https://github.com/ethanbass/chromConverterExtraTests)
 (`inst/`), and are read by `tests/test_amx.py`.
@@ -79,8 +84,15 @@ How they were anonymised:
   SHA-1, so the packages stay self-consistent.
 - The files were renamed after a fruit.
 
-Kept as they were: the generic `SYSTEM (SYSTEM)` account (creator, modifier
-and run operator), dates, document and method GUIDs, part numbers and
+Kept as they were in the first four: the generic `SYSTEM (SYSTEM)` account
+(creator, modifier and run operator), dates, document and method GUIDs, part numbers and
 firmware. Every detector signal and every setting `tests/test_amx.py` checks
 reads identically before and after; only the method name (`fig.amx`,
 `date.amx`, ...) and the instrument name changed.
+
+`mango.amx` and the four runs were shared by p3bm in #82 for rainbow's tests,
+already anonymised: made on an OpenLab system's default account, the
+instruments named `LCMS1` and `UHPLC1`, their serial numbers placeholders
+(`DE000000..`, `SG00000001`), the result paths `C:\Data\<run>.sirslt\`. They
+are byte for byte as shared; only `mango.amx` was renamed, so it still states
+the name it was last saved as (`BEH_Acidic_6min.amx`) as `acq_method`.

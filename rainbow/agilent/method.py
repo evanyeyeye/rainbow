@@ -434,7 +434,8 @@ def state_run(path, datafiles, metadata):
     The directory's metadata gains, where it does not state them already,
     what :func:`parse_injection_metadata` reads (acq.macaml, SAMPLE.XML,
     AcqData/AcqMethod.xml), what an OpenLab acquisition method (.amx) in
-    the folder states (:func:`rainbow.agilent.amx.read`), and the technique
+    the folder states (:func:`rainbow.agilent.amx.read`; its single quad's
+    time segments onto the MS files, :func:`tag_ms_segments`), and the technique
     the method report declares (:func:`acquisition_technique`). Each MS
     DataFile is tagged with its acquisition mode
     (:func:`tag_acquisition_modes`) and with what the method states of its
@@ -456,7 +457,8 @@ def state_run(path, datafiles, metadata):
     for key, value in parse_injection_metadata(path, acq).items():
         metadata.setdefault(key, value)
     # An OpenLab acquisition method (.amx) in the folder, in the same keys.
-    for key, value in amx.read_run(path).items():
+    found = amx.read_run(path)
+    for key, value in found.items():
         metadata.setdefault(key, value)
     # Tag each MS channel SIM or Scan from its scans, else the acquisition
     # method, so a SIM run (its monitored ions) is told from a full scan.
@@ -464,6 +466,9 @@ def state_run(path, datafiles, metadata):
     # What the method states of each MS signal (polarity, fragmentor, SIM
     # ions and their compound names), onto the file holding it.
     tag_ms_signals(path, datafiles, acq)
+    # What an OpenLab single quad's method states of its time segments, onto
+    # the MS files whose scans it describes.
+    tag_ms_segments(datafiles, found)
     # The separation technique the method declares (gas vs liquid
     # chromatography), so an export routes by what the instrument says
     # rather than guessing from the detectors.
@@ -751,6 +756,156 @@ def tag_ms_signals(path, datafiles, acq=_UNREAD):
                 _disagree(datafile, key, value)
                 continue
             datafile.metadata.setdefault(key, value)
+
+
+def tag_ms_segments(datafiles, method):
+    """
+    Puts what an OpenLab single quad's acquisition method (an ``.amx``, as
+    :func:`rainbow.agilent.amx.read` gives it) states of its time segments
+    onto each MS data file whose scans it describes, in the keys
+    :func:`ms_signals` gives a ChemStation signal's: ``scan_parameters`` (each
+    scan row: ``time_segment``, ``time``, ``mz_low``, ``mz_high``,
+    ``fragmentor`` or, for a ramp, ``fragmentor_ramp`` (``[{"mz", "voltage"}]``),
+    ``polarity``), ``monitored_ions`` (each SIM ion: ``time_segment``,
+    ``time``, ``mz``, ``fragmentor``, ``compound``, ``polarity``), and
+    ``ionization_mode``, ``fragmentor`` and ``polarity`` where every row
+    states the same one. ``time_segment`` is the segment's number, as each
+    scan states it (``scans['time_segment']``); ``time`` its start, in min.
+    Only keys the file does not state are filled.
+
+    The file's own scans are the check, never the pairing: each row must be
+    what some scan of its segment recorded (a Scan row its polarity and m/z
+    range, a SIM ion its polarity and m/z), and every kind of scan recorded
+    must be a row of the method. Otherwise nothing is put on the file, and
+    the method's rows are kept under ``method_disagrees['time_segments']``.
+    A file without its scans' records states nothing of the method.
+
+    Args:
+        datafiles (list): The run's DataFiles; MS entries are tagged in place.
+        method (dict): What the run's .amx states; {} for a run without one.
+
+    """
+    rows = _segment_rows(method)
+    if rows is None:
+        return
+    for datafile in datafiles:
+        if datafile.detector != "MS":
+            continue
+        recorded = _recorded_kinds(datafile)
+        if recorded is None:
+            continue
+        stated = {_row_kind(row) for row in rows}
+        if None in stated or stated != recorded:
+            _disagree(datafile, "time_segments", rows)
+            continue
+        out = {}
+        scans = [row for row in rows if "mz_low" in row]
+        ions = [row for row in rows if "mz" in row]
+        if scans:
+            out["scan_parameters"] = scans
+        if ions:
+            out["monitored_ions"] = ions
+        for key in ("ionization_mode", "fragmentor", "polarity"):
+            values = {row.get(key) for row in rows}
+            if len(values) == 1 and None not in values:
+                out[key] = values.pop()
+        for key, value in out.items():
+            if key in datafile.metadata and datafile.metadata[key] != value:
+                _disagree(datafile, key, value)
+                continue
+            datafile.metadata.setdefault(key, value)
+
+
+def _segment_rows(method):
+    """The scan rows and SIM ions of a method's one single quad, in the
+    method's order, each with its segment's number and start; None where the
+    method has no single quad with segments, or more than one."""
+    modules = [module for module in method.get("module_settings", [])
+               if module.get("driver") in _SEGMENTED_MS_DRIVERS
+               and (module.get("settings") or {}).get("time_segments")]
+    if len(modules) != 1:
+        return None
+    rows = []
+    for n, segment in enumerate(modules[0]["settings"]["time_segments"], 1):
+        start = _amount(segment.get("time"))
+        ramps = {}
+        for point in segment.get("fragmentor_ramps", []):
+            ramps.setdefault(point.get("ramp"), []).append(
+                {"mz": _amount(point.get("mz")),
+                 "voltage": _amount(point.get("voltage"))})
+        for kind in ("scan_parameters", "monitored_ions"):
+            for row in segment.get(kind, []):
+                entry = {"time_segment": n, "time": start}
+                for key in ("mz_low", "mz_high", "mz"):
+                    if key in row:
+                        entry[key] = _amount(row[key])
+                fragmentor = row.get("fragmentor")
+                if isinstance(fragmentor, str) and fragmentor in ramps:
+                    entry["fragmentor_ramp"] = ramps[fragmentor]
+                else:
+                    entry["fragmentor"] = _amount(fragmentor)
+                if kind == "monitored_ions":
+                    entry["compound"] = row.get("compound")
+                for key in ("polarity", "ionization_mode"):
+                    if row.get(key) is not None:
+                        entry[key] = row[key]
+                rows.append(entry)
+    return rows
+
+
+# The drivers of MS modules whose method comes in time segments
+# (rainbow.agilent.amx.MODULES): the single quad.
+_SEGMENTED_MS_DRIVERS = ("LCSQ",)
+
+
+def _amount(value):
+    """A method value as a float: a quantity's value, or a number; else None."""
+    if isinstance(value, dict):
+        value = value.get("value")
+    if isinstance(value, bool):
+        return None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _row_kind(row):
+    """What scans a method row asks for, as :func:`_recorded_kinds` states a
+    scan: (segment, 'Scan', polarity, m/z low, m/z high) or (segment, 'SIM',
+    polarity, m/z); None where the row states too little."""
+    polarity = row.get("polarity")
+    if "mz_low" in row:
+        if None in (row["mz_low"], row.get("mz_high")):
+            return None
+        return (row["time_segment"], "Scan", polarity,
+                _mz_key(row["mz_low"]), _mz_key(row["mz_high"]))
+    if row.get("mz") is None:
+        return None
+    return (row["time_segment"], "SIM", polarity, _mz_key(row["mz"]))
+
+
+def _recorded_kinds(datafile):
+    """The kinds of scan a MassHunter-recorded file holds, from its scans'
+    records (``scans``): {(segment, 'Scan', polarity, m/z low, m/z high)} and
+    {(segment, 'SIM', polarity, m/z)}; None without those records."""
+    scans = datafile.metadata.get("scans") or {}
+    needed = ("time_segment", "monitoring", "polarity", "mz_range_min",
+              "mz_range_max", "precursor_mz")
+    if any(scans.get(key) is None for key in needed):
+        return None
+    kinds = set()
+    for segment, monitoring, polarity, low, high, precursor in zip(
+            *(scans[key] for key in needed)):
+        if bool(monitoring):
+            mz = precursor if np.isfinite(precursor) else low
+            kinds.add((int(segment), "SIM", str(polarity), _mz_key(mz)))
+        else:
+            kinds.add((int(segment), "Scan", str(polarity), _mz_key(low),
+                       _mz_key(high)))
+    return kinds
+
+
+def _mz_key(mz):
+    """An m/z as the method and a scan record are compared: to 0.01."""
+    return round(float(mz), 2)
 
 
 def _signal_of(path, datafile, detectors, ms_count):

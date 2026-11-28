@@ -3,4 +3,4 @@
 # checks that they agree. Read from here rather than from the installed
 # distribution's metadata, which an editable install leaves at whatever
 # version it was installed as.
-__version__ = "1.6.0"
+__version__ = "1.7.0"
