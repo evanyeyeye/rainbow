@@ -22,10 +22,11 @@ acquires with. The file is an Open Packaging Conventions (zip) package, like a
    * - ``DeviceMethodSettings/<driver>%25231``
      - One part per module, named for its driver (``AgilentPumpDriver``,
        ``Agilent1200erDadDriver``, ``AgilentColumnCompDriver``,
-       ``AgilentSamplerDriver``, ``AgilentFractionCollectorDriver``): the
-       settings as the driver keeps them, and the module's configuration.
-       **rainbow** reads which driver each module has and the module type it
-       records.
+       ``AgilentSamplerDriver``, ``AgilentFractionCollectorDriver``,
+       ``LCSQ``): the settings as the driver keeps them, and the module's
+       configuration. **rainbow** reads which driver each module has and the
+       module type it records (a single quad's ``LCSQ`` part records it as
+       ``<msModel>``).
    * - ``MethodProperties/MethodProperties``
      - The technique (``LC``) and the run time in seconds.
    * - ``Agilent/MethodType``, ``Agilent/ApprovalState``,
@@ -76,13 +77,26 @@ and ``settings``:
        ``solvents`` (channel, solvent, used, percent) and ``timetable``
        (time, percent A to D, flow, pressure limit), one dict per row
    * - ``Agilent1200erDadDriver``
-     - ``signals`` (signal, acquire, wavelength, bandwidth, use_reference),
+     - ``signals`` (signal, acquire, wavelength, bandwidth, use_reference,
+       reference_wavelength, reference_bandwidth),
        ``peak_width``, ``slit_width``, spectrum range, step and store mode
    * - ``AgilentColumnCompDriver``
      - left and right temperature and their control modes
    * - ``AgilentSamplerDriver``
      - ``injection_volume``, draw and eject speed, wait after drawing,
        needle wash mode
+   * - ``LCSQ`` (single quad, LC/MSD iQ)
+     - ``ion_source``, ``tune_file``, ``acquire_mode``, ``stop_mode``, time
+       filter and its width, ``points_per_second``, ``sim_percent``, the
+       post-run diverter position and ``timetable`` (time, type, value); and
+       ``time_segments``, one per segment in its number's order, each with
+       its ``time`` (start), ``scan_type`` and its own rows:
+       ``scan_parameters`` (mz_low, mz_high, scan time, fragmentor,
+       polarity, ionization mode, data storage, gain factor, threshold),
+       ``monitored_ions`` (mz, compound, dwell, fragmentor, polarity,
+       ionization mode, gain factor), ``fragmentor_ramps`` (the points of
+       each ramp a row's fragmentor names, ``"Ramp(1)"``: ramp, mz, voltage)
+       and ``source`` (parameter, positive and negative value)
 
 A quantity is ``{'value': float, 'unit': str}``, Yes/No a bool, and anything
 else the report's text: ``slit_width`` is ``'4 nm'``, and a timetable's first
@@ -94,6 +108,7 @@ is listed with no settings.
 
 Each driver's entry in :data:`rainbow.agilent.amx.MODULES` lists the report
 parameter IDs it reads and the field each is stated as, so reading another
-module is adding its entry. An LC/MSD's entry goes there too, once an OpenLab
-LC/MS method is at hand: no public method so far names the MSD's driver part
-or its report parameters.
+module is adding its entry. A report table's row is one of an entry's
+tables where it holds that table's first ID, so the single quad's scan row
+(``StartMass``) and its SIM ions (``Mass``), which the report keeps in one
+table, are told apart.

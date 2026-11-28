@@ -104,3 +104,22 @@ as :ref:`amx` describes, by :code:`rb.read` and :code:`rb.read_metadata`
 alike, and its settings are stated in the run's metadata in the keys a .D's
 ``acq.macaml`` gives. What the result-set document already states (the
 technique, above all) stays.
+
+A run's single quad states, in its method, the scan rows and SIM ions of
+each time segment. Read with :code:`centroid=True`, the run's MS file gets
+them in the keys a ChemStation MS signal's settings come in
+(:func:`rainbow.agilent.method.ms_signals`): ``scan_parameters`` and
+``monitored_ions`` (each with its ``time_segment`` and its ``time``, the
+segment's start in minutes; an ion with its ``compound``; a row on a
+fragmentor ramp with ``fragmentor_ramp``, its points), and
+``ionization_mode``, ``fragmentor`` and ``polarity`` where every row states
+the same one. The scans are the check: each row must be what scans of its
+segment recorded, and each kind of scan recorded a row of the method; where
+they are not, nothing of the method goes on the file, and its rows are kept
+in ``metadata['method_disagrees']['time_segments']`` (see
+:func:`rainbow.agilent.method.tag_ms_segments`)::
+
+    ms = rb.read("path/to/run.sirslt", centroid=True).get_file("MSPeak.bin")
+    ms.metadata["monitored_ions"]
+    # [{'time_segment': 1, 'time': 0.0, 'mz': 295.0, 'fragmentor': 100.0,
+    #   'compound': 'Caffeine', 'polarity': '+', 'ionization_mode': 'ESI'}]

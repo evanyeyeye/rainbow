@@ -12,8 +12,9 @@ An .amx is an Open Packaging Conventions (zip) package, like a .docx::
                                           its name, ID, value and unit
     DeviceMethodSettings/<driver>%231     one part per module, named for its
                                           driver (AgilentPumpDriver,
-                                          Agilent1200erDadDriver, ...): the
-                                          settings as the driver keeps them
+                                          Agilent1200erDadDriver, LCSQ, ...):
+                                          the settings as the driver keeps
+                                          them
     MethodProperties/MethodProperties     technique (LC, GC) and run time
     SchemaVersion/SchemaVersion
     *.chk                                 SHA-1 of the part beside it
@@ -25,12 +26,15 @@ every method read so far, the DAD part's ``<Slitwidth>2`` is reported as
 ``4 nm``, its ``<Peakwidth>4`` as ``> 0.1 min (2 s response time) (2.5 Hz)``,
 and its analog attenuation ``10`` as ``1000 mAU``; and no driver part states a
 unit. So the driver parts are read for which modules the method drives (the
-driver's name and the module type it records), and the report for what each
-is set to.
+driver's name and the module type it records: its root's ``ModuleType``, or
+for a single quad's ``<MSAcqMethod>`` its ``<msModel>``), and the report for
+what each is set to.
 
 What a module's report section states is read by its driver's table in
 :data:`MODULES`: the ACAML parameter IDs read, each to the field it is
-stated as. A module whose driver has no table is listed (name, model,
+stated as. A report table's row is one of a driver table's rows where it
+holds that table's first ID, so one report table can hold rows of two kinds
+(a single quad's scan row and its SIM ion rows). A module whose driver has no table is listed (name, model,
 driver) with no settings. A value the report leaves empty, or writes as
 ``---`` (a timetable row that does not change it), is not stated.
 
@@ -57,15 +61,19 @@ _TIMES = {
 #
 #   settings   parameter ID -> field, for the section's parameters outside
 #              a table (in its sub-sections too)
-#   tables     table name -> {parameter ID -> field}: each of the section's
-#              tables whose rows hold any of those IDs is stated under that
-#              name, one dict per row, in the report's order
+#   tables     table name -> {parameter ID -> field}: each row of the
+#              section's tables that holds the first of those IDs is stated
+#              under that name, one dict per row, in the report's order
 #   run        run-level key -> field: what the module states that rainbow
 #              states for a whole run (as a .D's acq.macaml gives it)
+#   segments   (optional) a module whose settings come in segments, each its
+#              own sub-section: 'name' the list they are stated under,
+#              'section' the sub-sections' IDs (numbered), 'header' the
+#              segment table's row of each, 'tables' each segment's own
+#              tables as above, and 'named' the tables whose rows also
+#              state their table's name
 #
-# Adding a module is adding its driver's table here. An LC/MSD's driver part
-# would be entered here too once an OpenLab LC/MS method is at hand: no public
-# method so far names the MSD's driver part or the IDs of its report section.
+# Adding a module is adding its driver's table here.
 MODULES = {
     'AgilentPumpDriver': {
         'settings': dict(_TIMES, **{
@@ -112,6 +120,8 @@ MODULES = {
                 'Signals_Signal_Wavelength': 'wavelength',
                 'Signals_Signal_Bandwidth': 'bandwidth',
                 'Signals_Signal_UseReference': 'use_reference',
+                'Signals_Signal_RefWavelength': 'reference_wavelength',
+                'Signals_Signal_RefBandwidth': 'reference_bandwidth',
             },
         },
         'run': {},
@@ -128,6 +138,74 @@ MODULES = {
         'tables': {},
         # As for a .D: the left temperature, where it is controlled.
         'run': {'column_temperature': 'left_temperature'},
+    },
+    # A single quad (LC/MSD iQ). Each time segment is stated with its own
+    # rows (see 'segments' below), as the report keeps them.
+    'LCSQ': {
+        'settings': {
+            'IonSource': 'ion_source',
+            'TuneFile': 'tune_file',
+            'Acquire_Mode': 'acquire_mode',
+            'StopMode': 'stop_mode',
+            'TimeFilterEnabled': 'time_filter',
+            'TimeFilterPeakWidth': 'time_filter_width',
+            'Estimated_Points_Per_Second': 'points_per_second',
+            'SIM_Percent': 'sim_percent',
+            'PostRun_Diverter_Position': 'post_run_diverter_position',
+        },
+        'tables': {
+            'timetable': {
+                'TimeTable_Type': 'type',
+                'StartTime': 'time',
+                'TimeTable_Value': 'value',
+            },
+        },
+        'segments': {
+            'name': 'time_segments',
+            # The section of segment n is TimeSegment<n>; the row of segment
+            # n in the Time Segment table, the n-th row holding ScanType.
+            'section': re.compile(r'^TimeSegment(\d+)$'),
+            'header': {
+                'ScanType': 'scan_type',
+                'StartTime': 'time',
+            },
+            'tables': {
+                'scan_parameters': {
+                    'StartMass': 'mz_low',
+                    'EndMass': 'mz_high',
+                    'ScanTime': 'scan_time',
+                    'Fragmentor': 'fragmentor',
+                    'Polarity': 'polarity',
+                    'IonMode': 'ionization_mode',
+                    'DataStorage': 'data_storage',
+                    'DetectorGainFactor': 'gain_factor',
+                    'Threshold': 'threshold',
+                },
+                'monitored_ions': {
+                    'Mass': 'mz',
+                    'CompoundName': 'compound',
+                    'Dwell': 'dwell',
+                    'Fragmentor': 'fragmentor',
+                    'Polarity': 'polarity',
+                    'IonMode': 'ionization_mode',
+                    'DetectorGainFactor': 'gain_factor',
+                },
+                # A fragmentor ramp: a scan row whose fragmentor is
+                # "Ramp(1)" takes the rows of the table of that name.
+                'fragmentor_ramps': {
+                    'FragmentorRampMass': 'mz',
+                    'FragmentorRampVoltage': 'voltage',
+                },
+                'source': {
+                    'ParameterId': 'parameter',
+                    'PositiveValue': 'positive',
+                    'NegativeValue': 'negative',
+                },
+            },
+            # Each row of these also states the name of its table.
+            'named': {'fragmentor_ramps': 'ramp'},
+        },
+        'run': {},
     },
     'AgilentSamplerDriver': {
         'settings': dict(_TIMES, **{
@@ -242,7 +320,7 @@ def read(path):
                                'model': module['model']}
                               for module in modules]
             for module in modules:
-                table = MODULES.get(module['driver'], {})
+                table = MODULES.get(module.get('driver'), {})
                 for key, field in table.get('run', {}).items():
                     value = module.get('settings', {}).get(field)
                     if isinstance(value, dict):
@@ -279,8 +357,8 @@ def _drivers(package, names):
     """
     The driver parts: {(module type, instance): driver name}, from the part
     names (DeviceMethodSettings/AgilentPumpDriver%25231 is
-    "AgilentPumpDriver#1", its name percent-encoded twice) and the
-    ModuleType each part's root records.
+    "AgilentPumpDriver#1", its name percent-encoded twice) and the module
+    type each part records (:func:`_model`).
     """
     found = {}
     for name in sorted(names):
@@ -292,11 +370,21 @@ def _drivers(package, names):
         match = _DRIVER_RE.match(part)
         if not match:
             continue
-        root = ET.fromstring(package.read(name))
-        model = (root.get('ModuleType') or '').strip()
+        model = _model(ET.fromstring(package.read(name)))
         if model:
             found[(model, match.group('instance'))] = match.group('driver')
     return found
+
+
+def _model(root):
+    """The module type a driver part records: its root's ModuleType
+    (G7117A), else a single quad's <msModel> (LC/MSD iQ), as the report's
+    ModuleType states each."""
+    model = (root.get('ModuleType') or '').strip()
+    if not model:
+        found = root.find('msModel')
+        model = (found.text or '').strip() if found is not None else ''
+    return model
 
 
 def _technique(properties):
@@ -374,21 +462,65 @@ def _settings(section, table):
             if value is not None:
                 settings[field] = value
     for name, fields in table['tables'].items():
-        rows = []
-        for found in _tables(section):
-            for row in found['rows']:
-                if not any(p.get('id') in fields for p in row):
-                    continue
-                entry = {}
-                for parameter in row:
-                    field = fields.get(parameter.get('id'))
-                    value = _value(parameter) if field else None
-                    if value is not None:
-                        entry[field] = value
-                rows.append(entry)
+        rows = _rows(section, fields)
         if rows:
             settings[name] = rows
+    segments = table.get('segments')
+    if segments:
+        found = _segments(section, segments)
+        if found:
+            settings[segments['name']] = found
     return settings
+
+
+def _rows(section, fields, label=None):
+    """The rows of a section's tables (its sub-sections' too) holding the
+    first of `fields`' IDs, each read by `fields`; `label`: the field each
+    row also states its table's name under."""
+    key = next(iter(fields))
+    rows = []
+    for found in _tables(section):
+        for row in found['rows']:
+            if not any(p.get('id') == key for p in row):
+                continue
+            entry = {}
+            for parameter in row:
+                field = fields.get(parameter.get('id'))
+                value = _value(parameter) if field else None
+                if value is not None:
+                    entry[field] = value
+            if label and found.get('name'):
+                entry[label] = found['name']
+            rows.append(entry)
+    return rows
+
+
+def _segments(section, spec):
+    """A module's segments, in their numbers' order: each the segment
+    table's row of it and its own sub-section's rows."""
+    numbered = []
+    for sub in _sections(section):
+        match = spec['section'].match(sub.get('id') or '')
+        if match:
+            numbered.append((int(match.group(1)), sub))
+    headers = _rows(section, spec['header'])
+    segments = []
+    for n, sub in sorted(numbered, key=lambda item: item[0]):
+        segment = dict(headers[n - 1]) if 0 < n <= len(headers) else {}
+        for name, fields in spec['tables'].items():
+            rows = _rows(sub, fields, spec.get('named', {}).get(name))
+            if rows:
+                segment[name] = rows
+        segments.append(segment)
+    return segments
+
+
+def _sections(section):
+    """A section's sub-sections, at every depth."""
+    for sub in section['sections']:
+        yield sub
+        for deeper in _sections(sub):
+            yield deeper
 
 
 def _parameters(section):

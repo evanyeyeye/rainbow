@@ -3,6 +3,38 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **The single quad's settings in an OpenLab `.amx`.** `module_settings`
+  states an LC/MSD iQ's (driver `LCSQ`): ion source, tune file, the diverter
+  timetable, and each time segment with its start, scan type and own rows:
+  each scan row (m/z range, scan time, fragmentor, polarity, ionization
+  mode, data storage), each SIM ion (m/z, compound, dwell, fragmentor,
+  polarity), each fragmentor ramp's points and the source parameters.
+- **A `.sirslt` run's MS file states its method.** Read with
+  `centroid=True`, its MS file gets the method's `scan_parameters` and
+  `monitored_ions` (with compound names), and `ionization_mode`,
+  `fragmentor` and `polarity` where every row states one, in the keys a
+  ChemStation MS signal's settings come in (`method.tag_ms_segments`). The
+  file's scans are the check: where the method's rows are not what they
+  recorded, nothing goes on the file and the rows are kept in
+  `method_disagrees`.
+- **A DAD signal's reference in an `.amx`.** `signals` rows state
+  `reference_wavelength` and `reference_bandwidth`.
+- **Real OpenLab LC/MS test data**, shared by p3bm in #82:
+  `tests/inputs/jade.sirslt` (SIM/Scan), `ochre.sirslt` (two time
+  segments), `rose.sirslt` (positive and negative, a fragmentor ramp) and
+  `coral.sirslt` (a DAD reference wavelength), each with its `.amx`, and the
+  method `mango.amx` (Scan).
+
+### Fixed
+- **An `.amx` with a single quad reads.** Its driver part records its model
+  as `<msModel>`, not `ModuleType`, so the module had no driver and
+  `amx.read` raised a KeyError; `rb.read` and `rb.read_metadata` then stated
+  nothing of the run's method. The model is read from either, and a module
+  without a driver is listed without settings.
+
 ## [1.6.0] - 2026-11-27
 
 ### Added

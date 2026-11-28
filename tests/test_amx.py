@@ -10,6 +10,16 @@ from chromConverterExtraTests, anonymised (see tests/inputs/README_sirslt.md):
 - kiwi.amx: no timetable, oven not controlled, one DAD signal, no spectrum;
 - fig.sirslt/fig.amx: the method of the run in that folder.
 
+Five from a UHPLC with an LC/MSD iQ single quad, shared by p3bm in #82
+(see tests/inputs/README_sirslt.md), four of them with their runs:
+
+- jade.sirslt: one SIM/Scan time segment, a scan and one SIM ion;
+- ochre.sirslt: two SIM/Scan time segments, each its own SIM ion;
+- rose.sirslt: positive and negative scans, the negative on a fragmentor
+  ramp;
+- coral.sirslt: no single quad; a DAD signal with a reference wavelength;
+- mango.amx: a method alone, its single quad set to Scan.
+
 Each expected value is the one the method's Agilent/ReportableInformation
 part states.
 
@@ -31,6 +41,15 @@ SIMPLE = os.path.join(RUN, "fig.amx")
 OLIVE = os.path.join(INPUTS, "olive.sirslt")
 PLUM = os.path.join(INPUTS, "plum.sirslt")
 LIME = os.path.join(INPUTS, "lime.sirslt")
+SCAN = os.path.join(INPUTS, "mango.amx")
+JADE = os.path.join(INPUTS, "jade.sirslt")
+OCHRE = os.path.join(INPUTS, "ochre.sirslt")
+ROSE = os.path.join(INPUTS, "rose.sirslt")
+CORAL = os.path.join(INPUTS, "coral.sirslt")
+SIM_SCAN = os.path.join(JADE, "example_MS_with_SIM.amx")
+SEGMENTS = os.path.join(OCHRE, "example_MS_with_time_segments.amx")
+POS_NEG = os.path.join(ROSE, "example_MS_pos_and_neg.amx")
+DAD_REF = os.path.join(CORAL, "example_DAD_ref.amx")
 
 # What an .amx adds to a run's metadata.
 AMX_KEYS = ('acq_method', 'acq_method_info', 'modules', 'module_settings',
@@ -261,3 +280,178 @@ def test_an_unreadable_amx_in_a_run_states_nothing(tmp_path):
     folder.mkdir()
     (folder / "run.amx").write_bytes(b"not a zip")
     assert amx.read_run(str(folder)) == {}
+
+
+SQ_MODULES = [{'name': 'SQ Mass Spectrometer', 'model': 'LC/MSD iQ'},
+              {'name': 'Binary Pump', 'model': 'G7120A'},
+              {'name': 'Column Comp.', 'model': 'G7116B'},
+              {'name': 'DAD', 'model': 'G7117A'},
+              {'name': 'Sampler', 'model': 'G7129B'}]
+
+
+@pytest.mark.parametrize("path, name", [
+    (SIM_SCAN, 'example_MS_with_SIM.amx'),
+    (SCAN, 'BEH_Acidic_6min.amx'),
+    (SEGMENTS, 'example_MS_with_time_segments.amx'),
+    (POS_NEG, 'example_MS_pos_and_neg.amx'),
+])
+def test_a_method_with_a_single_quad_reads(path, name):
+    """The single quad's driver part records its model as <msModel>, not
+    ModuleType: the method still reads, each module with its driver."""
+    method = amx.read(path)
+    assert method['acq_method'] == name
+    assert method['modules'] == SQ_MODULES
+    assert [m.get('driver') for m in method['module_settings']] == [
+        'LCSQ', 'AgilentPumpDriver', 'AgilentColumnCompDriver',
+        'Agilent1200erDadDriver', 'AgilentSamplerDriver']
+    assert method['run_time'] == q(6.0, 'min')
+
+
+def test_the_single_quads_settings():
+    sq = _module(amx.read(SIM_SCAN), 'LCSQ')['settings']
+    assert sq['ion_source'] == 'ESI'
+    assert sq['tune_file'] == 'atunes.tune'
+    assert sq['sim_percent'] == q(50.0, '%')
+    assert [row['value'] for row in sq['timetable']] == ['To MS', 'To Waste']
+    [segment] = sq['time_segments']
+    assert segment['time'] == q(0.0, 'min')
+    assert segment['scan_type'] == 'SIM/Scan'
+    # The report keeps the scan row and the SIM ion in one table: each is
+    # told by its first ID (StartMass, Mass).
+    assert segment['scan_parameters'] == [{
+        'mz_low': q(100.0, 'm/z'), 'mz_high': q(1000.0, 'm/z'),
+        'scan_time': q(580.0, 'ms'), 'gain_factor': 1,
+        'fragmentor': q(110.0, 'V'), 'polarity': '+', 'threshold': 0,
+        'data_storage': 'Centroid', 'ionization_mode': 'ESI'}]
+    assert segment['monitored_ions'] == [{
+        'compound': 'Caffeine', 'mz': q(295.0, 'm/z'),
+        'dwell': q(580.0, 'ms'), 'gain_factor': 1,
+        'fragmentor': q(100.0, 'V'), 'polarity': '+',
+        'ionization_mode': 'ESI'}]
+    assert segment['source'][0] == {'parameter': 'Gas Temperature (°C)',
+                                    'positive': 325, 'negative': 325}
+
+
+def test_each_time_segment_states_its_own_rows():
+    """Segment 2 lists its SIM ion before its scan row; each segment keeps
+    its own."""
+    segments = _module(amx.read(SEGMENTS), 'LCSQ')['settings']['time_segments']
+    assert [s['time'] for s in segments] == [q(0.0, 'min'), q(2.0, 'min')]
+    assert [[i['compound'] for i in s['monitored_ions']]
+            for s in segments] == [['Caffeine'], ['Terphenyl']]
+    assert [[i['mz'] for i in s['monitored_ions']]
+            for s in segments] == [[q(195.0, 'm/z')], [q(230.0, 'm/z')]]
+    assert all(len(s['scan_parameters']) == 1 for s in segments)
+
+
+def test_a_fragmentor_ramp_is_stated_with_its_points():
+    [segment] = _module(amx.read(POS_NEG), 'LCSQ')['settings']['time_segments']
+    assert [(r['polarity'], r['fragmentor'])
+            for r in segment['scan_parameters']] == [
+        ('+', q(110.0, 'V')), ('-', 'Ramp(1)')]
+    assert [(p['ramp'], p['mz']['value'], p['voltage']['value'])
+            for p in segment['fragmentor_ramps']] == [
+        ('Ramp(1)', 75.0, 90.0), ('Ramp(1)', 250.0, 100.0),
+        ('Ramp(1)', 450.0, 110.0), ('Ramp(1)', 750.0, 120.0),
+        ('Ramp(1)', 1000.0, 130.0)]
+
+
+def test_a_scan_only_single_quad_monitors_no_ions():
+    [segment] = _module(amx.read(SCAN), 'LCSQ')['settings']['time_segments']
+    assert segment['scan_type'] == 'Scan'
+    assert [(r['mz_low'], r['mz_high'])
+            for r in segment['scan_parameters']] == [
+        (q(100.0, 'm/z'), q(1000.0, 'm/z'))]
+    assert 'monitored_ions' not in segment
+
+
+def test_a_dad_signals_reference():
+    dad = _module(amx.read(DAD_REF), 'Agilent1200erDadDriver')['settings']
+    assert dad['signals'][0] == {
+        'acquire': True, 'signal': 'Signal A',
+        'wavelength': q(220.0, 'nm'), 'bandwidth': q(4.0, 'nm'),
+        'use_reference': True, 'reference_wavelength': q(360.0, 'nm'),
+        'reference_bandwidth': q(100.0, 'nm')}
+    assert dad['signals'][1]['use_reference'] is False
+    assert 'reference_wavelength' not in dad['signals'][1]
+
+
+def test_a_module_whose_driver_part_records_no_model_has_no_driver(tmp_path):
+    """A driver part with neither ModuleType nor <msModel> leaves its module
+    without a driver: listed, with no settings, and the method reads."""
+    source = zipfile.ZipFile(SCAN)
+    out = tmp_path / "run.amx"
+    with zipfile.ZipFile(out, "w") as package:
+        for info in source.infolist():
+            data = source.read(info)
+            if info.filename == 'DeviceMethodSettings/LCSQ%25231':
+                data = data.replace(b'<msModel>LC/MSD iQ</msModel>', b'')
+            package.writestr(info, data)
+    method = amx.read(str(out))
+    assert method['module_settings'][0] == {
+        'name': 'SQ Mass Spectrometer', 'model': 'LC/MSD iQ'}
+    assert method['run_time'] == q(6.0, 'min')
+
+
+# -- the method onto the run's MS data -----------------------------------
+
+def _ms(path):
+    datadir = rb.read(path, centroid=True, bin_width=1.0)
+    [ms] = [f for f in datadir.datafiles if f.detector == 'MS']
+    return ms.metadata
+
+
+def test_a_sim_scan_runs_ms_file_states_its_method():
+    ms = _ms(JADE)
+    assert ms['scan_parameters'] == [{
+        'time_segment': 1, 'time': 0.0, 'mz_low': 100.0, 'mz_high': 1000.0,
+        'fragmentor': 110.0, 'polarity': '+', 'ionization_mode': 'ESI'}]
+    assert ms['monitored_ions'] == [{
+        'time_segment': 1, 'time': 0.0, 'mz': 295.0, 'fragmentor': 100.0,
+        'compound': 'Caffeine', 'polarity': '+', 'ionization_mode': 'ESI'}]
+    assert ms['ionization_mode'] == 'ESI' and ms['polarity'] == '+'
+    # The scan row and the SIM ion are set to different fragmentors.
+    assert 'fragmentor' not in ms
+    assert 'method_disagrees' not in ms
+
+
+def test_each_segments_ions_are_those_its_scans_recorded():
+    ms = _ms(OCHRE)
+    assert [(i['time_segment'], i['time'], i['mz'], i['compound'])
+            for i in ms['monitored_ions']] == [
+        (1, 0.0, 195.0, 'Caffeine'), (2, 2.0, 230.0, 'Terphenyl')]
+    assert ms['fragmentor'] == 110.0
+    assert 'method_disagrees' not in ms
+
+
+def test_a_run_of_both_polarities_states_each_rows_own():
+    ms = _ms(ROSE)
+    assert [r['polarity'] for r in ms['scan_parameters']] == ['+', '-']
+    assert ms['scan_parameters'][1]['fragmentor_ramp'][0] == {
+        'mz': 75.0, 'voltage': 90.0}
+    assert 'polarity' not in ms and 'fragmentor' not in ms
+    assert 'monitored_ions' not in ms
+
+
+def test_a_method_its_scans_dont_record_is_kept_apart(tmp_path):
+    """The scans are the check: jade's run under ochre's method (other SIM
+    ions, two segments) states none of it, and keeps it apart."""
+    import shutil
+    run = tmp_path / "jade.sirslt"
+    shutil.copytree(JADE, run)
+    (run / "example_MS_with_SIM.amx").unlink()
+    shutil.copy(SEGMENTS, run / "jade.amx")
+    ms = _ms(str(run))
+    assert 'monitored_ions' not in ms and 'scan_parameters' not in ms
+    rows = ms['method_disagrees']['time_segments']
+    assert [r.get('compound') for r in rows if 'mz' in r] == [
+        'Caffeine', 'Terphenyl']
+
+
+def test_a_dad_only_run_states_its_reference_from_file_and_method():
+    datadir = rb.read(CORAL)
+    [a] = [f for f in datadir.datafiles if f.name == 'DAD1A.CH']
+    assert a.metadata['reference_wavelength'] == 360.0
+    assert a.metadata['reference_bandwidth'] == 100.0
+    dad = _module(datadir.metadata, 'Agilent1200erDadDriver')['settings']
+    assert dad['signals'][0]['reference_wavelength'] == q(360.0, 'nm')
