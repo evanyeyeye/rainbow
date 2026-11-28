@@ -3,7 +3,7 @@
 All notable changes to `rainbow-api` are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.7.0] - 2026-11-28
 
 ### Added
 - **The single quad's settings in an OpenLab `.amx`.** `module_settings`
